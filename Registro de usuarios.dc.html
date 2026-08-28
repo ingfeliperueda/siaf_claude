@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #f4f6fa; }
+  a { color: #1b4f9c; text-decoration: none; }
+  a:hover { color: #133a75; text-decoration: underline; }
+  input, select, button { font-family: inherit; }
+  input, select { box-sizing: border-box; width: 100%; min-width: 0; }
+  label { min-width: 0; }
+  input:focus-visible, select:focus-visible { outline: 2px solid #1b4f9c; outline-offset: 2px; }
+  ::placeholder { color: #9aa4b6; }
+</style>
+</helmet>
+<div style="font-family: 'Instrument Sans', sans-serif; width: 1440px; min-height: 900px; display: flex; color: #14213a; background: #f4f6fa;">
+
+  <nav style="flex: none; width: {{ navAncho }}; background: #0f2647; color: #e8eef8; padding: 22px 16px; display: flex; flex-direction: column; gap: 26px; transition: width 180ms ease; overflow: hidden;">
+    <div style="display: flex; align-items: center; gap: 12px; padding: 0 5px;">
+      <div style="flex: none; width: 34px; height: 34px; border-radius: 9px; background: #1b4f9c; display: grid; place-items: center; font-weight: 700; font-size: 14px; color: #fff;">S</div>
+      <span style="font-weight: 600; font-size: 16px; letter-spacing: -0.01em; white-space: nowrap; opacity: {{ navTextoOpacidad }};">SIAF</span>
+    </div>
+
+    <button type="button" onClick="{{ onMenu }}" aria-label="Alternar menú" style="height: 44px; min-width: 44px; border: none; border-radius: 10px; background: rgba(255,255,255,0.07); color: #e8eef8; display: flex; align-items: center; gap: 14px; padding: 0 13px; cursor: pointer;" style-hover="background: rgba(255,255,255,0.14);">
+      <span style="flex: none; width: 18px; display: flex; flex-direction: column; gap: 4px;">
+        <span style="height: 2px; border-radius: 2px; background: #e8eef8;"></span>
+        <span style="height: 2px; border-radius: 2px; background: #e8eef8;"></span>
+        <span style="height: 2px; border-radius: 2px; background: #e8eef8;"></span>
+      </span>
+      <span style="font-size: 13px; font-weight: 500; color: #9db2d4; white-space: nowrap; opacity: {{ navTextoOpacidad }};">Menú</span>
+    </button>
+
+    <div style="display: flex; flex-direction: column; gap: 4px;">
+      <a href="#" style="height: 44px; min-width: 44px; border-radius: 10px; display: flex; align-items: center; gap: 14px; padding: 0 13px; color: #9db2d4; font-size: 15px; font-weight: 500;" style-hover="background: rgba(255,255,255,0.08); color: #fff; text-decoration: none;">
+        <span style="flex: none; width: 18px; height: 18px; display: grid; place-items: center;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5" /><path d="M5.5 9.5V20h13V9.5" /><path d="M10 20v-5.5h4V20" /></svg>
+        </span>
+        <span style="white-space: nowrap; opacity: {{ navTextoOpacidad }};">Inicio</span>
+      </a>
+
+      <a href="#" aria-current="page" style="height: 44px; min-width: 44px; border-radius: 10px; display: flex; align-items: center; gap: 14px; padding: 0 13px; background: #1b4f9c; color: #fff; font-size: 15px; font-weight: 600;" style-hover="background: #21609c; text-decoration: none;">
+        <span style="flex: none; width: 18px; height: 18px; display: grid; place-items: center;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.4" /><path d="M2.8 20c0-3.3 2.8-5.6 6.2-5.6s6.2 2.3 6.2 5.6" /><path d="M16.5 5.4a3.2 3.2 0 0 1 0 6" /><path d="M18.2 14.8c2 .7 3.3 2.4 3.3 4.6" /></svg>
+        </span>
+        <span style="white-space: nowrap; opacity: {{ navTextoOpacidad }};">Usuarios</span>
+      </a>
+    </div>
+  </nav>
+
+  <div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
+
+    <header style="background: #fff; border-bottom: 1px solid #e2e8f1; padding: 14px 48px; display: flex; align-items: center; justify-content: space-between; gap: 24px;">
+      <nav aria-label="Miga de pan" style="display: flex; align-items: center; gap: 10px; font-size: 13px; color: #63708a;">
+        <a href="#" style="display: flex; align-items: center; gap: 7px; color: #63708a;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5" /><path d="M5.5 9.5V20h13V9.5" /></svg>
+          Inicio
+        </a>
+        <span style="color: #b6c0d1;">/</span>
+        <a href="#" style="color: #14213a; font-weight: 600;">Usuarios</a>
+        <sc-if value="{{ migaNuevo }}" hint-placeholder-val="{{ false }}">
+          <span style="display: flex; align-items: center; gap: 10px;">
+            <span style="color: #b6c0d1;">/</span>
+            <span style="color: #14213a; font-weight: 600;">Nuevo registro</span>
+          </span>
+        </sc-if>
+      </nav>
+      <div style="display: flex; align-items: center; gap: 20px; font-size: 13px; color: #63708a;">
+        <a href="#">Ayuda</a>
+        <span style="width: 1px; height: 18px; background: #e2e8f1;"></span>
+        <span>¿Ya tienes cuenta? <a href="#" style="font-weight: 600;">Inicia sesión</a></span>
+      </div>
+    </header>
+
+    <main style="flex: 1; padding: 36px 48px 64px; display: flex; flex-direction: column; gap: 28px;">
+
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 32px;">
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <h1 style="margin: 0; font-size: 30px; font-weight: 600; letter-spacing: -0.025em;">Usuarios</h1>
+          <p style="margin: 0; font-size: 15px; color: #63708a; max-width: 70ch; text-wrap: pretty;">Administra las cuentas de tu unidad. El registro habilita el perfil; los permisos finales los asigna el administrador.</p>
+        </div>
+        <button type="button" onClick="{{ onNuevo }}" style="flex: none; height: 46px; padding: 0 22px; border-radius: 9px; border: none; background: #1b4f9c; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 9px;" style-hover="filter: brightness(1.1);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
+          Crear nuevo usuario
+        </button>
+      </div>
+
+      <div style="background: #fff; border: 1px solid #e2e8f1; border-radius: 16px; box-shadow: 0 1px 2px rgba(15,38,71,0.04); overflow: hidden;">
+        <div style="padding: 18px 24px; border-bottom: 1px solid #edf1f6; display: flex; align-items: center; justify-content: space-between; gap: 20px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <h2 style="margin: 0; font-size: 16px; font-weight: 600;">Usuarios creados</h2>
+            <span style="font-size: 12px; font-weight: 600; color: #1b4f9c; background: #e8effa; border-radius: 99px; padding: 3px 9px;">{{ totalUsuarios }}</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="position: relative; display: flex; align-items: center; width: 260px;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8b96aa" stroke-width="2" stroke-linecap="round" style="position: absolute; left: 12px;"><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></svg>
+              <input type="text" value="{{ busqueda }}" onChange="{{ onBusqueda }}" placeholder="Buscar por nombre o usuario" style="height: 40px; padding: 0 12px 0 34px; border: 1px solid #d3dbe7; border-radius: 9px; font-size: 14px; color: #14213a; background: #fff;" />
+            </span>
+            <select style="height: 40px; width: 168px; padding: 0 10px; border: 1px solid #d3dbe7; border-radius: 9px; font-size: 14px; color: #3a465c; background: #fff;">
+              <option>Todos los perfiles</option>
+              <option>Registrador</option>
+              <option>Autorizador</option>
+              <option>Consulta</option>
+            </select>
+          </div>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+          <thead>
+            <tr style="background: #fafbfd;">
+              <th style="text-align: left; padding: 11px 24px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #8b96aa; border-bottom: 1px solid #edf1f6;">Usuario</th>
+              <th style="text-align: left; padding: 11px 16px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #8b96aa; border-bottom: 1px solid #edf1f6;">Nombre completo</th>
+              <th style="text-align: left; padding: 11px 16px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #8b96aa; border-bottom: 1px solid #edf1f6;">Unidad</th>
+              <th style="text-align: left; padding: 11px 16px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #8b96aa; border-bottom: 1px solid #edf1f6;">Perfil</th>
+              <th style="text-align: left; padding: 11px 16px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #8b96aa; border-bottom: 1px solid #edf1f6;">Estado</th>
+              <th style="text-align: left; padding: 11px 16px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #8b96aa; border-bottom: 1px solid #edf1f6;">Alta</th>
+              <th style="text-align: right; padding: 11px 24px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #8b96aa; border-bottom: 1px solid #edf1f6;">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            <sc-for list="{{ usuarios }}" as="u" hint-placeholder-count="5">
+              <tr style="border-bottom: 1px solid #f2f5f9;" style-hover="background: #fafbfd;">
+                <td style="padding: 14px 24px; font-weight: 600; color: #14213a;">{{ u.usuario }}</td>
+                <td style="padding: 14px 16px; color: #3a465c;">{{ u.nombre }}</td>
+                <td style="padding: 14px 16px; color: #63708a;">{{ u.unidad }}</td>
+                <td style="padding: 14px 16px; color: #3a465c;">{{ u.perfil }}</td>
+                <td style="padding: 14px 16px;">
+                  <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; border-radius: 99px; padding: 4px 10px; color: {{ u.estadoTexto }}; background: {{ u.estadoFondo }};">
+                    <span style="width: 6px; height: 6px; border-radius: 50%; background: {{ u.estadoTexto }};"></span>
+                    {{ u.estado }}
+                  </span>
+                </td>
+                <td style="padding: 14px 16px; color: #8b96aa; font-variant-numeric: tabular-nums;">{{ u.alta }}</td>
+                <td style="padding: 10px 24px; text-align: right;">
+                  <span style="display: inline-flex; justify-content: flex-end; gap: 6px;">
+                    <button type="button" onClick="{{ u.onEditar }}" title="Editar registro" style="height: 34px; padding: 0 13px; border-radius: 8px; border: 1px solid #d3dbe7; background: #fff; color: #1b4f9c; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;" style-hover="background: #e8effa; border-color: #b9cbe6;">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z" /></svg>
+                      Editar
+                    </button>
+                    <button type="button" title="Más acciones" aria-label="Más acciones" style="width: 34px; height: 34px; border-radius: 8px; border: 1px solid #d3dbe7; background: #fff; color: #8b96aa; cursor: pointer; display: inline-grid; place-items: center;" style-hover="background: #f2f5fa; color: #3a465c;">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5.5" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="12" cy="18.5" r="1.6" /></svg>
+                    </button>
+                  </span>
+                </td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+
+        <div style="padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; gap: 20px; background: #fafbfd; border-top: 1px solid #edf1f6;">
+          <span style="font-size: 13px; color: #8b96aa;">{{ paginaTexto }}</span>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" style="height: 34px; padding: 0 14px; border-radius: 8px; border: 1px solid #d3dbe7; background: #fff; font-size: 13px; color: #8b96aa; cursor: not-allowed;">Anterior</button>
+            <button type="button" style="height: 34px; padding: 0 14px; border-radius: 8px; border: 1px solid #d3dbe7; background: #fff; font-size: 13px; font-weight: 500; color: #3a465c; cursor: pointer;" style-hover="background: #f2f5fa;">Siguiente</button>
+          </div>
+        </div>
+      </div>
+
+      <sc-if value="{{ enviado }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; gap: 14px; align-items: flex-start; background: #edf7f1; border: 1px solid #c6e4d2; border-radius: 12px; padding: 18px 20px;">
+          <div style="flex: none; width: 22px; height: 22px; border-radius: 50%; background: #2f7d52; color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 700;">✓</div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <strong style="font-size: 15px; color: #1f5638;">{{ exitoTitulo }}</strong>
+            <span style="font-size: 14px; color: #3d6b52; line-height: 1.55;">{{ exitoCuerpo }}</span>
+          </div>
+        </div>
+      </sc-if>
+    </main>
+
+    <sc-if value="{{ cajonAbierto }}" hint-placeholder-val="{{ false }}">
+      <div style="position: fixed; inset: 0; background: rgba(15,38,71,0.42); display: flex; justify-content: flex-end; z-index: 40;">
+        <div onClick="{{ onCerrarCajon }}" style="flex: 1;"></div>
+        <aside role="dialog" aria-modal="true" aria-label="Editar usuario" style="flex: none; width: 560px; background: #fff; height: 100%; display: flex; flex-direction: column; box-shadow: -18px 0 48px rgba(15,38,71,0.18);">
+
+          <header style="padding: 22px 28px; border-bottom: 1px solid #edf1f6; display: flex; align-items: flex-start; justify-content: space-between; gap: 20px;">
+            <div style="display: flex; gap: 14px; align-items: center; min-width: 0;">
+              <div style="flex: none; width: 44px; height: 44px; border-radius: 11px; background: #e8effa; color: #1b4f9c; display: grid; place-items: center; font-size: 16px; font-weight: 700;">{{ inicialesEdit }}</div>
+              <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0;">
+                <h2 style="margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.015em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ tituloCajon }}</h2>
+                <span style="font-size: 13px; color: #8b96aa; font-variant-numeric: tabular-nums;">{{ metaEdit }}</span>
+              </div>
+            </div>
+            <button type="button" onClick="{{ onCerrarCajon }}" aria-label="Cerrar" style="flex: none; width: 34px; height: 34px; border-radius: 8px; border: 1px solid #d3dbe7; background: #fff; color: #63708a; display: grid; place-items: center; cursor: pointer;" style-hover="background: #f2f5fa; color: #14213a;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+          </header>
+
+          <div style="flex: 1; overflow-y: auto; padding: 26px 28px; display: flex; flex-direction: column; gap: 26px;">
+
+            <section style="display: flex; flex-direction: column; gap: 16px;">
+              <h3 style="margin: 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: #8b96aa;">Datos personales</h3>
+              <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px;">
+                <label style="display: flex; flex-direction: column; gap: 7px;">
+                  <span style="font-size: 13px; font-weight: 500; color: #3a465c;">Nombres</span>
+                  <input type="text" value="{{ nombres }}" onChange="{{ onNombres }}" style="height: 44px; padding: 0 13px; border: 1px solid #d3dbe7; border-radius: 9px; font-size: 15px; color: #14213a; background: #fff;" />
+                </label>
+                <label style="display: flex; flex-direction: column; gap: 7px;">
+                  <span style="font-size: 13px; font-weight: 500; color: #3a465c;">Apellidos</span>
+                  <input type="text" value="{{ apellidos }}" onChange="{{ onApellidos }}" style="height: 44px; padding: 0 13px; border: 1px solid #d3dbe7; border-radius: 9px; font-size: 15px; color: #14213a; background: #fff;" />
+                </label>
+                <sc-if value="{{ esCreacion }}" hint-placeholder-val="{{ false }}">
+                  <label style="display: flex; flex-direction: column; gap: 7px;">
+                    <span style="font-size: 13px; font-weight: 500; color: #3a465c;">Tipo de documento</span>
+                    <select value="{{ tipoDoc }}" onChange="{{ onTipoDoc }}" style="height: 44px; padding: 0 11px; border: 1px solid #d3dbe7; border-radius: 9px; font-size: 15px; color: #14213a; background: #fff;">
+                      <option>DNI</option>
+                      <option>Carné de extranjería</option>
+                      <option>Pasaporte</option>
+                    </select>
+                  </label>
+                </sc-if>
+                <sc-if value="{{ esCreacion }}" hint-placeholder-val="{{ false }}">
+                  <label style="display: flex; flex-direction: column; gap: 7px;">
+                    <span style="font-size: 13px; font-weight: 500; color: #3a465c;">Número de documento</span>
+                    <input type="text" value="{{ numeroDoc }}" onChange="{{ onNumeroDoc }}" placeholder="Sin espacios ni guiones" style="height: 44px; padding: 0 13px; border: 1px solid #d3dbe7; border-radius: 9px; font-size: 15px; color: #14213a; background: #fff; font-variant-numeric: tabular-nums;" />
+                  </label>
+                </sc-if>
+                <label style="display: flex; flex-direction: column; gap: 7px; grid-column: span 2;">
+                  <span style="font-size: 13px; font-weight: 500; color: #3a465c;">Correo electrónico institucional</span>
+                  <input type="email" value="{{ correo }}" onChange="{{ onCorreo }}" style="height: 44px; padding: 0 13px; border: 1px solid #d3dbe7; border-radius: 9px; font-size: 15px; color: #14213a; background: #fff;" />
+                </label>
+              </div>
+            </section>
+
+            <section style="display: flex; flex-direction: column; gap: 16px;">
+              <h3 style="margin: 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: #8b96aa;">Asignación</h3>
+              <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px;">
+                <label style="display: flex; flex-direction: column; gap: 7px; grid-column: span 2;">
+                  <span style="font-size: 13px; font-weight: 500; color: #3a465c;">Unidad o dependencia</span>
+                  <select value="{{ unidad }}" onChange="{{ onUnidad }}" style="height: 44px; padding: 0 11px; border: 1px solid #d3dbe7; border-radius: 9px; font-size: 15px; color: #14213a; background: #fff;">
+                    <option>Dirección de Presupuesto</option>
+                    <option>Oficina de Contabilidad</option>
+                    <option>Tesorería</option>
+                    <option>Abastecimiento</option>
+                  </select>
+                </label>
+                <label style="display: flex; flex-direction: column; gap: 7px;">
+                  <span style="font-size: 13px; font-weight: 500; color: #3a465c;">Perfil</span>
+                  <select value="{{ perfil }}" onChange="{{ onPerfil }}" style="height: 44px; padding: 0 11px; border: 1px solid #d3dbe7; border-radius: 9px; font-size: 15px; color: #14213a; background: #fff;">
+                    <option>Registrador</option>
+                    <option>Autorizador</option>
+                    <option>Consulta</option>
+                  </select>
+                </label>
+                <sc-if value="{{ esEdicion }}" hint-placeholder-val="{{ true }}">
+                  <label style="display: flex; flex-direction: column; gap: 7px;">
+                    <span style="font-size: 13px; font-weight: 500; color: #3a465c;">Estado de la cuenta</span>
+                    <select value="{{ estadoEdit }}" onChange="{{ onEstadoEdit }}" style="height: 44px; padding: 0 11px; border: 1px solid #d3dbe7; border-radius: 9px; font-size: 15px; color: #14213a; background: #fff;">
+                      <option>Activo</option>
+                      <option>Pendiente</option>
+                      <option>Inactivo</option>
+                    </select>
+                  </label>
+                </sc-if>
+              </div>
+              <sc-if value="{{ perfilCambiado }}" hint-placeholder-val="{{ false }}">                <div style="display: flex; gap: 10px; align-items: flex-start; background: #fdf6e7; border: 1px solid #f0e0bd; border-radius: 10px; padding: 13px 15px;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8a6412" stroke-width="2" stroke-linecap="round" style="flex: none; margin-top: 1px;"><path d="M12 8v5M12 16.5v.5" /><circle cx="12" cy="12" r="9" /></svg>
+                  <span style="font-size: 13px; line-height: 1.5; color: #7a5a12;">El cambio de perfil de <strong>{{ perfilOriginal }}</strong> a <strong>{{ perfil }}</strong> requiere aprobación del administrador de la unidad.</span>
+                </div>
+              </sc-if>
+            </section>
+
+            <section style="display: flex; flex-direction: column; gap: 12px;">
+              <h3 style="margin: 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: #8b96aa;">Acceso</h3>
+
+              <sc-if value="{{ esCreacion }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; flex-direction: column; gap: 18px;">
+                  <label style="display: flex; flex-direction: column; gap: 7px;">
+                    <span style="font-size: 13px; font-weight: 500; color: #3a465c;">Usuario del sistema</span>
+                    <span style="position: relative; display: flex; align-items: center;">
+                      <input type="text" readOnly="{{ true }}" aria-readonly="true" tabindex="-1" value="{{ usuario }}" placeholder="Se genera automáticamente" style="height: 44px; padding: 0 92px 0 13px; border: 1px solid #d3dbe7; border-radius: 9px; font-size: 15px; font-weight: 600; color: #14213a; background: #f7f9fc; cursor: default;" />
+                      <span style="position: absolute; right: 12px; display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #1b4f9c; background: #e8effa; border-radius: 5px; padding: 4px 8px;">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M6 6l2 2M16 16l2 2M18 6l-2 2M8 16l-2 2" /></svg>
+                        Auto
+                      </span>
+                    </span>
+                    <span style="font-size: 12px; color: #8b96aa;">Inicial del nombre + primer apellido. {{ usuarioNota }}</span>
+                  </label>
+
+                  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; align-items: start;">
+                    <label style="display: flex; flex-direction: column; gap: 7px;">
+                      <span style="font-size: 13px; font-weight: 500; color: #3a465c;">Contraseña</span>
+                      <input type="text" value="{{ clave }}" onChange="{{ onClave }}" style="height: 44px; padding: 0 13px; border: 1px solid #d3dbe7; border-radius: 9px; font-size: 15px; color: #14213a; background: #fff; letter-spacing: 0.05em;" />
+                      <span style="display: flex; gap: 6px; margin-top: 2px;">
+                        <span style="height: 4px; flex: 1; border-radius: 99px; background: {{ barra1 }};"></span>
+                        <span style="height: 4px; flex: 1; border-radius: 99px; background: {{ barra2 }};"></span>
+                        <span style="height: 4px; flex: 1; border-radius: 99px; background: {{ barra3 }};"></span>
+                        <span style="height: 4px; flex: 1; border-radius: 99px; background: {{ barra4 }};"></span>
+                      </span>
+                      <span style="font-size: 12px; color: #8b96aa;">Seguridad: <strong style="color: {{ fuerzaColor }}; font-weight: 600;">{{ fuerzaTexto }}</strong> · mínimo 10 caracteres, una mayúscula y un número.</span>
+                    </label>
+                    <label style="display: flex; flex-direction: column; gap: 7px;">
+                      <span style="font-size: 13px; font-weight: 500; color: #3a465c;">Confirmar contraseña</span>
+                      <input type="text" value="{{ claveConf }}" onChange="{{ onClaveConf }}" style="height: 44px; padding: 0 13px; border: 1px solid {{ confBorde }}; border-radius: 9px; font-size: 15px; color: #14213a; background: #fff; letter-spacing: 0.05em;" />
+                      <span style="font-size: 12px; color: {{ confColor }};">{{ confTexto }}</span>
+                    </label>
+                  </div>
+
+                  <label style="display: flex; gap: 12px; align-items: flex-start; background: #f7f9fc; border: 1px solid #e6ecf4; border-radius: 11px; padding: 14px 16px;">
+                    <input type="checkbox" checked="{{ acepta }}" onChange="{{ onAcepta }}" style="width: 18px; height: 18px; margin: 2px 0 0; accent-color: #1b4f9c; flex: none;" />
+                    <span style="font-size: 13px; line-height: 1.55; color: #3a465c;">Declaro que la información registrada es veraz y acepto los <a href="#">términos de uso</a> y la <a href="#">política de tratamiento de datos personales</a>.</span>
+                  </label>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ esEdicion }}" hint-placeholder-val="{{ true }}">
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; background: #f7f9fc; border: 1px solid #e6ecf4; border-radius: 11px; padding: 14px 16px;">
+                    <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+                      <span style="font-size: 13px; font-weight: 600; color: #14213a;">Usuario del sistema</span>
+                      <span style="font-size: 13px; color: #63708a;">{{ usuarioEdit }} · no editable</span>
+                    </div>
+                    <span style="flex: none; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #1b4f9c; background: #e8effa; border-radius: 5px; padding: 4px 8px;">Auto</span>
+                  </div>
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid #e6ecf4; border-radius: 11px; padding: 14px 16px;">
+                    <div style="display: flex; flex-direction: column; gap: 2px;">
+                      <span style="font-size: 13px; font-weight: 600; color: #14213a;">Contraseña</span>
+                      <span style="font-size: 13px; color: #63708a;">Última actualización: 12/08/2026</span>
+                    </div>
+                    <button type="button" style="flex: none; height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid #d3dbe7; background: #fff; font-size: 13px; font-weight: 600; color: #1b4f9c; cursor: pointer;" style-hover="background: #e8effa; border-color: #b9cbe6;">Enviar restablecimiento</button>
+                  </div>
+                </div>
+              </sc-if>
+            </section>
+
+            <sc-if value="{{ esEdicion }}" hint-placeholder-val="{{ true }}">
+            <section style="display: flex; flex-direction: column; gap: 12px;">
+              <h3 style="margin: 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: #8b96aa;">Actividad reciente</h3>
+              <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 11px;">
+                <li style="display: flex; gap: 11px; align-items: baseline; font-size: 13px;">
+                  <span style="flex: none; width: 74px; color: #8b96aa; font-variant-numeric: tabular-nums;">21/08/2026</span>
+                  <span style="color: #3a465c;">Último inicio de sesión</span>
+                </li>
+                <li style="display: flex; gap: 11px; align-items: baseline; font-size: 13px;">
+                  <span style="flex: none; width: 74px; color: #8b96aa; font-variant-numeric: tabular-nums;">14/08/2026</span>
+                  <span style="color: #3a465c;">Perfil actualizado por jvaldez</span>
+                </li>
+                <li style="display: flex; gap: 11px; align-items: baseline; font-size: 13px;">
+                  <span style="flex: none; width: 74px; color: #8b96aa; font-variant-numeric: tabular-nums;">12/08/2026</span>
+                  <span style="color: #3a465c;">Cuenta creada</span>
+                </li>
+              </ul>
+            </section>
+            </sc-if>
+          </div>
+
+          <footer style="padding: 18px 28px; border-top: 1px solid #edf1f6; background: #fafbfd; display: flex; align-items: center; justify-content: space-between; gap: 20px;">
+            <sc-if value="{{ esEdicion }}" hint-placeholder-val="{{ true }}">
+              <button type="button" style="height: 44px; padding: 0 16px; border-radius: 9px; border: 1px solid #f0d6d2; background: #fff; font-size: 14px; font-weight: 600; color: #b3341f; cursor: pointer;" style-hover="background: #fdf1ef;">Desactivar cuenta</button>
+            </sc-if>
+            <sc-if value="{{ esCreacion }}" hint-placeholder-val="{{ false }}">
+              <span style="font-size: 13px; color: #8b96aa;">{{ estadoTexto }}</span>
+            </sc-if>
+            <div style="display: flex; gap: 10px;">
+              <button type="button" onClick="{{ onCerrarCajon }}" style="height: 44px; padding: 0 18px; border-radius: 9px; border: 1px solid #d3dbe7; background: #fff; font-size: 14px; font-weight: 500; color: #3a465c; cursor: pointer;" style-hover="background: #f2f5fa;">Cancelar</button>
+              <button type="button" onClick="{{ onGuardarCajon }}" disabled="{{ guardarDeshabilitado }}" style="height: 44px; padding: 0 22px; border-radius: 9px; border: none; background: {{ guardarFondo }}; color: #fff; font-size: 14px; font-weight: 600; cursor: {{ guardarCursor }};" style-hover="filter: brightness(1.1);">{{ guardarTexto }}</button>
+            </div>
+          </footer>
+        </aside>
+      </div>
+    </sc-if>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:980}}">
+class Component extends DCLogic {
+  state = { nombres: "", apellidos: "", tipoDoc: "DNI", numeroDoc: "", correo: "", clave: "", claveConf: "", acepta: false, exitoEdicion: false, exitoUsuario: "", enviado: false, menuAbierto: true, formAbierto: false, busqueda: "", cajonAbierto: false, editado: null, estadoEdit: "Activo", unidad: "Dirección de Presupuesto", perfil: "Registrador" };
+
+  static LISTA = [
+    { usuario: "cvargas", nombre: "Carlos Vargas Loayza", unidad: "Dirección de Presupuesto", perfil: "Autorizador", estado: "Activo", alta: "12/08/2026" },
+    { usuario: "lquispe", nombre: "Lucía Quispe Alarcón", unidad: "Oficina de Contabilidad", perfil: "Registrador", estado: "Activo", alta: "05/08/2026" },
+    { usuario: "jmendoza", nombre: "Jorge Mendoza Ríos", unidad: "Tesorería", perfil: "Registrador", estado: "Pendiente", alta: "02/08/2026" },
+    { usuario: "acastro", nombre: "Ana Castro Bermúdez", unidad: "Abastecimiento", perfil: "Consulta", estado: "Activo", alta: "28/07/2026" },
+    { usuario: "rsalinas", nombre: "Ricardo Salinas Paz", unidad: "Dirección de Presupuesto", perfil: "Consulta", estado: "Inactivo", alta: "19/07/2026" }
+  ];
+  fuerza() {
+    const c = this.state.clave || "";
+    let s = 0;
+    if (c.length >= 10) s++;
+    if (/[A-Z]/.test(c)) s++;
+    if (/[0-9]/.test(c)) s++;
+    if (/[^A-Za-z0-9]/.test(c) || c.length >= 14) s++;
+    return s;
+  }
+
+  limpiar(t) {
+    return (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z ]/g, "").trim().toLowerCase();
+  }
+
+  usuarioGenerado() {
+    const n = this.limpiar(this.state.nombres).split(/\s+/).filter(Boolean);
+    const a = this.limpiar(this.state.apellidos).split(/\s+/).filter(Boolean);
+    if (!n.length || !a.length) return "";
+    return n[0][0] + a[0];
+  }
+
+  renderVals() {
+    const s = this.fuerza();
+    const usuario = this.usuarioGenerado();
+    const paleta = ["#dde3ec", "#c0392b", "#b9861d", "#1b4f9c", "#2f7d52"];
+    const color = paleta[s];
+    const textos = ["Sin definir", "Débil", "Aceptable", "Buena", "Fuerte"];
+    const coincide = this.state.clave.length > 0 && this.state.clave === this.state.claveConf;
+    const valido = s >= 3 && coincide && this.state.acepta && this.state.correo.includes("@");
+
+    const colores = {
+      Activo: { estadoTexto: "#2f7d52", estadoFondo: "#edf7f1" },
+      Pendiente: { estadoTexto: "#b9861d", estadoFondo: "#fdf6e7" },
+      Inactivo: { estadoTexto: "#7a8699", estadoFondo: "#f1f4f8" }
+    };
+    const q = this.state.busqueda.trim().toLowerCase();
+    const lista = Component.LISTA
+      .filter(u => !q || u.usuario.includes(q) || u.nombre.toLowerCase().includes(q))
+      .map(u => Object.assign({}, u, colores[u.estado], {
+        onEditar: () => {
+          const partes = u.nombre.split(" ");
+          this.setState({
+            cajonAbierto: true, editado: u,
+            enviado: false,
+            nombres: partes[0], apellidos: partes.slice(1).join(" "),
+            correo: u.usuario + "@siaf.gob", unidad: u.unidad, perfil: u.perfil,
+            estadoEdit: u.estado
+          });
+        }
+      }));
+    const ed = this.state.editado;
+
+    return {
+      usuarios: lista,
+      totalUsuarios: lista.length,
+      busqueda: this.state.busqueda,
+      onBusqueda: (e) => this.setState({ busqueda: e.target.value }),
+      paginaTexto: "Mostrando " + lista.length + " de " + Component.LISTA.length + " usuarios",
+      formAbierto: this.state.formAbierto,
+      cajonAbierto: !!this.state.cajonAbierto,
+      esEdicion: !!ed,
+      esCreacion: !ed,
+      migaNuevo: !!this.state.cajonAbierto && !ed,
+      tituloCajon: ed ? this.state.nombres + " " + this.state.apellidos : "Nuevo usuario",
+      usuarioEdit: ed ? ed.usuario : "",
+      metaEdit: ed ? ed.usuario + " · alta " + ed.alta : "Paso 1 de 3 · datos de la cuenta",
+      inicialesEdit: ed ? ((this.state.nombres[0] || "") + (this.state.apellidos[0] || "")).toUpperCase() : "+",
+      guardarTexto: ed ? "Guardar cambios" : "Crear usuario",
+      guardarDeshabilitado: !ed && !valido,
+      guardarFondo: (ed || valido) ? "#1b4f9c" : "#c0cbdb",
+      guardarCursor: (ed || valido) ? "pointer" : "not-allowed",
+      exitoTitulo: this.state.exitoEdicion ? "Cambios guardados" : "Solicitud enviada",
+      exitoCuerpo: this.state.exitoEdicion
+        ? "Se actualizaron los datos de " + this.state.exitoUsuario + ". Los cambios de perfil quedan pendientes de aprobación del administrador."
+        : "Revisa el correo " + this.state.exitoUsuario + " para verificar la cuenta. La asignación de permisos queda a cargo del administrador de tu unidad.",
+      estadoEdit: this.state.estadoEdit,
+      onEstadoEdit: (e) => this.setState({ estadoEdit: e.target.value }),
+      perfilOriginal: ed ? ed.perfil : "",
+      perfilCambiado: !!ed && ed.perfil !== this.state.perfil,
+      onCerrarCajon: () => this.setState({ cajonAbierto: false }),
+      onGuardarCajon: () => this.setState({
+        cajonAbierto: false, enviado: true,
+        exitoEdicion: !!ed,
+        exitoUsuario: ed ? ed.usuario : this.state.correo
+      }),
+      tipoDoc: this.state.tipoDoc,
+      numeroDoc: this.state.numeroDoc,
+      onTipoDoc: (e) => this.setState({ tipoDoc: e.target.value }),
+      onNumeroDoc: (e) => this.setState({ numeroDoc: e.target.value }),
+      unidad: this.state.unidad,
+      perfil: this.state.perfil,
+      onUnidad: (e) => this.setState({ unidad: e.target.value }),
+      onPerfil: (e) => this.setState({ perfil: e.target.value }),
+      onNuevo: () => this.setState({
+        cajonAbierto: true, editado: null, enviado: false,
+        nombres: "", apellidos: "", tipoDoc: "DNI", numeroDoc: "", correo: "", clave: "", claveConf: "", acepta: false,
+        unidad: "Dirección de Presupuesto", perfil: "Registrador"
+      }),
+      onCerrar: () => this.setState({ cajonAbierto: false }),
+      navAncho: this.state.menuAbierto ? "224px" : "76px",
+      navTextoOpacidad: this.state.menuAbierto ? 1 : 0,
+      onMenu: () => this.setState(st => ({ menuAbierto: !st.menuAbierto })),
+      nombres: this.state.nombres,
+      apellidos: this.state.apellidos,
+      usuario: usuario,
+      usuarioNota: usuario ? "Disponible." : "Completa nombres y apellidos.",
+      onNombres: (e) => this.setState({ nombres: e.target.value }),
+      onApellidos: (e) => this.setState({ apellidos: e.target.value }),
+      correo: this.state.correo,
+      clave: this.state.clave,
+      claveConf: this.state.claveConf,
+      acepta: this.state.acepta,
+      enviado: this.state.enviado,
+      barra1: s >= 1 ? color : "#dde3ec",
+      barra2: s >= 2 ? color : "#dde3ec",
+      barra3: s >= 3 ? color : "#dde3ec",
+      barra4: s >= 4 ? color : "#dde3ec",
+      fuerzaColor: s === 0 ? "#8b96aa" : color,
+      fuerzaTexto: textos[s],
+      confBorde: this.state.claveConf.length === 0 ? "#d3dbe7" : coincide ? "#a8cdb7" : "#e0a9a0",
+      confColor: this.state.claveConf.length === 0 ? "#8b96aa" : coincide ? "#2f7d52" : "#b3341f",
+      confTexto: this.state.claveConf.length === 0 ? "Repite la contraseña." : coincide ? "Las contraseñas coinciden." : "Las contraseñas no coinciden.",
+      deshabilitado: !valido,
+      botonFondo: valido ? "#1b4f9c" : "#c0cbdb",
+      botonCursor: valido ? "pointer" : "not-allowed",
+      estadoTexto: valido ? "Listo para enviar" : "Completa los campos obligatorios",
+      onCorreo: (e) => this.setState({ correo: e.target.value }),
+      onClave: (e) => this.setState({ clave: e.target.value }),
+      onClaveConf: (e) => this.setState({ claveConf: e.target.value }),
+      onAcepta: (e) => this.setState({ acepta: e.target.checked }),
+      onSubmit: (e) => { e.preventDefault(); this.setState({ enviado: true }); }
+    };
+  }
+}
+</script>
+</body>
+</html>
