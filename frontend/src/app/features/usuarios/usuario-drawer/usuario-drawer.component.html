@@ -1,0 +1,124 @@
+<div class="overlay" (click)="cerrar()">
+  <aside role="dialog" aria-modal="true" [attr.aria-label]="modoEdicion ? 'Editar usuario' : 'Nuevo usuario'" class="panel" (click)="$event.stopPropagation()">
+    <header class="panel__header">
+      <div>
+        <h2>{{ modoEdicion ? (usuario?.nombres + ' ' + usuario?.apellidos) : 'Nuevo usuario' }}</h2>
+        <p class="panel__submeta">
+          {{ modoEdicion ? (usuario?.username + ' · alta ' + usuario?.fechaAlta) : 'Paso 1 de 3 · datos de la cuenta' }}
+        </p>
+      </div>
+      <button type="button" class="btn-icon" (click)="cerrar()" aria-label="Cerrar">✕</button>
+    </header>
+
+    <form class="panel__body" [formGroup]="form">
+      <section class="seccion">
+        <h3>Datos personales</h3>
+        <div class="grid-2">
+          <label>
+            <span>Nombres</span>
+            <input type="text" formControlName="nombres" />
+          </label>
+          <label>
+            <span>Apellidos</span>
+            <input type="text" formControlName="apellidos" />
+          </label>
+
+          @if (!modoEdicion) {
+            <label>
+              <span>Tipo de documento</span>
+              <select formControlName="tipoDocumento">
+                <option value="DNI">DNI</option>
+                <option value="CARNE_EXTRANJERIA">Carné de extranjería</option>
+                <option value="PASAPORTE">Pasaporte</option>
+              </select>
+            </label>
+            <label>
+              <span>Número de documento</span>
+              <input type="text" formControlName="numeroDocumento" placeholder="Sin espacios ni guiones" />
+            </label>
+          }
+
+          <label class="span-2">
+            <span>Correo electrónico institucional</span>
+            <input type="email" formControlName="correo" />
+          </label>
+        </div>
+      </section>
+
+      <section class="seccion">
+        <h3>Asignación</h3>
+        <div class="grid-2">
+          <label class="span-2">
+            <span>Unidad o dependencia</span>
+            <select formControlName="unidadId">
+              <option [value]="1">Dirección de Presupuesto</option>
+              <option [value]="2">Oficina de Contabilidad</option>
+              <option [value]="3">Tesorería</option>
+              <option [value]="4">Abastecimiento</option>
+            </select>
+          </label>
+          <label>
+            <span>Perfil</span>
+            <select formControlName="perfil">
+              <option value="REGISTRADOR">Registrador</option>
+              <option value="AUTORIZADOR">Autorizador</option>
+              <option value="CONSULTA">Consulta</option>
+            </select>
+          </label>
+          @if (modoEdicion) {
+            <label>
+              <span>Estado de la cuenta</span>
+              <select formControlName="estado">
+                <option value="ACTIVO">Activo</option>
+                <option value="PENDIENTE">Pendiente</option>
+                <option value="INACTIVO">Inactivo</option>
+              </select>
+            </label>
+          }
+        </div>
+      </section>
+
+      @if (!modoEdicion) {
+        <section class="seccion">
+          <h3>Acceso</h3>
+          <label class="usuario-generado">
+            <span>Usuario del sistema</span>
+            <input type="text" [value]="usernameGenerado" readOnly aria-readonly="true" tabindex="-1" placeholder="Se genera automáticamente" />
+          </label>
+          <p class="ayuda">
+            {{ usernameGenerado ? ('Inicial del nombre + primer apellido. Disponible.') : 'Completa nombres y apellidos.' }}
+          </p>
+
+          <div class="grid-2">
+            <label>
+              <span>Contraseña</span>
+              <input type="password" formControlName="clave" />
+            </label>
+            <label>
+              <span>Confirmar contraseña</span>
+              <input type="password" formControlName="claveConf" />
+            </label>
+          </div>
+          <p class="ayuda">Seguridad: {{ fuerzaPassword }}/4 · mínimo 10 caracteres, una mayúscula y un número.</p>
+          @if (form.value.claveConf) {
+            <p class="ayuda" [class.ayuda--error]="!contraseniasCoinciden" [class.ayuda--ok]="contraseniasCoinciden">
+              {{ contraseniasCoinciden ? 'Las contraseñas coinciden.' : 'Las contraseñas no coinciden.' }}
+            </p>
+          }
+
+          <label class="checkbox">
+            <input type="checkbox" formControlName="acepta" />
+            <span>Declaro que la información registrada es veraz y acepto los términos de uso y la política de tratamiento de datos personales.</span>
+          </label>
+        </section>
+      }
+    </form>
+
+    <footer class="panel__footer">
+      <button type="button" class="btn btn--secundario" (click)="cerrar()">Cancelar</button>
+      <button type="button" class="btn btn--primario" [disabled]="!formularioValido" (click)="guardar()">
+        {{ modoEdicion ? 'Guardar cambios' : 'Crear usuario' }}
+      </button>
+    </footer>
+  </aside>
+</div>

@@ -1,0 +1,36 @@
+<div class="cabecera">
+  <div>
+    <h1>Usuarios</h1>
+    <p>Administra las cuentas de tu unidad. El registro habilita el perfil; los permisos finales los asigna el administrador.</p>
+  </div>
+  <button type="button" class="btn btn--primario" (click)="abrirCreacion()">+ Crear nuevo usuario</button>
+</div>
+
+<div class="card">
+  <div class="toolbar">
+    <div class="toolbar__titulo">
+      <h2>Usuarios creados</h2>
+      <span class="badge-conteo">{{ totalUsuarios() }}</span>
+    </div>
+    <input
+      type="text"
+      class="buscador"
+      placeholder="Buscar por nombre o usuario"
+      [ngModel]="busqueda()"
+      (ngModelChange)="onBusquedaChange($event)"
+    />
+  </div>
+
+  <app-usuarios-table [usuarios]="usuarios()" (editar)="abrirEdicion($event)"></app-usuarios-table>
+</div>
+
+@if (mensajeExito(); as mensaje) {
+  <div class="banner-exito">
+    <strong>{{ mensaje.titulo }}</strong>
+    <p>{{ mensaje.cuerpo }}</p>
+  </div>
+}
+
+@if (cajonAbierto()) {
+  <app-usuario-drawer [usuario]="editado()" (guardado)="onGuardado()" (cerrado)="cerrarDrawer()"></app-usuario-drawer>
+}
