@@ -1,0 +1,34 @@
+<table class="usuarios-table">
+  <thead>
+    <tr>
+      <th>Usuario</th>
+      <th>Nombre completo</th>
+      <th>Unidad</th>
+      <th>Perfil</th>
+      <th>Estado</th>
+      <th>Alta</th>
+      <th class="usuarios-table__acciones">Acciones</th>
+    </tr>
+  </thead>
+  <tbody>
+    @for (u of usuarios; track u.id) {
+      <tr>
+        <td class="usuarios-table__usuario">{{ u.username }}</td>
+        <td>{{ u.nombres }} {{ u.apellidos }}</td>
+        <td class="usuarios-table__secundario">{{ u.unidad }}</td>
+        <td>{{ u.perfil }}</td>
+        <td>
+          <span class="badge" [class]="'badge--' + u.estado.toLowerCase()">{{ u.estado }}</span>
+        </td>
+        <td class="usuarios-table__secundario">{{ u.fechaAlta }}</td>
+        <td class="usuarios-table__acciones">
+          <button type="button" class="btn btn--secundario" (click)="editar.emit(u)">Editar</button>
+        </td>
+      </tr>
+    } @empty {
+      <tr>
+        <td colspan="7" class="usuarios-table__vacio">No hay usuarios que coincidan con la búsqueda.</td>
+      </tr>
+    }
+  </tbody>
+</table>

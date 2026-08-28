@@ -1,0 +1,39 @@
+<div class="shell">
+  <nav class="sidebar" [class.sidebar--collapsed]="!menuAbierto()">
+    <div class="brand">
+      <span class="brand__mark">S</span>
+      <span class="brand__label">SIAF</span>
+    </div>
+
+    <button type="button" class="menu-toggle" (click)="alternarMenu()" aria-label="Alternar menú">
+      <span class="menu-toggle__icon"><span></span><span></span><span></span></span>
+      <span class="menu-toggle__label">Menú</span>
+    </button>
+
+    <div class="nav-items">
+      <a class="nav-item" routerLink="/inicio" routerLinkActive="nav-item--active">
+        <span class="nav-item__label">Inicio</span>
+      </a>
+      <a class="nav-item" routerLink="/usuarios" routerLinkActive="nav-item--active" aria-current="page">
+        <span class="nav-item__label">Usuarios</span>
+      </a>
+    </div>
+  </nav>
+
+  <div class="content">
+    <header class="breadcrumb-header">
+      <nav aria-label="Miga de pan" class="breadcrumb">
+        <a routerLink="/inicio">Inicio</a>
+        <span>/</span>
+        <span class="breadcrumb__current">Usuarios</span>
+      </nav>
+      <div class="header-actions">
+        <a href="#">Ayuda</a>
+      </div>
+    </header>
+
+    <main class="page">
+      <router-outlet></router-outlet>
+    </main>
+  </div>
+</div>
