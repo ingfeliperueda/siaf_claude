@@ -6,7 +6,7 @@
 <title>Abismo Nerf</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Cinzel:wght@700;900&display=swap" rel="stylesheet">
 <style>
   :root { --bg: #07060a; --fg: #f3e6c8; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #07060a; --fg: #f3e6c8; } }
@@ -477,6 +477,7 @@ const SFX = {
   spike: () => { noise(0.08, 0.05, 2500); },
   heartbeat: () => { beep(60, 0.12, "sine", 0.14); setTimeout(() => beep(55, 0.14, "sine", 0.11), 160); },
   ui: () => beep(660, 0.04, "triangle", 0.04),
+  page: () => { noise(0.18, 0.05, 2500, "bandpass"); beep(900, 0.05, "triangle", 0.02, -300); },
   twang: () => { beep(180, 0.12, "sawtooth", 0.05, -60); noise(0.05, 0.05, 2500); },
   whirr: () => { beep(700, 0.12, "triangle", 0.03, 500); },
   thunk: () => { beep(120, 0.12, "square", 0.06, -40); noise(0.08, 0.06, 600, "lowpass"); },
@@ -537,7 +538,7 @@ let toast = { txt: "", t: 0 }, banner = 0, shake = 0, time = 0, gameT = 0, hitst
 let snapshot = null, lv = null, run = null, visPolyPts = [];
 const hintsShown = new Set();
 const P = {
-  x: 0, y: 0, r: 10, hp: 6, maxHp: 6, speed: 155, weapons: ["pistola"], cur: 0, ammo: {}, reloading: 0,
+  x: 0, y: 0, r: 10, hp: 6, maxHp: 6, speed: 155, weapons: ["pistola"], cur: 0, ammo: {}, res: {}, reloading: 0,
   keys: noKeys(), inv: 0, cd: 0, aim: 0, face: 0, kx: 0, ky: 0, walk: 0, recoil: 0,
   dash: 0, dashCd: 0, dvx: 0, dvy: 0, muzzle: 0, lean: 0, land: 0, exiting: 0,
 };
@@ -627,7 +628,7 @@ function loadLevel(i, retry) {
   toast.t = 0;
   state = "play";
   if (i === 0 && !retry) {
-    hint("start", isTouch() ? "Desliza a la izquierda para moverte y mantén DISPARA a la derecha" : "Muévete con WASD y dispara con ESPACIO (o con el ratón)", 4.5);
+    hint("start", isTouch() ? "Desliza a la izquierda para moverte y mantén DISPARA a la derecha" : `¡Adelante, ${look.name}! Muévete con WASD y dispara con ESPACIO`, 4.5);
   }
 }
 function hint(id, txt, t = 3.5) { if (hintsShown.has(id)) return; hintsShown.add(id); showToast(txt, t); }
@@ -1181,10 +1182,28 @@ const touch = { on: false, joy: null, fire: false, fireId: null, fs: null, aim: 
 let ui = [], uiSel = 0, wantDash = false;
 const MOVE_KEYS = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Tab"];
 addEventListener("keydown", e => {
+  if (e.target === nameInput) return;
   audio();
   if (MOVE_KEYS.includes(e.code)) e.preventDefault();
   if (e.repeat) return;
   keys[e.code] = true;
+  if (state === "story") {
+    if (["Enter", "Space", "ArrowRight", "KeyD"].includes(e.code)) storyNext(1);
+    else if (["ArrowLeft", "KeyA"].includes(e.code)) storyNext(-1);
+    else if (e.code === "Escape") openCustom("new");
+    keys.Space = false; return;
+  }
+  if (state === "custom") {
+    const rows = CUSTOM_ROWS.length + 1;
+    if (["ArrowUp", "KeyW"].includes(e.code)) { customRow = (customRow - 1 + rows) % rows; SFX.ui(); }
+    else if (["ArrowDown", "KeyS"].includes(e.code)) { customRow = (customRow + 1) % rows; SFX.ui(); }
+    else if (["ArrowLeft", "KeyA"].includes(e.code)) customChange(customRow, -1);
+    else if (["ArrowRight", "KeyD"].includes(e.code)) customChange(customRow, 1);
+    else if (e.code === "Enter" || e.code === "Space") { if (customRow === 0) { e.preventDefault(); nameInput.focus(); } else customDone(); }
+    else if (e.code === "KeyR") randomLook();
+    else if (e.code === "Escape" && customFrom === "menu") { saveLook(); state = "title"; uiSel = 0; }
+    keys.Space = false; return;
+  }
   if (state !== "play") {
     if (["ArrowUp", "KeyW"].includes(e.code)) { uiSel = (uiSel - 1 + ui.length) % Math.max(1, ui.length); SFX.ui(); }
     else if (["ArrowDown", "KeyS"].includes(e.code)) { uiSel = (uiSel + 1) % Math.max(1, ui.length); SFX.ui(); }
@@ -1210,7 +1229,7 @@ cv.addEventListener("mousemove", e => {
 });
 cv.addEventListener("mousedown", e => {
   audio(); mouse.x = e.clientX; mouse.y = e.clientY; mouse.last = time;
-  if (state !== "play") { clickUI(e.clientX, e.clientY); return; }
+  if (state !== "play") { if (!clickUI(e.clientX, e.clientY) && state === "story") storyNext(1); return; }
   const hb = hotbar.find(b => e.clientX >= b.x && e.clientX <= b.x + b.w && e.clientY >= b.y && e.clientY <= b.y + b.h);
   if (hb) { if (P.weapons.includes(hb.id)) selectSlot(ORDER.indexOf(hb.id)); return; }
   if (e.button === 0) mouse.down = true;
@@ -1220,7 +1239,7 @@ addEventListener("mouseup", () => { mouse.down = false; });
 cv.addEventListener("wheel", e => { if (state === "play") cycleWeapon(e.deltaY > 0 ? 1 : -1); e.preventDefault(); }, { passive: false });
 cv.addEventListener("contextmenu", e => e.preventDefault());
 const hitBox = (b, x, y) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
-function clickUI(x, y) { const b = ui.find(b => hitBox(b, x, y)); if (b) { SFX.uiGo(); b.fn(); } }
+function clickUI(x, y) { const b = ui.find(b => hitBox(b, x, y)); if (b) { SFX.uiGo(); b.fn(); return true; } return false; }
 
 function btns() {
   const s = clamp(Math.min(VW, VH) / 420, 0.75, 1.15);
@@ -1235,7 +1254,7 @@ function btns() {
 const inBtn = (b, x, y) => Math.hypot(x - b.x, y - b.y) < b.r + 10;
 cv.addEventListener("touchstart", e => {
   e.preventDefault(); audio(); touch.on = true;
-  if (state !== "play") { const t = e.changedTouches[0]; clickUI(t.clientX, t.clientY); return; }
+  if (state !== "play") { const t = e.changedTouches[0]; if (state === "custom") nameInput.blur(); if (!clickUI(t.clientX, t.clientY) && state === "story") storyNext(1); return; }
   const B = btns();
   for (const t of e.changedTouches) {
     const x = t.clientX, y = t.clientY;
@@ -1381,10 +1400,13 @@ function fire() {
     const s = w.darts > 1 ? (i / (w.darts - 1) - 0.5) * w.spread + rand(-0.05, 0.05) : rand(-w.spread, w.spread);
     const ang = a + s, sp = w.speed * (w.darts > 1 ? rand(0.85, 1.1) : 1);
     const kind = w.rocket ? "rocket" : w.pierce ? "bolt" : w.disc ? "disc" : w.grenade ? "grenade" : w.water ? "water" : w.mega ? "mega" : "dart";
+    // los proyectiles de espuma usan la piel de dardos elegida en el editor
+    const foam = kind === "dart" || kind === "bolt" || kind === "mega" || kind === "disc", skin = DART_SKINS[look.dart] || DART_SKINS[0];
     projs.push({ x: mx, y: my, px: mx, py: my, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
       r: { rocket: 6, disc: 5, grenade: 5, water: 4, mega: 7 }[kind] || 3, dmg: w.dmg, owner: "p", kind, w: id, crit: w.crit || 0.08,
       life: { rocket: 2.2, bolt: 1.2, disc: 2.6, grenade: 0.95, water: rand(0.32, 0.42), mega: 1.6 }[kind] || (id === "rifle" ? 1.4 : 1.1),
-      splash: w.splash || 0, color: w.color, pierce: w.pierce || 0, bounces: w.bounces || 0, hits: new Set(), t: 0 });
+      splash: w.splash || 0, color: foam ? skin.body(w.color) : w.color, tip: foam ? skin.tip : "#ff6a00", trail: foam ? skin.trail : null,
+      pierce: w.pierce || 0, bounces: w.bounces || 0, hits: new Set(), t: 0 });
   }
   for (let i = 0; i < 5; i++) parts.push({ x: mx, y: my, vx: Math.cos(a + rand(-0.5, 0.5)) * rand(60, 160), vy: Math.sin(a + rand(-0.5, 0.5)) * rand(60, 160), life: 0.15, max: 0.15, c: "#fff2c0", s: 2, glow: true });
   if (w.rocket) { SFX.rocket(); P.kx -= Math.cos(a) * 140; P.ky -= Math.sin(a) * 140; shake = Math.max(shake, 3); }
@@ -1524,6 +1546,8 @@ function update(rdt) {
   if (state !== prevState) { prevState = state; stateT = 0; } stateT += rdt;
   zoomPunch *= Math.pow(0.015, rdt); camKick.x *= Math.pow(0.0005, rdt); camKick.y *= Math.pow(0.0005, rdt);
   updateAudio(rdt);
+  if (state === "story") story.t += rdt;
+  if (state === "custom") updateCustom(rdt);
   if (state !== "play") { updateFx(rdt * 0.5); return; }
   let dt = rdt;
   if (hitstop > 0) { hitstop -= rdt; dt = rdt * 0.12; }
@@ -1892,6 +1916,7 @@ function updateQueen(m, dt, d, dx, dy, sp, D, chase, setV) {
 function updateProjs(dt) {
   for (const p of projs) {
     p.life -= dt; p.t += dt; p.px = p.x; p.py = p.y; p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.trail) { const tp = dartTrail(p); if (tp) parts.push(tp); }
     if (p.kind === "grenade") { p.vx *= Math.pow(0.35, dt); p.vy *= Math.pow(0.35, dt); if (Math.random() < 0.4) parts.push({ x: p.x, y: p.y - 4, vx: rand(-8, 8), vy: rand(-20, -5), life: 0.3, max: 0.3, c: "rgba(200,200,200,0.4)", s: 2 }); }
     if (p.kind === "water") { p.vx *= Math.pow(0.4, dt); p.vy *= Math.pow(0.4, dt); }
     if (p.kind === "rocket" && Math.random() < 0.8) parts.push({ x: p.x, y: p.y, vx: rand(-20, 20) - p.vx * 0.1, vy: rand(-20, 20) - p.vy * 0.1, life: 0.35, max: 0.35, c: "#ffd6e8", s: rand(2, 4) });
@@ -1959,7 +1984,7 @@ function megaBurst(p) {
   const n = 10, a0 = Math.random();
   for (let i = 0; i < n; i++) {
     const a = a0 + i / n * Math.PI * 2;
-    projs.push({ x: p.x, y: p.y, px: p.x, py: p.y, vx: Math.cos(a) * 380, vy: Math.sin(a) * 380, r: 3, dmg: 1, owner: "p", kind: "dart", w: null, crit: 0.08, life: 0.45, splash: 0, color: p.color, pierce: 0, bounces: 0, hits: new Set(), t: 0 });
+    projs.push({ x: p.x, y: p.y, px: p.x, py: p.y, vx: Math.cos(a) * 380, vy: Math.sin(a) * 380, r: 3, dmg: 1, owner: "p", kind: "dart", w: null, crit: 0.08, life: 0.45, splash: 0, color: p.color, tip: p.tip, trail: p.trail, pierce: 0, bounces: 0, hits: new Set(), t: 0 });
   }
   SFX.pump(); shake = Math.max(shake, 4); flashes.push({ x: p.x, y: p.y, r: 60, life: 0.15 });
   rings.push({ x: p.x, y: p.y, r: 4, max: 40, life: 0.3, c: p.color });
@@ -1968,7 +1993,7 @@ function dropDart(p, bounce) {
   // los dardos de espuma rebotan y se quedan en el suelo un rato
   const a = Math.atan2(p.vy, p.vx) + Math.PI + rand(-0.9, 0.9), sp = rand(40, bounce ? 150 : 95);
   const w = p.w && WEAPONS[p.w], refund = w && Math.random() < 0.5 / w.darts ? p.w : null;
-  bouncers.push({ x: p.px, y: p.py, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, z: 7, vz: rand(50, 120), rot: Math.atan2(p.vy, p.vx), vr: rand(-20, 20), c: p.color, w: refund });
+  bouncers.push({ x: p.px, y: p.py, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, z: 7, vz: rand(50, 120), rot: Math.atan2(p.vy, p.vx), vr: rand(-20, 20), c: p.color, tip: p.tip, w: refund });
   if (bouncers.length > 120) bouncers.shift();
 }
 function updateItems(dt) {
@@ -2029,7 +2054,7 @@ function updateBouncers(dt) {
   }
   for (const b of bouncers) if (b.done) {
     if (b.splash) rings.push({ x: b.x, y: b.y, r: 1, max: 9, life: 0.4, c: "rgba(170,215,255,0.7)" });
-    else decals.push({ x: b.x, y: b.y, kind: "dart", c: b.c, a: b.rot, life: 14, w: b.w });
+    else decals.push({ x: b.x, y: b.y, kind: "dart", c: b.c, tip: b.tip, a: b.rot, life: 14, w: b.w });
   }
   bouncers = bouncers.filter(b => !b.done);
   if (decals.length > 320) decals.splice(decals.findIndex(d => d.kind !== "splat"), 1);
@@ -2118,7 +2143,10 @@ function draw() {
   ui = [];
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = "#050407"; ctx.fillRect(0, 0, cv.width, cv.height);
+  if (state !== "custom" && nameInput.style.display !== "none") { nameInput.style.display = "none"; nameInput.blur(); }
   if (state === "title") { drawTitle(); return; }
+  if (state === "story") { drawStory(); return; }
+  if (state === "custom") { drawCustom(); return; }
   CZ = ZOOM * (1 + zoomPunch);
   const vw = VW / CZ, vh = VH / CZ;
   // cámara adelantada hacia donde apuntas
@@ -2173,7 +2201,7 @@ function draw() {
     if (!inView(d.x, d.y)) continue;
     if (d.kind === "splat") { ctx.globalAlpha = 0.35; ctx.fillStyle = d.c; blob(d.x, d.y, d.r, d.a); }
     else if (d.kind === "trail") { ctx.globalAlpha = 0.25 * Math.min(1, d.life / 2); ctx.fillStyle = d.c; ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, 7); ctx.fill(); }
-    else { ctx.save(); ctx.globalAlpha = Math.min(1, d.life / 2); ctx.translate(d.x, d.y); ctx.rotate(d.a); drawDartShape(d.c); ctx.restore(); }
+    else { ctx.save(); ctx.globalAlpha = Math.min(1, d.life / 2); ctx.translate(d.x, d.y); ctx.rotate(d.a); drawDartShape(d.c, d.tip); ctx.restore(); }
   }
   ctx.globalAlpha = 1;
   for (const it of items) if (inView(it.x, it.y)) drawItem(it);
@@ -2184,7 +2212,7 @@ function draw() {
   }
   for (const b of bouncers) {
     ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.beginPath(); ctx.ellipse(b.x, b.y + 1, 4, 1.5, 0, 0, 7); ctx.fill();
-    ctx.save(); ctx.translate(b.x, b.y - b.z); ctx.rotate(b.rot); drawDartShape(b.c); ctx.restore();
+    ctx.save(); ctx.translate(b.x, b.y - b.z); ctx.rotate(b.rot); drawDartShape(b.c, b.tip); ctx.restore();
   }
   // avisos de ataque
   for (const m of monsters) {
@@ -2449,9 +2477,10 @@ function blob(x, y, r, a) {
   for (let i = 0; i <= 10; i++) { const t = i / 10 * Math.PI * 2, rr = r * (0.7 + 0.3 * Math.sin(t * 3 + a)); ctx.lineTo(x + Math.cos(t) * rr, y + Math.sin(t) * rr); }
   ctx.fill();
 }
-function drawDartShape(c) {
+function drawDartShape(c, tip = "#ff6a00") {
   ctx.fillStyle = c; ctx.fillRect(-6, -1.6, 9, 3.2);
-  ctx.fillStyle = "#ff6a00"; ctx.beginPath(); ctx.arc(4, 0, 2.3, 0, 7); ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.3)"; ctx.fillRect(-6, -1.6, 9, 0.9);
+  ctx.fillStyle = tip; ctx.beginPath(); ctx.arc(4, 0, 2.3, 0, 7); ctx.fill();
 }
 function drawDoor(px, py, c, k) {
   ctx.drawImage(doorSprites[k], px, py, TS, TS);
@@ -2639,23 +2668,56 @@ function drawGun(id, s = 1) {
   }
   ctx.restore();
 }
+function mixHex(a, b, k) {
+  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+  const ch = sh => Math.round(((pa >> sh) & 255) * (1 - k) + ((pb >> sh) & 255) * k);
+  return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
+}
 function drawPlayerBody(x, y, aim, bob, walk) {
+  const suit = SUIT_COLORS[look.suit] || SUIT_COLORS[0], skin = SKIN_TONES[look.skin] || SKIN_TONES[1];
+  const hatC = HAT_COLORS[look.hatColor] || HAT_COLORS[0], pack = PACK_COLORS[look.pack] || PACK_COLORS[0], hy = y + bob;
   ctx.fillStyle = "#2a1f18";
   ctx.beginPath(); ctx.arc(x - 4, y + 7 + Math.sin(walk) * 2, 3, 0, 7); ctx.arc(x + 4, y + 7 - Math.sin(walk) * 2, 3, 0, 7); ctx.fill();
-  const tg = ctx.createRadialGradient(x - 3, y + bob - 3, 1, x, y + bob, 11); tg.addColorStop(0, "#5a97ff"); tg.addColorStop(1, "#1f55b8");
-  ctx.fillStyle = tg; ctx.beginPath(); ctx.arc(x, y + bob, 10, 0, 7); ctx.fill();
-  ctx.strokeStyle = "#173c7a"; ctx.lineWidth = 1.5; ctx.stroke();
-  gloss(x, y + bob, 10);
-  ctx.save(); ctx.translate(x - Math.cos(aim) * 7.5, y - Math.sin(aim) * 7.5 + bob); ctx.rotate(aim);
-  ctx.fillStyle = "#7a4218"; ctx.beginPath(); ctx.roundRect(-4, -5.5, 6, 11, 2); ctx.fill();
+  const tg = ctx.createRadialGradient(x - 3, hy - 3, 1, x, hy, 11); tg.addColorStop(0, mixHex(suit, "#ffffff", 0.3)); tg.addColorStop(1, mixHex(suit, "#000000", 0.35));
+  ctx.fillStyle = tg; ctx.beginPath(); ctx.arc(x, hy, 10, 0, 7); ctx.fill();
+  ctx.strokeStyle = mixHex(suit, "#000000", 0.55); ctx.lineWidth = 1.5; ctx.stroke();
+  gloss(x, hy, 10);
+  // mochila con dardos de la piel elegida
+  ctx.save(); ctx.translate(x - Math.cos(aim) * 7.5, hy - Math.sin(aim) * 7.5); ctx.rotate(aim);
+  ctx.fillStyle = pack; ctx.beginPath(); ctx.roundRect(-4, -5.5, 6, 11, 2); ctx.fill();
   ctx.fillStyle = "rgba(255,255,255,0.18)"; ctx.fillRect(-3.5, -5, 5, 1);
-  for (let i = 0; i < 3; i++) { ctx.fillStyle = "#3fb7ff"; ctx.fillRect(-6.5, -4.2 + i * 3.3, 3.5, 2.2); ctx.fillStyle = "#ff5a00"; ctx.beginPath(); ctx.arc(-6.8, -3.1 + i * 3.3, 1.1, 0, 7); ctx.fill(); }
+  const sk = DART_SKINS[look.dart] || DART_SKINS[0];
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = look.dart === 1 ? `hsl(${i * 120 + 20},90%,60%)` : look.dart === 7 ? ["#5a7a3a", "#7a6a3a", "#3a5a2a"][i] : sk.body("#3fb7ff");
+    ctx.fillRect(-6.5, -4.2 + i * 3.3, 3.5, 2.2);
+    ctx.fillStyle = sk.tip; ctx.beginPath(); ctx.arc(-6.8, -3.1 + i * 3.3, 1.1, 0, 7); ctx.fill();
+  }
   ctx.restore();
-  ctx.fillStyle = "#f2c79b"; ctx.beginPath(); ctx.arc(x, y - 3 + bob, 6, 0, 7); ctx.fill();
-  ctx.fillStyle = "#ffd23f"; ctx.beginPath(); ctx.arc(x, y - 5 + bob, 6.3, Math.PI, 0); ctx.fill();
-  ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.beginPath(); ctx.ellipse(x - 2.5, y - 8 + bob, 2.4, 1, -0.4, 0, 7); ctx.fill();
-  ctx.fillStyle = "#6b5a2a"; ctx.fillRect(x - 6.3, y - 5.5 + bob, 12.6, 1.3);
-  const lx = x + Math.cos(aim) * 3, ly = y - 8 + bob;
+  ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(x, hy - 3, 6, 0, 7); ctx.fill();
+  const dark = mixHex(hatC, "#000000", 0.45), light = mixHex(hatC, "#ffffff", 0.5);
+  if (look.hat === 1) { // gorra con visera hacia donde miras
+    ctx.fillStyle = hatC; ctx.beginPath(); ctx.arc(x, hy - 5, 6.2, Math.PI, 0); ctx.fill();
+    ctx.save(); ctx.translate(x + Math.cos(aim) * 5, hy - 5 + Math.sin(aim) * 2.5); ctx.rotate(aim);
+    ctx.fillStyle = dark; ctx.beginPath(); ctx.ellipse(1.5, 0, 4.5, 3, 0, 0, 7); ctx.fill(); ctx.restore();
+    ctx.fillStyle = light; ctx.beginPath(); ctx.arc(x, hy - 10.8, 1.1, 0, 7); ctx.fill();
+  } else if (look.hat === 2) { // gorro de lana con pompón
+    ctx.fillStyle = hatC; ctx.beginPath(); ctx.arc(x, hy - 5, 6.5, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = light; ctx.fillRect(x - 6.5, hy - 6.4, 13, 2.4);
+    ctx.strokeStyle = dark; ctx.lineWidth = 0.6; for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(x + i * 2.4, hy - 7); ctx.lineTo(x + i * 2, hy - 10.5); ctx.stroke(); }
+    ctx.fillStyle = light; ctx.beginPath(); ctx.arc(x + Math.sin(time * 4) * 0.8, hy - 12, 2.4, 0, 7); ctx.fill();
+  } else if (look.hat === 3) { // cinta ninja
+    ctx.fillStyle = "#2a1a10"; ctx.beginPath(); ctx.arc(x, hy - 5, 6.2, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = hatC; ctx.fillRect(x - 6.3, hy - 6.6, 12.6, 2.4);
+    const bx = x - Math.cos(aim) * 5, by = hy - 5.5 - Math.sin(aim) * 2;
+    ctx.strokeStyle = hatC; ctx.lineWidth = 1.6; ctx.lineCap = "round";
+    for (const o of [-0.35, 0.35]) { const a2 = aim + Math.PI + o; ctx.beginPath(); ctx.moveTo(bx, by); ctx.quadraticCurveTo(bx + Math.cos(a2) * 5, by + Math.sin(a2) * 5 + Math.sin(time * 9 + o * 5) * 1.5, bx + Math.cos(a2) * 9, by + Math.sin(a2) * 9 + Math.sin(time * 9 + o * 5 + 1) * 2); ctx.stroke(); }
+    ctx.lineCap = "butt";
+  } else { // casco minero
+    ctx.fillStyle = hatC; ctx.beginPath(); ctx.arc(x, hy - 5, 6.3, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = dark; ctx.fillRect(x - 6.3, hy - 5.5, 12.6, 1.3);
+  }
+  ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.beginPath(); ctx.ellipse(x - 2.5, hy - 8, 2.4, 1, -0.4, 0, 7); ctx.fill();
+  const lx = x + Math.cos(aim) * 3, ly = hy - (look.hat === 3 ? 5.5 : 8);
   const lg = ctx.createRadialGradient(lx, ly, 0, lx, ly, 6); lg.addColorStop(0, "rgba(255,250,200,0.9)"); lg.addColorStop(1, "rgba(255,250,200,0)");
   ctx.fillStyle = lg; ctx.beginPath(); ctx.arc(lx, ly, 6, 0, 7); ctx.fill();
   ctx.fillStyle = "#fffbe0"; ctx.beginPath(); ctx.arc(lx, ly, 1.8, 0, 7); ctx.fill();
@@ -2680,7 +2742,7 @@ function drawPlayer() {
   if (P.reloading > 0) ctx.rotate(-ease(1 - P.reloading / curW().reload) * Math.PI * 2);
   ctx.translate(0, -swapT * 6); ctx.scale(1 + swapT * 0.3, 1 + swapT * 0.3);
   drawGun(curId());
-  ctx.fillStyle = "#e9b98a"; ctx.beginPath(); ctx.arc(-1.5, 3, 2.1, 0, 7); ctx.arc(6, 1.5, 1.9, 0, 7); ctx.fill();
+  ctx.fillStyle = SKIN_TONES[look.skin] || "#e9b98a"; ctx.beginPath(); ctx.arc(-1.5, 3, 2.1, 0, 7); ctx.arc(6, 1.5, 1.9, 0, 7); ctx.fill();
   ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.beginPath(); ctx.arc(-1.2, 3.6, 1.2, 0, 7); ctx.fill();
   ctx.restore();
   ctx.restore();
@@ -2926,20 +2988,20 @@ function drawProj(p) {
     return;
   }
   ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(Math.atan2(p.vy, p.vx));
-  if (p.kind === "dart") drawDartShape(p.color);
+  if (p.kind === "dart") drawDartShape(p.color, p.tip);
   else if (p.kind === "mega") {
     ctx.fillStyle = "rgba(255,120,220,0.3)"; ctx.fillRect(-26, -3, 18, 6);
-    ctx.save(); ctx.scale(2.3, 2.3); drawDartShape(p.color); ctx.restore();
+    ctx.save(); ctx.scale(2.3, 2.3); drawDartShape(p.color, p.tip); ctx.restore();
     ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, 9 + Math.sin(p.t * 20) * 1.5, 0, 7); ctx.stroke();
   } else if (p.kind === "bolt") {
     ctx.fillStyle = "rgba(255,230,120,0.35)"; ctx.fillRect(-20, -1, 14, 2);
-    ctx.fillStyle = "#ffd23f"; ctx.fillRect(-8, -1.2, 14, 2.4);
-    ctx.fillStyle = "#ff6a00"; ctx.beginPath(); ctx.moveTo(6, -2.6); ctx.lineTo(10.5, 0); ctx.lineTo(6, 2.6); ctx.fill();
+    ctx.fillStyle = p.color; ctx.fillRect(-8, -1.2, 14, 2.4);
+    ctx.fillStyle = p.tip; ctx.beginPath(); ctx.moveTo(6, -2.6); ctx.lineTo(10.5, 0); ctx.lineTo(6, 2.6); ctx.fill();
     ctx.fillStyle = "#3fb7ff"; ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(-11, -3.2); ctx.lineTo(-5, -1); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(-11, 3.2); ctx.lineTo(-5, 1); ctx.closePath(); ctx.fill();
   } else if (p.kind === "disc") {
     ctx.rotate(p.t * 25);
     ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(0, 0, 5.2, 0, 7); ctx.fill();
-    ctx.strokeStyle = "#ffd23f"; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(0, 0, 3.6, 0, 5); ctx.stroke();
+    ctx.strokeStyle = p.tip; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(0, 0, 3.6, 0, 5); ctx.stroke();
     ctx.fillStyle = "#fff"; ctx.fillRect(-0.8, -4.8, 1.6, 2);
   }
   else if (p.kind === "rocket") {
@@ -3127,7 +3189,7 @@ function button(label, x, y, w, h, fn, opts = {}) {
   ui.push({ x, y, w, h, fn, lr: opts.lr });
   const sel = uiSel === idx;
   uiAnim[idx] = (uiAnim[idx] || 0) + ((sel ? 1 : 0) - (uiAnim[idx] || 0)) * Math.min(1, frameDt * 14);
-  const an = uiAnim[idx], ap = ease((stateT - 0.08 - idx * 0.06) * 4);
+  const an = uiAnim[idx], ap = ease((stateT - 0.08 - Math.min(idx, 8) * 0.06) * 4);
   ctx.save(); ctx.globalAlpha = ap; ctx.translate(x + w / 2, y + h / 2 + (1 - ap) * 22); ctx.scale(1 + an * 0.04, 1 + an * 0.04); ctx.translate(-x - w / 2, -y - h / 2);
   if (an > 0.02) { ctx.shadowColor = `rgba(232,163,61,${0.5 * an})`; ctx.shadowBlur = 18 * an; }
   ctx.fillStyle = sel ? "rgba(232,163,61,0.22)" : "rgba(20,16,24,0.85)";
@@ -3222,7 +3284,8 @@ function drawWin() {
   for (let i = 0; i < 3; i++) if (Math.random() < 0.3) parts.push({ x: camX + rand(0, VW / ZOOM), y: camY + rand(0, VH / ZOOM * 0.5), vx: rand(-60, 60), vy: rand(-60, 60), life: 1, max: 1, c: ["#ff4fa3", "#ffd23f", "#3fb7ff", "#9be15d"][i], s: 3 });
   titleText("¡ESCAPASTE DEL ABISMO!", y0 + 20, s ? 24 : 44, "#ffd23f");
   ctx.textAlign = "center"; ctx.fillStyle = "rgba(243,230,200,0.75)"; ctx.font = `${s ? 13 : 16}px system-ui`;
-  ctx.fillText("El Rey Ogro ha caído y la luz del sol vuelve a brillar.", VW / 2, y0 + 56, VW - 32);
+  ctx.fillText(`${look.name} ha rescatado a Chispa y ambos vuelven a la luz del sol.`, VW / 2, y0 + 56, VW - 32);
+  drawDog(VW / 2 - 10, y0 - 18 - Math.abs(Math.sin(time * 5)) * 10, s ? 1.6 : 2.2, time, false);
   let y = y0 + (s ? 100 : 110); const lh = s ? 26 : 30;
   statLine("Dificultad", DIFF().name, y); y += lh;
   statLine("Monstruos derrotados", String(run.kills), y); y += lh;
@@ -3272,7 +3335,7 @@ function drawTitle() {
   ctx.shadowColor = "rgba(255,138,31,0.5)"; ctx.shadowBlur = 30;
   ctx.fillText("ABISMO NERF", VW / 2, ty + (s ? 52 : 84), VW - 24); ctx.shadowBlur = 0;
   ctx.fillStyle = "rgba(243,230,200,0.75)"; ctx.font = `${s ? 13 : 16}px system-ui`;
-  ctx.fillText("10 niveles: encuentra las llaves, abre las puertas y derrota al Rey Ogro.", VW / 2, ty + (s ? 80 : 120), VW - 24);
+  ctx.fillText("10 niveles: encuentra las llaves, abre las puertas y rescata a Chispa del Rey Ogro.", VW / 2, ty + (s ? 80 : 120), VW - 24);
 
   // lanzadores girando
   const gsp = s ? Math.min(42, (VW - 40) / ORDER.length) : 62;
@@ -3282,7 +3345,8 @@ function drawTitle() {
 
   const items = [];
   if (saved && saved.level > 0) items.push({ label: `Continuar · Nivel ${saved.level + 1} (${DIFFS[saved.diff].name})`, fn: continueGame });
-  items.push({ label: "Nueva partida", fn: newGame });
+  items.push({ label: "Nueva partida", fn: startNewGameFlow });
+  items.push({ label: `Personaje: ${look.name}`, fn: () => openCustom("menu") });
   items.push({ label: `Dificultad: ${DIFF().name}`, fn: () => toggleDiff(1), lr: toggleDiff });
   items.push({ label: `Sonido: ${settings.sound ? "Sí" : "No"}`, fn: () => setSound(!settings.sound) });
   items.push({ label: `Efectos: ${settings.fx ? "Altos" : "Bajos"}`, fn: toggleFx });
@@ -3297,6 +3361,343 @@ function drawTitle() {
        "Ratón: apuntar y disparar  ·  1-9, 0, -: cambiar arma  ·  R: recargar  ·  P: pausa"];
   lines.forEach((l, i) => ctx.fillText(l, VW / 2, yb + i * 20, VW - 24));
   if (best > 0) { ctx.fillStyle = "#f5c542"; ctx.font = `bold ${s ? 12 : 14}px system-ui`; ctx.fillText(`Récord: ${best} puntos`, VW / 2, yb + 50); }
+}
+
+// ---------- Historieta del inicio y editor del personaje ----------
+const COMIC_FONT = "Bangers, Impact, 'Arial Black', sans-serif";
+const STORY = [
+  { cap: n => `En el tranquilo pueblo de Villaroca, ${n} jugaba con su lanzador Nerf y su perrita Chispa.` },
+  { cap: () => "De repente, la tierra tembló... ¡y Chispa cayó por una grieta hacia el abismo!" },
+  { cap: () => "Allí abajo reina el malvado Rey Ogro, que ha encerrado a Chispa junto a su trono." },
+  { cap: n => `${n} se puso el casco de minero y cargó sus dardos de espuma.` },
+  { cap: () => "Encuentra las llaves, abre las puertas y llega hasta el trono. ¡La aventura comienza!" },
+];
+const story = { i: 0, t: 0 };
+const halftone = (() => { const c = document.createElement("canvas"); c.width = c.height = 6; const g = c.getContext("2d"); g.fillStyle = "rgba(0,0,0,0.13)"; g.beginPath(); g.arc(3, 3, 1.2, 0, 7); g.fill(); return c; })();
+let halftonePat = null;
+function startNewGameFlow() { story.i = 0; story.t = 0; state = "story"; uiSel = -1; SFX.page(); }
+function storyNext(d = 1) {
+  SFX.page();
+  if (story.i + d < 0) return;
+  if (story.i + d >= STORY.length) { openCustom("new"); return; }
+  story.i += d; story.t = 0;
+}
+function wrapText(text, maxW) {
+  const words = text.split(" "), lines = []; let line = "";
+  for (const w of words) { const t = line ? line + " " + w : w; if (ctx.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t; }
+  if (line) lines.push(line);
+  return lines;
+}
+// perrita Chispa
+function drawDog(x, y, s, t, sad) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  softShadow(0, 7, 10, 3, 0.4);
+  const wag = Math.sin(t * (sad ? 4 : 18)) * (sad ? 0.2 : 0.6);
+  ctx.save(); ctx.translate(-8, -2); ctx.rotate(-0.8 + wag); ctx.fillStyle = "#c97a32"; ctx.fillRect(-1, -7, 2.4, 7); ctx.restore();
+  for (const lx of [-5, -2, 3, 6]) { ctx.fillStyle = "#a8611f"; ctx.fillRect(lx - 1, 2, 2.2, 5 + (lx % 2 ? Math.sin(t * 12) : -Math.sin(t * 12)) * (sad ? 0 : 1)); }
+  const bg = ctx.createRadialGradient(-2, -3, 1, 0, 0, 10); bg.addColorStop(0, "#f2a95a"); bg.addColorStop(1, "#b8661f");
+  ctx.fillStyle = bg; ctx.beginPath(); ctx.ellipse(0, 0, 9, 5.5, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = "#fff0d8"; ctx.beginPath(); ctx.ellipse(1, 2, 5, 2.5, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = "#e5484d"; ctx.fillRect(5, -4, 2, 6);
+  ctx.fillStyle = "#f2a95a"; ctx.beginPath(); ctx.arc(9, -4, 5, 0, 7); ctx.fill();
+  ctx.fillStyle = "#8a4a14"; ctx.beginPath(); ctx.ellipse(6.5, sad ? -3 : -8, 1.8, 3.5, sad ? 0.5 : -0.4, 0, 7); ctx.fill(); ctx.beginPath(); ctx.ellipse(11.5, sad ? -3 : -8, 1.8, 3.5, sad ? -0.5 : 0.4, 0, 7); ctx.fill();
+  ctx.fillStyle = "#fff0d8"; ctx.beginPath(); ctx.ellipse(12, -2.5, 3, 2.2, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = "#1a1010"; ctx.beginPath(); ctx.arc(14.5, -3, 1.1, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(8.5, -5, 0.9, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(11.2, -5, 0.9, 0, 7); ctx.fill();
+  if (sad) { ctx.fillStyle = "#7fd8ff"; ctx.beginPath(); ctx.arc(8.4, -3 + (t * 3 % 1) * 3, 0.8, 0, 7); ctx.fill(); }
+  else { ctx.fillStyle = "#ff7a8a"; ctx.fillRect(12.5, -0.8, 1.6, 2.4); }
+  ctx.restore();
+}
+// el héroe con su aspecto y un lanzador, para la historieta y el editor
+function drawHeroStatic(x, y, aim, gunId, walk = 0) {
+  softShadow(x, y + 10, 13, 5, 0.5);
+  drawPlayerBody(x, y, aim, Math.sin(walk) * 1.2, walk);
+  ctx.save(); ctx.translate(x + Math.cos(aim) * 9, y + Math.sin(aim) * 9 + 2); ctx.rotate(aim);
+  if (Math.abs(aim) > Math.PI / 2) ctx.scale(1, -1);
+  drawGun(gunId);
+  ctx.fillStyle = SKIN_TONES[look.skin]; ctx.beginPath(); ctx.arc(-1.5, 3, 2.1, 0, 7); ctx.arc(6, 1.5, 1.9, 0, 7); ctx.fill();
+  ctx.restore();
+}
+function fakeMon(type, x, y, t) {
+  const d = MON[type];
+  return { type, def: d, x, y, r: d.r, hp: 1, maxHp: 1, t, flash: 0, wind: 0, charging: 0, stun: 0, exclaim: 0, sq: 0, spawnT: 1, alert: 1, ph: "idle", vis: 1 };
+}
+function comicText(txt, x, y, size, rot, fill = "#ffe14a") {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+  ctx.font = `${size}px ${COMIC_FONT}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.lineJoin = "round"; ctx.lineWidth = size * 0.18; ctx.strokeStyle = "#111"; ctx.strokeText(txt, 0, 0);
+  ctx.fillStyle = fill; ctx.fillText(txt, 0, 0); ctx.textBaseline = "alphabetic";
+  ctx.restore();
+}
+function bubble(txt, x, y, w, tailX, tailY) {
+  ctx.font = `15px ${COMIC_FONT}`; const lines = wrapText(txt, w - 16), h = lines.length * 17 + 12;
+  ctx.fillStyle = "#fff"; ctx.strokeStyle = "#111"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.ellipse(x, y, w / 2, h / 2 + 6, 0, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x - 8, y + h / 2); ctx.lineTo(tailX, tailY); ctx.lineTo(x + 8, y + h / 2 + 2); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#fff"; ctx.fillRect(x - 7, y + h / 2 - 3, 14, 5);
+  ctx.fillStyle = "#111"; ctx.textAlign = "center";
+  lines.forEach((l, i) => ctx.fillText(l, x, y - h / 2 + 18 + i * 17));
+}
+// escenas de la historieta, dibujadas en un espacio de 400x250
+function drawScene(i, t) {
+  if (i === 0 || i === 1) {
+    const dark = i === 1 ? 0.35 : 0, sx = i === 1 ? Math.sin(t * 55) * 2.2 * Math.max(0, 1.2 - t * 0.3) : 0;
+    ctx.save(); ctx.translate(sx, 0);
+    const sky = ctx.createLinearGradient(0, 0, 0, 200); sky.addColorStop(0, i ? "#5b7aa0" : "#6fc0ff"); sky.addColorStop(1, i ? "#a9b8c8" : "#dff3ff");
+    ctx.fillStyle = sky; ctx.fillRect(-10, 0, 420, 250);
+    ctx.save(); ctx.translate(340, 48); ctx.rotate(t * 0.4); ctx.fillStyle = "rgba(255,220,90,0.5)"; for (let k = 0; k < 10; k++) { ctx.rotate(Math.PI / 5); ctx.fillRect(28, -2, 14, 4); } ctx.restore();
+    ctx.fillStyle = "#ffd84a"; ctx.beginPath(); ctx.arc(340, 48, 24, 0, 7); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    for (const [cx, cy, s2] of [[80, 40, 1], [220, 30, 0.8], [400, 70, 0.7]]) { const xx = (cx + t * 10 * s2) % 460 - 30; ctx.beginPath(); ctx.ellipse(xx, cy, 26 * s2, 10 * s2, 0, 0, 7); ctx.ellipse(xx + 16 * s2, cy - 6 * s2, 16 * s2, 10 * s2, 0, 0, 7); ctx.fill(); }
+    ctx.fillStyle = "#5fae3e"; ctx.beginPath(); ctx.ellipse(110, 210, 200, 60, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = "#77c652"; ctx.beginPath(); ctx.ellipse(330, 215, 180, 55, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = "#8bd45e"; ctx.fillRect(-10, 195, 420, 60);
+    // casa y árbol
+    ctx.fillStyle = "#e8c39e"; ctx.fillRect(28, 140, 64, 56); ctx.fillStyle = "#c8452e"; ctx.beginPath(); ctx.moveTo(20, 142); ctx.lineTo(60, 108); ctx.lineTo(100, 142); ctx.fill();
+    ctx.fillStyle = "#7a4a2a"; ctx.fillRect(52, 168, 14, 28); ctx.fillStyle = "#9fe0ff"; ctx.fillRect(34, 152, 13, 12); ctx.fillRect(74, 152, 13, 12);
+    ctx.fillStyle = "#6b4226"; ctx.fillRect(352, 150, 10, 48); ctx.fillStyle = "#3f9a3a"; ctx.beginPath(); ctx.arc(357, 138, 26, 0, 7); ctx.fill(); ctx.fillStyle = "#56b84a"; ctx.beginPath(); ctx.arc(348, 130, 14, 0, 7); ctx.fill();
+    if (dark) { ctx.fillStyle = `rgba(20,20,40,${dark})`; ctx.fillRect(-10, 0, 420, 250); }
+    if (i === 0) {
+      ctx.save(); ctx.translate(165, 188); ctx.scale(2.6, 2.6); drawHeroStatic(0, 0, -0.1, "pistola", t * 6); ctx.restore();
+      drawDog(262, 200 - Math.abs(Math.sin(t * 5)) * 16, 2.2, t, false);
+      const dx = 205 + (t * 170) % 150; ctx.save(); ctx.translate(dx, 172); ctx.scale(2, 2); drawDartShape(DART_SKINS[look.dart].body("#ff8a1f"), DART_SKINS[look.dart].tip); ctx.restore();
+      comicText("¡FIUM!", 230, 140, 20, -0.15, "#ffffff");
+    } else {
+      const k = Math.min(1, t * 0.9);
+      ctx.fillStyle = "#1a0f08";
+      ctx.beginPath(); ctx.moveTo(210 - 70 * k, 250); ctx.lineTo(200 - 30 * k, 215); ctx.lineTo(220 - 18 * k, 205); ctx.lineTo(205, 196); ctx.lineTo(235 + 16 * k, 205); ctx.lineTo(228 + 34 * k, 220); ctx.lineTo(250 + 70 * k, 250); ctx.closePath(); ctx.fill();
+      for (let r = 0; r < 6; r++) { const a = r * 1.1 + t * 3; ctx.fillStyle = "#6b4a2a"; ctx.fillRect(220 + Math.cos(a) * 40, 200 - ((t * 60 + r * 20) % 60), 4, 4); }
+      const fall = Math.min(1, t * 0.4);
+      ctx.save(); ctx.translate(222, 190 + fall * 70); ctx.rotate(fall * 3); ctx.globalAlpha = 1 - fall * 0.8; drawDog(0, 0, 2.2 * (1 - fall * 0.5), t, true); ctx.restore();
+      ctx.save(); ctx.translate(120, 188); ctx.scale(2.6, 2.6); drawHeroStatic(0, 0, 0.35, "pistola", 0); ctx.restore();
+      comicText("¡CRAAAC!", 290, 90, 40 + Math.sin(t * 12) * 3, -0.18);
+      comicText("¡CHISPA!", 110, 120, 22, 0.1, "#ffffff");
+    }
+    ctx.restore();
+  } else if (i === 2) {
+    const bg = ctx.createRadialGradient(200, 140, 20, 200, 140, 260); bg.addColorStop(0, "#4a2a3a"); bg.addColorStop(1, "#120a12");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, 400, 250);
+    ctx.fillStyle = "#1f1218"; for (let k = 0; k < 9; k++) { ctx.beginPath(); ctx.moveTo(k * 48 - 10, 0); ctx.lineTo(k * 48 + 8, 30 + (k % 3) * 14); ctx.lineTo(k * 48 + 26, 0); ctx.fill(); }
+    ctx.fillStyle = "#2a1a20"; ctx.fillRect(0, 205, 400, 45);
+    for (const tx of [60, 340]) { ctx.fillStyle = "#3a2a1a"; ctx.fillRect(tx - 3, 110, 6, 30); flame(tx, 112, 7, 22 + Math.sin(t * 12 + tx) * 3, Math.sin(t * 5) * 2, "#ff8a1f"); flame(tx, 112, 3.5, 13, 0, "#ffe08a");
+      const g = ctx.createRadialGradient(tx, 100, 0, tx, 100, 70); g.addColorStop(0, "rgba(255,150,60,0.35)"); g.addColorStop(1, "rgba(255,150,60,0)"); ctx.fillStyle = g; ctx.fillRect(tx - 70, 30, 140, 140); }
+    ctx.fillStyle = "#5a2a6a"; ctx.fillRect(160, 80, 80, 110); ctx.fillStyle = "#d9b04a"; ctx.fillRect(156, 76, 88, 8); ctx.fillRect(156, 186, 88, 6);
+    for (const cx of [170, 200, 230]) { ctx.beginPath(); ctx.moveTo(cx - 8, 76); ctx.lineTo(cx, 60); ctx.lineTo(cx + 8, 76); ctx.fill(); }
+    ctx.save(); ctx.translate(200, 150); ctx.scale(2.5, 2.5); drawMonster(fakeMon("O", 0, 0, t)); ctx.restore();
+    ctx.save(); ctx.translate(318, 190); drawDog(0, 0, 1.7, t, true);
+    ctx.strokeStyle = "#8a8a94"; ctx.lineWidth = 2.5; for (let k = -2; k <= 2; k++) { ctx.beginPath(); ctx.moveTo(k * 9, -38); ctx.lineTo(k * 9, 14); ctx.stroke(); }
+    ctx.fillStyle = "#5a5a64"; ctx.fillRect(-24, -42, 48, 6); ctx.fillRect(-24, 12, 48, 5); ctx.restore();
+    ctx.save(); ctx.translate(80, 60); ctx.scale(1.8, 1.8); drawMonster(fakeMon("t", Math.sin(t * 2) * 10, 0, t)); ctx.restore();
+    ctx.save(); ctx.translate(290, 50); ctx.scale(1.5, 1.5); drawMonster(fakeMon("t", Math.cos(t * 2) * 8, 0, t + 1)); ctx.restore();
+    bubble("¡JA, JA, JA! ¡Nadie llegará jamás a mi trono!", 120, 115, 140, 170, 140);
+  } else if (i === 3) {
+    const bg = ctx.createLinearGradient(0, 0, 0, 250); bg.addColorStop(0, "#2a2018"); bg.addColorStop(1, "#0e0a08");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, 400, 250);
+    ctx.fillStyle = "#6b4a2a"; ctx.fillRect(40, 30, 18, 220); ctx.fillRect(342, 30, 18, 220); ctx.fillRect(30, 26, 340, 18);
+    ctx.fillStyle = "rgba(255,220,170,0.15)"; ctx.fillRect(30, 26, 340, 3);
+    const lg = ctx.createRadialGradient(200, 120, 10, 200, 120, 200); lg.addColorStop(0, "rgba(255,240,190,0.4)"); lg.addColorStop(1, "rgba(255,240,190,0)"); ctx.fillStyle = lg; ctx.fillRect(0, 0, 400, 250);
+    ctx.save(); ctx.translate(200, 160); ctx.scale(4.2, 4.2); drawHeroStatic(0, 0, -Math.PI / 2 + Math.sin(t * 1.5) * 0.4, ["pistola", "escopeta", "semi", "rifle"][Math.floor(t * 0.8) % 4], 0); ctx.restore();
+    ORDER.slice(0, 6).forEach((id, k) => { const a = k / 6 * Math.PI * 2 + t * 0.7; ctx.save(); ctx.translate(200 + Math.cos(a) * 140, 140 + Math.sin(a) * 60); ctx.rotate(Math.sin(t * 2 + k) * 0.3); drawGun(id, 2); ctx.restore(); });
+    bubble("¡Aguanta, Chispa! ¡Voy a por ti!", 300, 52, 150, 230, 95);
+  } else {
+    const bg = ctx.createLinearGradient(0, 0, 0, 250); bg.addColorStop(0, "#ff9a5a"); bg.addColorStop(0.5, "#b0507a"); bg.addColorStop(1, "#3a2050");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, 400, 250);
+    ctx.fillStyle = "#4a3a2a"; ctx.fillRect(0, 175, 400, 75);
+    const hg = ctx.createRadialGradient(200, 200, 5, 200, 200, 110); hg.addColorStop(0, "#000"); hg.addColorStop(0.7, "#0a0505"); hg.addColorStop(1, "rgba(10,5,5,0)");
+    ctx.fillStyle = hg; ctx.beginPath(); ctx.ellipse(200, 205, 120, 42, 0, 0, 7); ctx.fill();
+    const k = Math.min(1, t * 0.6), hy = 40 + k * 150;
+    ctx.strokeStyle = "rgba(255,255,255,0.6)"; ctx.lineWidth = 2;
+    for (let s2 = -2; s2 <= 2; s2++) { ctx.beginPath(); ctx.moveTo(200 + s2 * 12, hy - 40 - Math.abs(s2) * 6); ctx.lineTo(200 + s2 * 12, hy - 75 - Math.abs(s2) * 6); ctx.stroke(); }
+    ctx.save(); ctx.translate(200, hy); ctx.rotate(Math.sin(t * 3) * 0.3); ctx.scale(3.2 * (1 - k * 0.45), 3.2 * (1 - k * 0.45)); drawHeroStatic(0, 0, Math.PI / 2, "pistola", 0); ctx.restore();
+    ctx.fillStyle = "#4a3a2a"; ctx.beginPath(); ctx.ellipse(200, 222, 125, 14, 0, 0, Math.PI); ctx.fill();
+    comicText("¡ALLÁ VOY!", 110, 70, 34, -0.15);
+  }
+}
+function drawStory() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const g = ctx.createRadialGradient(VW / 2, VH / 2, 0, VW / 2, VH / 2, Math.max(VW, VH) * 0.7);
+  g.addColorStop(0, "#2a1c12"); g.addColorStop(1, "#060406"); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+  const s = sm(), pw = Math.min(VW - 28, 780), ph = Math.min(VH - (s ? 210 : 190), pw * 0.625), px = VW / 2 - pw / 2, py = Math.max(s ? 96 : 84, VH / 2 - ph / 2 - 20);
+  const k = easeBack(story.t * 2.6), a = clamp(story.t * 4, 0, 1), sc = Math.min(pw / 400, ph / 250);
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.translate(VW / 2, py + ph / 2); ctx.rotate((1 - k) * 0.08 * (story.i % 2 ? 1 : -1)); ctx.scale(0.82 + 0.18 * k, 0.82 + 0.18 * k); ctx.translate(-VW / 2, -(py + ph / 2));
+  ctx.fillStyle = "#f6f0e0"; ctx.fillRect(px - 10, py - 10, pw + 20, ph + 20);
+  ctx.save(); ctx.beginPath(); ctx.rect(px, py, pw, ph); ctx.clip();
+  ctx.fillStyle = "#000"; ctx.fillRect(px, py, pw, ph);
+  ctx.translate(px + (pw - 400 * sc) / 2, py + (ph - 250 * sc) / 2); ctx.scale(sc, sc);
+  drawScene(story.i, story.t);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (!halftonePat) halftonePat = ctx.createPattern(halftone, "repeat");
+  ctx.fillStyle = halftonePat; ctx.fillRect(px, py, pw, ph);
+  ctx.restore();
+  ctx.lineWidth = 5; ctx.strokeStyle = "#111"; ctx.strokeRect(px, py, pw, ph);
+  // cuadro de texto amarillo
+  ctx.font = `${s ? 15 : 19}px ${COMIC_FONT}`;
+  const capW = Math.min(pw * (s ? 0.92 : 0.6), 440), lines = wrapText(STORY[story.i].cap(look.name || "Alex"), capW - 24), capH = lines.length * (s ? 18 : 23) + 18;
+  ctx.save(); ctx.translate(px - (s ? 4 : 14), py - (s ? 40 : 22)); ctx.rotate(-0.015);
+  ctx.fillStyle = "#ffe27a"; ctx.strokeStyle = "#111"; ctx.lineWidth = 3; ctx.fillRect(0, 0, capW, capH); ctx.strokeRect(0, 0, capW, capH);
+  ctx.fillStyle = "#1a1208"; ctx.textAlign = "left";
+  const shown = Math.floor(story.t * 60);
+  let used = 0;
+  lines.forEach((l, j) => { const part = l.slice(0, Math.max(0, shown - used)); used += l.length; ctx.fillText(part, 12, (s ? 22 : 27) + j * (s ? 18 : 23)); });
+  ctx.restore();
+  ctx.restore();
+  // páginas y controles
+  const dy = py + ph + 30;
+  for (let j = 0; j < STORY.length; j++) { ctx.fillStyle = j === story.i ? "#ffd23f" : "rgba(243,230,200,0.25)"; ctx.beginPath(); ctx.arc(VW / 2 + (j - (STORY.length - 1) / 2) * 18, dy, j === story.i ? 5 : 4, 0, 7); ctx.fill(); }
+  ctx.globalAlpha = 0.55 + 0.45 * Math.sin(time * 4); ctx.fillStyle = "#f3e6c8"; ctx.font = `${s ? 13 : 15}px system-ui`; ctx.textAlign = "center";
+  ctx.fillText(story.i < STORY.length - 1 ? (isTouch() ? "Toca para continuar" : "Haz clic o pulsa ENTER para continuar") : (isTouch() ? "Toca para crear tu personaje" : "Pulsa ENTER para crear tu personaje"), VW / 2, dy + 28, VW - 24);
+  ctx.globalAlpha = 1;
+  ui = [];
+  button("Saltar ›", VW - 120, 16, 104, 36, () => openCustom("new"), { size: 14 });
+}
+
+// --- editor del personaje ---
+const SUIT_COLORS = ["#3d7ff0", "#e5484d", "#2fbf71", "#9b5cf0", "#ff8a1f", "#20b8c9", "#e85aa8", "#4a4a58"];
+const SKIN_TONES = ["#ffdfc4", "#f2c79b", "#d9a066", "#a86b3c", "#6b4226"];
+const HATS = ["Casco minero", "Gorra", "Gorro de lana", "Cinta ninja"];
+const HAT_COLORS = ["#ffd23f", "#e5484d", "#3e8ef7", "#2fbf71", "#ff8ad8", "#f3f3f3", "#2a2a2a"];
+const PACK_COLORS = ["#7a4218", "#2f2f38", "#2fbf71", "#e5484d", "#3e8ef7", "#f5c542"];
+const DART_SKINS = [
+  { name: "Clásico",   body: c => c,         tip: "#ff6a00" },
+  { name: "Arcoíris",  body: () => `hsl(${Math.floor(time * 300 + Math.random() * 80) % 360},90%,60%)`, tip: "#ffffff", trail: "rainbow" },
+  { name: "Fuego",     body: () => "#ff5a1f", tip: "#ffd23f", trail: "fire" },
+  { name: "Hielo",     body: () => "#9fe8ff", tip: "#ffffff", trail: "ice" },
+  { name: "Neón",      body: () => "#ff2bd6", tip: "#3bff9d", trail: "neon" },
+  { name: "Dorado",    body: () => "#f5c542", tip: "#fff3b0", trail: "gold" },
+  { name: "Galaxia",   body: () => "#6a3bd8", tip: "#ff9cf0", trail: "stars" },
+  { name: "Camuflaje", body: () => ["#5a7a3a", "#7a6a3a", "#3a5a2a"][Math.floor(Math.random() * 3)], tip: "#c9c08a" },
+  { name: "Sandía",    body: () => "#3fbf4f", tip: "#ff4f6a" },
+];
+const NAMES = ["Alex", "Sam", "Leo", "Mia", "Noa", "Iker", "Vega", "Teo", "Lía", "Max", "Luna", "Hugo"];
+const LOOK_DEFAULT = { name: "Alex", suit: 0, skin: 1, hat: 0, hatColor: 0, pack: 0, dart: 0 };
+const look = Object.assign({}, LOOK_DEFAULT, store.get("look", {}));
+const saveLook = () => store.set("look", look);
+// partículas de estela según la piel de los dardos
+function dartTrail(p) {
+  const tr = p.trail; if (!tr || Math.random() > 0.55) return null;
+  const base = { x: p.x + rand(-1.5, 1.5), y: p.y + rand(-1.5, 1.5), vx: -p.vx * 0.05 + rand(-15, 15), vy: -p.vy * 0.05 + rand(-15, 15), life: 0.3, max: 0.3, s: 1.8 };
+  if (tr === "fire") return { ...base, c: Math.random() < 0.5 ? "#ff8a1f" : "#ffd23f", glow: true, vy: base.vy - 25 };
+  if (tr === "ice") return { ...base, c: "#e8fbff", s: 1.4, life: 0.4, max: 0.4, glow: true };
+  if (tr === "rainbow") return { ...base, c: `hsl(${Math.floor(time * 500) % 360},90%,65%)` };
+  if (tr === "neon") return { ...base, c: "#ff2bd6", glow: true, life: 0.2, max: 0.2 };
+  if (tr === "gold") return { ...base, c: "#ffe27a", glow: true, s: 1.4 };
+  if (tr === "stars") return { ...base, c: ["#ffffff", "#ff9cf0", "#9cc8ff"][Math.floor(Math.random() * 3)], s: 1.3, life: 0.5, max: 0.5, glow: true };
+  return null;
+}
+let customFrom = "new", customRow = 0, previewDarts = [], previewParts = [], previewT = 0;
+const nameInput = document.createElement("input");
+nameInput.maxLength = 12; nameInput.placeholder = "Tu nombre"; nameInput.autocomplete = "off"; nameInput.spellcheck = false;
+Object.assign(nameInput.style, { position: "fixed", display: "none", zIndex: 2, boxSizing: "border-box", padding: "0 12px", borderRadius: "8px",
+  border: "1px solid rgba(243,230,200,0.3)", background: "rgba(10,8,14,0.85)", color: "#fff3dc", font: "bold 16px system-ui, sans-serif", outline: "none" });
+document.body.appendChild(nameInput);
+nameInput.addEventListener("input", () => { look.name = nameInput.value.slice(0, 12); saveLook(); });
+nameInput.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === "Escape") nameInput.blur(); e.stopPropagation(); });
+nameInput.addEventListener("focus", () => { customRow = 0; });
+nameInput.addEventListener("blur", () => { if (!look.name.trim()) { look.name = "Alex"; nameInput.value = look.name; saveLook(); } });
+function openCustom(from) { customFrom = from; state = "custom"; uiSel = -1; customRow = 1; nameInput.value = look.name; previewDarts = []; previewParts = []; SFX.uiGo(); }
+function customDone() {
+  if (!look.name.trim()) look.name = "Alex";
+  saveLook(); nameInput.blur(); nameInput.style.display = "none";
+  if (customFrom === "new") newGame(); else { state = "title"; uiSel = 0; }
+}
+function randomLook() {
+  const r = n => Math.floor(Math.random() * n);
+  Object.assign(look, { name: NAMES[r(NAMES.length)], suit: r(SUIT_COLORS.length), skin: r(SKIN_TONES.length), hat: r(HATS.length), hatColor: r(HAT_COLORS.length), pack: r(PACK_COLORS.length), dart: r(DART_SKINS.length) });
+  nameInput.value = look.name; saveLook(); SFX.secret();
+}
+const CUSTOM_ROWS = [
+  { label: "Nombre" },
+  { label: "Traje", key: "suit", list: SUIT_COLORS },
+  { label: "Piel", key: "skin", list: SKIN_TONES },
+  { label: "Sombrero", key: "hat", names: HATS },
+  { label: "Color del sombrero", key: "hatColor", list: HAT_COLORS },
+  { label: "Mochila", key: "pack", list: PACK_COLORS },
+  { label: "Piel de los dardos", key: "dart", names: DART_SKINS.map(d => d.name) },
+];
+function customChange(row, d) {
+  const R = CUSTOM_ROWS[row];
+  if (!R) return;
+  if (!R.key) { look.name = NAMES[(NAMES.indexOf(look.name) + d + NAMES.length) % NAMES.length]; nameInput.value = look.name; }
+  else { const n = (R.list || R.names).length; look[R.key] = (look[R.key] + d + n) % n; }
+  saveLook(); SFX.ui();
+}
+function updateCustom(dt) {
+  previewT -= dt;
+  if (previewT <= 0) {
+    previewT = 0.4;
+    const sk = DART_SKINS[look.dart], a = Math.sin(time * 0.9) * 0.5;
+    previewDarts.push({ x: 0, y: 0, vx: Math.cos(a) * 260, vy: Math.sin(a) * 260, life: 0.9, color: sk.body(WEAPONS.pistola.color), tip: sk.tip, trail: sk.trail });
+  }
+  for (const p of previewDarts) { p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; const tp = dartTrail(p); if (tp) previewParts.push(tp); }
+  previewDarts = previewDarts.filter(p => p.life > 0);
+  for (const p of previewParts) { p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; }
+  previewParts = previewParts.filter(p => p.life > 0);
+}
+function drawCustom() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const g = ctx.createRadialGradient(VW / 2, VH * 0.4, 0, VW / 2, VH * 0.4, Math.max(VW, VH) * 0.7);
+  g.addColorStop(0, "#2a1c12"); g.addColorStop(1, "#060406"); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+  ui = [];
+  const s = VW < 760, k = ease(stateT * 3);
+  ctx.globalAlpha = k;
+  titleText("TU PERSONAJE", s ? 44 : 58, s ? 24 : 34);
+  // vista previa
+  const pvW = s ? Math.min(VW - 24, 360) : 300, pvH = s ? 170 : 380, pvX = s ? VW / 2 - pvW / 2 : VW / 2 - 370, pvY = s ? 64 : 90;
+  panel(pvX, pvY, pvW, pvH, 12);
+  const cx = pvX + pvW * (s ? 0.35 : 0.42), cy = pvY + pvH * 0.56, hs = s ? 3.6 : 5.6, aim = Math.sin(time * 0.9) * 0.5;
+  ctx.save(); ctx.beginPath(); ctx.rect(pvX, pvY, pvW, pvH); ctx.clip();
+  const lg = ctx.createRadialGradient(cx, cy, 0, cx, cy, pvW * 0.6); lg.addColorStop(0, "rgba(255,220,160,0.18)"); lg.addColorStop(1, "rgba(255,220,160,0)"); ctx.fillStyle = lg; ctx.fillRect(pvX, pvY, pvW, pvH);
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(hs, hs);
+  drawHeroStatic(0, Math.sin(time * 2.6) * 0.4, aim, "pistola", 0);
+  const ox = Math.cos(aim) * 20, oy = Math.sin(aim) * 20 + 2;
+  for (const p of previewParts) { ctx.globalAlpha = k * Math.max(0, p.life / p.max); ctx.fillStyle = p.c; ctx.fillRect(ox + p.x / hs * 0.9 - p.s / 2, oy + p.y / hs * 0.9 - p.s / 2, p.s, p.s); }
+  ctx.globalAlpha = k;
+  for (const p of previewDarts) { ctx.save(); ctx.translate(ox + p.x / hs * 0.9, oy + p.y / hs * 0.9); ctx.rotate(Math.atan2(p.vy, p.vx)); drawDartShape(p.color, p.tip); ctx.restore(); }
+  ctx.restore();
+  ctx.restore();
+  ctx.fillStyle = "#fff3dc"; ctx.font = `bold ${s ? 15 : 18}px system-ui`; ctx.textAlign = "center";
+  ctx.fillText(look.name || "Alex", pvX + pvW * (s ? 0.35 : 0.5), pvY + pvH - 14);
+  // opciones
+  const oX = s ? 12 : VW / 2 - 50, oW = s ? VW - 24 : 420, rowH = s ? 46 : 50, oY = s ? pvY + pvH + 10 : 90;
+  CUSTOM_ROWS.forEach((R, r) => {
+    const y = oY + r * rowH, sel = customRow === r;
+    ctx.fillStyle = sel ? "rgba(232,163,61,0.16)" : "rgba(20,16,24,0.7)"; ctx.strokeStyle = sel ? "#e8a33d" : "rgba(243,230,200,0.12)"; ctx.lineWidth = sel ? 1.5 : 1;
+    ctx.beginPath(); ctx.roundRect(oX, y, oW, rowH - 6, 9); ctx.fill(); ctx.stroke();
+    ui.push({ x: oX, y, w: s ? 92 : 128, h: rowH - 6, fn: () => { customRow = r; if (!R.key) nameInput.focus(); } });
+    ctx.fillStyle = "rgba(243,230,200,0.8)"; ctx.font = `bold ${s ? 11 : 13}px system-ui`; ctx.textAlign = "left";
+    ctx.fillText(R.label, oX + 12, y + (rowH - 6) / 2 + 4, s ? 84 : 120);
+    const x0 = oX + (s ? 96 : 134), cw = oW - (x0 - oX) - 10, mid = y + (rowH - 6) / 2;
+    if (!R.key) {
+      Object.assign(nameInput.style, { display: "block", left: x0 + "px", top: (y + 5) + "px", width: (cw - 44) + "px", height: (rowH - 16) + "px" });
+      button("🎲", x0 + cw - 38, y + 5, 38, rowH - 16, () => { customRow = 0; customChange(0, 1 + Math.floor(Math.random() * 5)); }, { size: 15 });
+    } else if (R.list) {
+      const n = R.list.length, sw = Math.min(30, (cw - 4) / n - 6);
+      R.list.forEach((c, j) => {
+        const sx = x0 + j * (sw + 6) + sw / 2, on = look[R.key] === j;
+        ui.push({ x: sx - sw / 2 - 2, y: mid - sw / 2 - 2, w: sw + 4, h: sw + 4, fn: () => { customRow = r; look[R.key] = j; saveLook(); SFX.ui(); } });
+        ctx.fillStyle = c; ctx.beginPath(); ctx.arc(sx, mid, sw / 2 - (on ? 0 : 2), 0, 7); ctx.fill();
+        gloss(sx, mid, sw / 2 - (on ? 0 : 2), 0.3);
+        ctx.strokeStyle = on ? "#fff" : "rgba(0,0,0,0.5)"; ctx.lineWidth = on ? 2.5 : 1; ctx.stroke();
+      });
+    } else {
+      const name = R.names[look[R.key]];
+      button("‹", x0, y + 5, 34, rowH - 16, () => { customRow = r; customChange(r, -1); }, { size: 18 });
+      button("›", x0 + cw - 34, y + 5, 34, rowH - 16, () => { customRow = r; customChange(r, 1); }, { size: 18 });
+      ctx.fillStyle = "#fff3dc"; ctx.font = `bold ${s ? 13 : 15}px system-ui`; ctx.textAlign = "center";
+      if (R.key === "dart") {
+        const sk = DART_SKINS[look.dart];
+        ctx.fillText(name, x0 + cw / 2 - 18, mid + 5);
+        ctx.save(); ctx.translate(x0 + cw / 2 + ctx.measureText(name).width / 2 + 4, mid); ctx.scale(1.8, 1.8); drawDartShape(sk.body(WEAPONS.pistola.color), sk.tip); ctx.restore();
+      } else ctx.fillText(name, x0 + cw / 2, mid + 5);
+    }
+  });
+  const by = oY + CUSTOM_ROWS.length * rowH + 6, bw = (oW - 10) / 2;
+  button("Aleatorio", oX, by, bw, 44, randomLook, { size: 15 });
+  button(customFrom === "new" ? "¡A jugar! ›" : "Guardar ›", oX + bw + 10, by, bw, 44, customDone, { size: 16 });
+  if (customRow === CUSTOM_ROWS.length) { ctx.strokeStyle = "#e8a33d"; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(oX + bw + 8, by - 2, bw + 4, 48, 11); ctx.stroke(); }
+  if (!s) { ctx.fillStyle = "rgba(243,230,200,0.5)"; ctx.font = "13px system-ui"; ctx.textAlign = "center"; ctx.fillText("↑↓ elegir fila  ·  ←→ cambiar  ·  ENTER jugar", VW / 2, by + 74); }
+  ctx.globalAlpha = 1;
 }
 
 // ---------- Bucle ----------
