@@ -380,7 +380,8 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem("abismoNerf." + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem("abismoNerf." + k, JSON.stringify(v)); } catch (e) {} },
 };
-const settings = { diff: store.get("diff", 1), sound: store.get("sound", true), minimap: store.get("minimap", true), fx: store.get("fx", true) };
+const settings = { diff: store.get("diff", 1), sound: store.get("sound", true), minimap: +store.get("minimap", 1), fx: store.get("fx", true) };
+if (!(settings.minimap >= 0 && settings.minimap <= 2)) settings.minimap = 1;
 let best = store.get("best", 0);
 let saved = store.get("save", null);
 const DIFF = () => DIFFS[settings.diff];
@@ -541,7 +542,7 @@ const hintsShown = new Set();
 const P = {
   x: 0, y: 0, r: 10, hp: 6, maxHp: 6, speed: 155, weapons: ["pistola"], cur: 0, ammo: {}, res: {}, reloading: 0,
   keys: noKeys(), inv: 0, cd: 0, aim: 0, face: 0, kx: 0, ky: 0, walk: 0, recoil: 0,
-  dash: 0, dashCd: 0, dvx: 0, dvy: 0, muzzle: 0, lean: 0, land: 0, exiting: 0,
+  dash: 0, dashCd: 0, dvx: 0, dvy: 0, muzzle: 0, lean: 0, land: 0, exiting: 0, abilCd: 0, turbo: 0, shield: 0,
 };
 
 const T = (tx, ty) => (tx < 0 || ty < 0 || tx >= W || ty >= H) ? WALL : tiles[ty * W + tx];
@@ -586,7 +587,7 @@ function loadLevel(i, retry) {
     P.res.pistola = Math.max(P.res.pistola || 0, 12);
   }
   P.cur = Math.min(P.cur, P.weapons.length - 1);
-  Object.assign(P, { reloading: 0, keys: noKeys(), inv: 1.2, cd: 0.3, kx: 0, ky: 0, dash: 0, dashCd: 0, muzzle: 0 });
+  Object.assign(P, { reloading: 0, keys: noKeys(), inv: 1.2, cd: 0.3, kx: 0, ky: 0, dash: 0, dashCd: 0, muzzle: 0, abilCd: 0, turbo: 0, shield: 0 });
   const map = LEVELS[i].map; H = map.length; W = map[0].length;
   tiles = new Array(W * H).fill(FLOOR); thp = new Array(W * H).fill(0); seen = new Array(W * H).fill(false);
   doorCol = {}; torches = []; decor = []; exits = [];
@@ -630,7 +631,7 @@ function loadLevel(i, retry) {
   toast.t = 0;
   state = "play";
   if (i === 0 && !retry) {
-    hint("start", isTouch() ? "Desliza a la izquierda para moverte y mantén DISPARA a la derecha" : `¡Adelante, ${look.name}! Muévete con WASD y dispara con ESPACIO`, 4.5);
+    hint("start", isTouch() ? "Desliza a la izquierda para moverte y mantén DISPARA a la derecha" : `¡Adelante, ${look.name}! Muévete con WASD, dispara con F o clic y usa tu habilidad con ESPACIO`, 4.5);
   }
 }
 function hint(id, txt, t = 3.5) { if (hintsShown.has(id)) return; hintsShown.add(id); showToast(txt, t); }
@@ -1195,13 +1196,29 @@ addEventListener("keydown", e => {
     else if (e.code === "Escape") story.done();
     keys.Space = false; return;
   }
+  if (state === "custom" && picker.open) {
+    const n = sortedCountries.length;
+    if (e.code === "ArrowDown") picker.sel = Math.min(n - 1, picker.sel + 1);
+    else if (e.code === "ArrowUp") picker.sel = Math.max(0, picker.sel - 1);
+    else if (e.code === "PageDown") picker.sel = Math.min(n - 1, picker.sel + 10);
+    else if (e.code === "PageUp") picker.sel = Math.max(0, picker.sel - 10);
+    else if (e.code === "Enter" || e.code === "Space") chooseCountry(sortedCountries[picker.sel]);
+    else if (e.code === "Escape") picker.open = false;
+    else if (e.key && e.key.length === 1) {
+      const k = e.key.toLocaleLowerCase(LANG), norm = t => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase(LANG);
+      const j = sortedCountries.findIndex(c => norm(countryName(c)).startsWith(norm(k)));
+      if (j >= 0) picker.sel = j;
+    }
+    picker.scroll = clamp(picker.scroll, picker.sel * 40 - Math.min(VH - 80, 560) + 140, picker.sel * 40);
+    keys.Space = false; return;
+  }
   if (state === "custom") {
     const rows = CUSTOM_ROWS.length + 1;
     if (["ArrowUp", "KeyW"].includes(e.code)) { customRow = (customRow - 1 + rows) % rows; SFX.ui(); }
     else if (["ArrowDown", "KeyS"].includes(e.code)) { customRow = (customRow + 1) % rows; SFX.ui(); }
     else if (["ArrowLeft", "KeyA"].includes(e.code)) customChange(customRow, -1);
     else if (["ArrowRight", "KeyD"].includes(e.code)) customChange(customRow, 1);
-    else if (e.code === "Enter" || e.code === "Space") { if (customRow === 0) { e.preventDefault(); nameInput.focus(); } else customDone(); }
+    else if (e.code === "Enter" || e.code === "Space") { if (customRow === 0) { e.preventDefault(); nameInput.focus(); } else if (customRow === 1) openPicker(); else customDone(); }
     else if (e.code === "KeyR") randomLook();
     else if (e.code === "Escape" && customFrom === "menu") { saveLook(); state = "title"; uiSel = 0; }
     keys.Space = false; return;
@@ -1219,9 +1236,10 @@ addEventListener("keydown", e => {
   const n = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6, Digit8: 7, Digit9: 8, Digit0: 9, Minus: 10, Slash: 10 }[e.code];
   if (n !== undefined) selectSlot(n);
   if (e.code === "KeyQ") cycleWeapon(1);
+  if (e.code === "Space") useAbility();
   if (e.code === "KeyR") startReload();
   if (e.code === "ShiftLeft" || e.code === "ShiftRight" || e.code === "KeyK") wantDash = true;
-  if (e.code === "Tab") { settings.minimap = !settings.minimap; store.set("minimap", settings.minimap); }
+  if (e.code === "Tab") { settings.minimap = (settings.minimap + 1) % 3; store.set("minimap", settings.minimap); SFX.ui(); }
   if (e.code === "KeyM") setSound(!settings.sound);
 });
 addEventListener("keyup", e => { keys[e.code] = false; });
@@ -1239,7 +1257,7 @@ cv.addEventListener("mousedown", e => {
   if (e.button === 2) wantDash = true;
 });
 addEventListener("mouseup", () => { mouse.down = false; });
-cv.addEventListener("wheel", e => { if (state === "play") cycleWeapon(e.deltaY > 0 ? 1 : -1); e.preventDefault(); }, { passive: false });
+cv.addEventListener("wheel", e => { if (state === "play") cycleWeapon(e.deltaY > 0 ? 1 : -1); else if (state === "custom" && picker.open) picker.scroll += e.deltaY; e.preventDefault(); }, { passive: false });
 cv.addEventListener("contextmenu", e => e.preventDefault());
 const hitBox = (b, x, y) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
 function clickUI(x, y) { const b = ui.find(b => hitBox(b, x, y)); if (b) { SFX.uiGo(); b.fn(); return true; } return false; }
@@ -1250,13 +1268,15 @@ function btns() {
     fire:   { x: VW - 82 * s - 12, y: VH - 96 * s - 12, r: 50 * s },
     dash:   { x: VW - 196 * s - 12, y: VH - 58 * s - 12, r: 33 * s },
     swap:   { x: VW - 62 * s - 12, y: VH - 214 * s - 12, r: 28 * s },
-    reload: { x: VW - 162 * s - 12, y: VH - 170 * s - 12, r: 24 * s },
+    reload: { x: VW - 136 * s - 12, y: VH - 222 * s - 12, r: 24 * s },
+    abil:   { x: VW - 196 * s - 12, y: VH - 150 * s - 12, r: 30 * s },
     pause:  { x: VW / 2, y: 34, r: 22 },
   };
 }
 const inBtn = (b, x, y) => Math.hypot(x - b.x, y - b.y) < b.r + 10;
 cv.addEventListener("touchstart", e => {
   e.preventDefault(); audio(); touch.on = true;
+  if (state === "custom" && picker.open) { const t = e.changedTouches[0]; picker.drag = { x: t.clientX, y: t.clientY, s0: picker.scroll, moved: false }; return; }
   if (state !== "play") { const t = e.changedTouches[0]; if (state === "custom") nameInput.blur(); if (!clickUI(t.clientX, t.clientY) && state === "story") storyNext(1); return; }
   const B = btns();
   for (const t of e.changedTouches) {
@@ -1266,6 +1286,7 @@ cv.addEventListener("touchstart", e => {
     if (inBtn(B.pause, x, y)) { pause(); continue; }
     if (inBtn(B.swap, x, y)) { cycleWeapon(1); continue; }
     if (inBtn(B.reload, x, y)) { startReload(); continue; }
+    if (inBtn(B.abil, x, y)) { useAbility(); continue; }
     if (inBtn(B.dash, x, y)) { wantDash = true; continue; }
     if (x > VW * 0.5) { touch.fire = true; touch.fireId = t.identifier; touch.fs = { x, y }; touch.aim = null; continue; }
     if (!touch.joy) touch.joy = { id: t.identifier, ox: x, oy: y, x, y };
@@ -1273,6 +1294,7 @@ cv.addEventListener("touchstart", e => {
 }, { passive: false });
 cv.addEventListener("touchmove", e => {
   e.preventDefault();
+  if (picker.drag) { const t = e.changedTouches[0], dy = t.clientY - picker.drag.y; if (Math.abs(dy) > 8) picker.drag.moved = true; picker.scroll = picker.drag.s0 - dy; return; }
   for (const t of e.changedTouches) {
     if (touch.joy && t.identifier === touch.joy.id) { touch.joy.x = t.clientX; touch.joy.y = t.clientY; }
     if (t.identifier === touch.fireId && touch.fs) {
@@ -1282,6 +1304,7 @@ cv.addEventListener("touchmove", e => {
   }
 }, { passive: false });
 const tend = e => {
+  if (picker.drag) { const d = picker.drag; picker.drag = null; if (!d.moved) clickUI(d.x, d.y); return; }
   for (const t of e.changedTouches) {
     if (touch.joy && t.identifier === touch.joy.id) touch.joy = null;
     if (t.identifier === touch.fireId) { touch.fire = false; touch.fireId = null; touch.aim = null; }
@@ -1298,6 +1321,68 @@ function selectSlot(n) {
 function cycleWeapon(d) { if (P.weapons.length < 2) return; swapT = 1; P.cur = (P.cur + d + P.weapons.length) % P.weapons.length; P.reloading = 0; P.cd = Math.max(P.cd, 0.15); SFX.reload(); }
 const curId = () => P.weapons[P.cur];
 const curW = () => WEAPONS[curId()];
+function useAbility() {
+  if (state !== "play" || P.exiting > 0) return;
+  if (P.abilCd > 0) { SFX.empty(); return; }
+  const a = ABILITIES[look.hat] || ABILITIES[0];
+  P.abilCd = a.cd; abilPop = 1;
+  floatText(P.x, P.y - 26, a.name, a.color, 13);
+  hint("abil", `¡${a.name}! Se recarga en ${a.cd} segundos`, 3);
+  if (look.hat === 0) {
+    flashes.push({ x: P.x, y: P.y, r: 420, life: 0.55 }); rings.push({ x: P.x, y: P.y, r: 10, max: 230, life: 0.55, c: "#fff3b0" });
+    shake = Math.max(shake, 6); zoomPunch = Math.max(zoomPunch, 0.05);
+    tone(NOTE(84), 0.5, "triangle", 0.06, 0.005, 4000); noise(0.3, 0.06, 3000);
+    for (const m of monsters) if (Math.hypot(m.x - P.x, m.y - P.y) < 230) { m.stun = Math.max(m.stun || 0, m.def.boss ? 1 : 2.5); m.alert = 5; m.wind = 0; m.charging = 0; }
+    const ptx = Math.floor(P.x / TS), pty = Math.floor(P.y / TS);
+    for (let y = pty - 12; y <= pty + 12; y++) for (let x = ptx - 12; x <= ptx + 12; x++) if (Math.hypot(x - ptx, y - pty) < 12) markSeen(x, y);
+  } else if (look.hat === 1) {
+    P.turbo = 5; jingle([72, 76, 79, 84], 0.05, "square", 0.04);
+    rings.push({ x: P.x, y: P.y, r: 6, max: 50, life: 0.4, c: "#ff8a1f" });
+  } else if (look.hat === 2) {
+    P.shield = 6; tone(NOTE(67), 0.8, "sine", 0.06, 0.05); tone(NOTE(74), 0.8, "sine", 0.04, 0.1);
+    rings.push({ x: P.x, y: P.y, r: 30, max: 18, life: 0.4, c: "#9fd8ff" });
+  } else if (look.hat === 4) {
+    const sk = DART_SKINS[look.dart] || DART_SKINS[0];
+    for (let i = 0; i < 9; i++) {
+      const ang = P.aim + (i - 4) * 0.12;
+      projs.push({ x: P.x, y: P.y, px: P.x, py: P.y, vx: Math.cos(ang) * 520, vy: Math.sin(ang) * 520, r: 3, dmg: 1.3, owner: "p", kind: "dart", w: null, crit: 0.1,
+        life: 1, splash: 0, color: sk.body("#d9a066"), tip: sk.tip, trail: sk.trail, pierce: 0, bounces: 0, hits: new Set(), t: 0 });
+    }
+    SFX.pump(); setTimeout(() => SFX.shoot(), 60); shake = Math.max(shake, 3);
+  } else if (look.hat === 5) {
+    jingle([67, 72, 76, 79], 0.08, "square", 0.045);
+    rings.push({ x: P.x, y: P.y, r: 10, max: 260, life: 0.6, c: "#f5c542" });
+    for (const m of monsters) if (!m.def.boss && Math.hypot(m.x - P.x, m.y - P.y) < 260) { m.fear = 4; m.exclaim = 0.7; m.alert = 5; }
+  } else if (look.hat === 6) {
+    const d = Math.max(0, Math.min(170, rayLen(P.x, P.y, P.aim, 200) - 18));
+    for (let i = 0; i < 18; i++) parts.push({ x: P.x, y: P.y, vx: rand(-90, 90), vy: rand(-90, 90), life: 0.5, max: 0.5, c: i % 2 ? "#c9a0ff" : "#ffffff", s: 2, glow: true });
+    P.x += Math.cos(P.aim) * d; P.y += Math.sin(P.aim) * d;
+    if (hitTile(P.x, P.y, P.r)) { P.x -= Math.cos(P.aim) * d; P.y -= Math.sin(P.aim) * d; }
+    for (let i = 0; i < 18; i++) parts.push({ x: P.x, y: P.y, vx: rand(-90, 90), vy: rand(-90, 90), life: 0.5, max: 0.5, c: i % 2 ? "#c9a0ff" : "#ffffff", s: 2, glow: true });
+    P.inv = Math.max(P.inv, 0.5); tone(NOTE(88), 0.3, "sine", 0.05, 0.005); tone(NOTE(76), 0.4, "sine", 0.04, 0.05);
+    rings.push({ x: P.x, y: P.y, r: 30, max: 6, life: 0.3, c: "#c9a0ff" });
+  } else if (look.hat === 7) {
+    beep(110, 0.6, "sawtooth", 0.08, 60); noise(0.4, 0.08, 300, "lowpass"); shake = Math.max(shake, 10); zoomPunch = Math.max(zoomPunch, 0.06);
+    rings.push({ x: P.x, y: P.y, r: 10, max: 140, life: 0.45, c: "#c0c0c8" });
+    for (const m of monsters) { const d = Math.hypot(m.x - P.x, m.y - P.y); if (d < 140 && canHit(m)) { const a2 = Math.atan2(m.y - P.y, m.x - P.x); damageMon(m, 2, a2, true); m.kx += Math.cos(a2) * (m.def.heavy ? 120 : 380); m.ky += Math.sin(a2) * (m.def.heavy ? 120 : 380); } }
+  } else if (look.hat === 8) {
+    P.hp = Math.min(P.maxHp, P.hp + 4); heartPulse = 1; jingle([72, 79, 84], 0.1, "triangle", 0.05);
+    for (let i = 0; i < 8; i++) texts.push({ x: P.x + rand(-14, 14), y: P.y - 10, txt: "♥", c: "#ff6b8a", life: 1, size: 11, vy: -30 - Math.random() * 20 });
+  } else if (look.hat === 9) {
+    projs.push({ x: P.x, y: P.y, px: P.x, py: P.y, vx: Math.cos(P.aim) * 90, vy: Math.sin(P.aim) * 90, r: 6, dmg: 5, owner: "p", kind: "grenade", w: null, crit: 0,
+      life: 1.3, splash: 92, color: "#2a2a2a", tip: "#fff", trail: null, pierce: 0, bounces: 0, hits: new Set(), t: 0 });
+    SFX.thunk();
+  } else {
+    const c = HAT_COLORS[look.hatColor] || "#ff5a6a", a0 = Math.random();
+    for (let i = 0; i < 12; i++) {
+      const ang = a0 + i / 12 * Math.PI * 2;
+      projs.push({ x: P.x, y: P.y, px: P.x, py: P.y, vx: Math.cos(ang) * 400, vy: Math.sin(ang) * 400, r: 5, dmg: 1.5, owner: "p", kind: "shuriken", w: null, crit: 0.15,
+        life: 0.9, splash: 0, color: c, tip: "#fff", trail: null, pierce: 2, bounces: 0, hits: new Set(), t: Math.random() });
+    }
+    noise(0.25, 0.06, 2200, "bandpass"); SFX.whirr();
+  }
+}
+let abilPop = 0;
 function startReload() { const id = curId(); if (P.reloading <= 0 && P.ammo[id] < WEAPONS[id].clip && (P.res[id] || 0) > 0) { P.reloading = WEAPONS[id].reload; SFX.reload(); } }
 const totalAmmo = id => (P.ammo[id] || 0) + (P.res[id] || 0);
 let noAmmoT = -9;
@@ -1396,7 +1481,7 @@ function fire() {
   const id = curId(), w = WEAPONS[id];
   if (P.reloading > 0) return;
   if (P.ammo[id] <= 0) { if ((P.res[id] || 0) > 0) { startReload(); P.cd = 0.2; } else outOfAmmo(); return; }
-  P.ammo[id]--; P.cd = w.cd; P.recoil = 1; P.muzzle = 0.06;
+  P.ammo[id]--; P.cd = w.cd * (P.turbo > 0 ? 0.5 : 1); P.recoil = 1; P.muzzle = 0.06;
   camKick.x -= Math.cos(P.aim) * (w.rocket ? 6 : w.darts > 1 ? 4 : 1.5); camKick.y -= Math.sin(P.aim) * (w.rocket ? 6 : w.darts > 1 ? 4 : 1.5);
   const a = P.aim;
   const mx = P.x + Math.cos(a) * 18, my = P.y + Math.sin(a) * 18 + 2;
@@ -1520,6 +1605,13 @@ function explode(x, y, rad, dmg) {
 }
 function hurtPlayer(d, sx, sy) {
   if (P.inv > 0 || P.dash > 0 || state !== "play") return;
+  if (P.shield > 0) {
+    // el escudo de lana absorbe el golpe
+    P.inv = 0.4; SFX.bounce(); beep(900, 0.08, "sine", 0.04, 300);
+    rings.push({ x: P.x, y: P.y, r: 16, max: 28, life: 0.3, c: "#cfeeff" });
+    const a = Math.atan2(P.y - sy, P.x - sx) || 0; P.kx += Math.cos(a) * 120; P.ky += Math.sin(a) * 120;
+    return;
+  }
   P.hp -= d; P.inv = 1; shake = 9; if (lv) lv.hurt = true; hitstop = 0.07; hurtFlash = 0.35; SFX.hurt(); heartPulse = 1; zoomPunch = Math.max(zoomPunch, 0.025);
   const a = Math.atan2(P.y - sy, P.x - sx) || rand(0, 6);
   P.kx += Math.cos(a) * 260; P.ky += Math.sin(a) * 260;
@@ -1547,7 +1639,7 @@ function onAlert(m) {
   };
   if (HINTS[m.type]) hint("mon_" + m.type, HINTS[m.type], 4);
   if (m.type === "f") SFX.ghost(m); else if (m.type === "e") SFX.chitter(m); else if (m.type === "p") SFX.dig(m);
-  hint("enemy", isTouch() ? "¡Un monstruo! Mantén DISPARA y pulsa ESQUIVA para evitar golpes" : "¡Un monstruo! Dispara con ESPACIO y esquiva con SHIFT", 3.5);
+  hint("enemy", isTouch() ? "¡Un monstruo! Mantén DISPARA y pulsa ESQUIVA para evitar golpes" : "¡Un monstruo! Dispara con F o clic y esquiva con SHIFT", 3.5);
 }
 
 // ---------- Actualización ----------
@@ -1588,6 +1680,8 @@ function update(rdt) {
 
 function updatePlayer(dt) {
   if (P.exiting > 0) return;
+  P.abilCd = Math.max(0, P.abilCd - dt); P.turbo = Math.max(0, P.turbo - dt); P.shield = Math.max(0, P.shield - dt); abilPop = Math.max(0, abilPop - dt * 3);
+  if (P.turbo > 0 && Math.random() < dt * 20) ghosts.push({ x: P.x, y: P.y, life: 0.18 });
   P.inv -= dt; P.cd -= dt; P.dashCd -= dt; P.muzzle -= dt; P.recoil = Math.max(0, P.recoil - dt * 8);
   if (P.reloading > 0) {
     P.reloading -= dt;
@@ -1621,7 +1715,7 @@ function updatePlayer(dt) {
     P.dash -= dt; vx = P.dvx; vy = P.dvy; if (P.dash <= 0) P.land = 1;
     ghosts.push({ x: P.x, y: P.y, life: 0.22 });
   } else {
-    const sp = P.speed * (onWeb ? 0.45 : 1);
+    const sp = P.speed * (onWeb ? 0.45 : 1) * (P.turbo > 0 ? 1.4 : 1);
     vx = mx * sp; vy = my * sp;
   }
   if (ml > 0.1) {
@@ -1646,7 +1740,7 @@ function updatePlayer(dt) {
     for (const m of monsters) { const d = Math.hypot(m.x - P.x, m.y - P.y); if (d < bd && canHit(m) && los(P.x, P.y, m.x, m.y)) { bd = d; bestM = m; } }
     P.aim = bestM ? Math.atan2(bestM.y - P.y, bestM.x - P.x) : P.face;
   }
-  const firing = keys.Space || mouse.down || keys.KeyJ || touch.fire;
+  const firing = keys.KeyF || mouse.down || keys.KeyJ || touch.fire;
   if (firing && P.cd <= 0 && P.dash <= 0) fire();
   // si te quedas quieto un rato, tu personaje se echa una siestecita
   P.idleT = ml > 0.1 || firing ? 0 : (P.idleT || 0) + dt;
@@ -1830,6 +1924,7 @@ function updateMonsters(dt) {
     else if (m.type === "Q") updateQueen(m, dt, d, dx, dy, sp, D, chase, (a, b) => { vx = a; vy = b; });
 
     if (m.def.boss && m.charging > 0) { vx = m.cvx; vy = m.cvy; }
+    if (m.fear > 0) { m.fear -= dt; if (!m.def.rooted) { vx = -ux * sp * 1.25; vy = -uy * sp * 1.25; } }
     if (m.def.rooted) { vx = vy = 0; m.kx = m.ky = 0; }
     let blocked = false;
     if (m.def.ghost) { m.x = clamp(m.x + (vx + m.kx) * dt, TS, (W - 1) * TS); m.y = clamp(m.y + (vy + m.ky) * dt, TS, (H - 1) * TS); }
@@ -1970,10 +2065,11 @@ function updateProjs(dt) {
       for (const m of monsters) if (m.hp > 0 && canHit(m) && !p.hits.has(m) && Math.hypot(m.x - p.x, m.y - p.y) < m.r + p.r) {
         const ang = Math.atan2(p.vy, p.vx);
         if (p.kind === "rocket" || p.kind === "grenade") { p.dead = true; explode(p.x, p.y, p.splash, p.dmg); break; }
-        if (p.kind === "bolt" || p.kind === "disc") {
+        if (p.kind === "bolt" || p.kind === "disc" || p.kind === "shuriken") {
           // atraviesan: la ballesta a varios enemigos, el disco sigue su camino
           p.hits.add(m); damageMon(m, p.dmg, ang);
           if (p.kind === "bolt" && --p.pierce <= 0) { p.dead = true; dropDart(p, true); break; }
+          if (p.kind === "shuriken" && --p.pierce <= 0) { p.dead = true; break; }
           continue;
         }
         p.dead = true;
@@ -2400,6 +2496,10 @@ function drawMain() {
     ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
   }
   if (state === "play" || state === "pause") drawHUD();
+  if (settings.minimap === 2 && mini && state === "play") {
+    const mw = Math.min(VW - 40, 760), mh = Math.min(VH - 200, 520), sc = Math.max(3, Math.min(mw / W, mh / H));
+    drawMiniMap(VW / 2 - mw / 2, VH / 2 - mh / 2 - 20, mw, mh, sc, false);
+  }
   if (touch.on && state === "play") drawTouch();
   if (state === "play") drawCombo();
   if (fade > 0) { ctx.fillStyle = `rgba(5,4,7,${fade})`; ctx.fillRect(0, 0, VW, VH); }
@@ -2742,6 +2842,31 @@ function drawPlayerBody(x, y, aim, bob, walk) {
     ctx.strokeStyle = hatC; ctx.lineWidth = 1.6; ctx.lineCap = "round";
     for (const o of [-0.35, 0.35]) { const a2 = aim + Math.PI + o; ctx.beginPath(); ctx.moveTo(bx, by); ctx.quadraticCurveTo(bx + Math.cos(a2) * 5, by + Math.sin(a2) * 5 + Math.sin(time * 9 + o * 5) * 1.5, bx + Math.cos(a2) * 9, by + Math.sin(a2) * 9 + Math.sin(time * 9 + o * 5 + 1) * 2); ctx.stroke(); }
     ctx.lineCap = "butt";
+  } else if (look.hat === 4) { // vaquero: ala ancha
+    ctx.fillStyle = dark; ctx.beginPath(); ctx.ellipse(x, hy - 5, 10.5, 4.2, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = hatC; ctx.beginPath(); ctx.roundRect(x - 5, hy - 12, 10, 8, 3); ctx.fill();
+    ctx.fillStyle = "#2a1a10"; ctx.fillRect(x - 5, hy - 6.5, 10, 1.6);
+  } else if (look.hat === 5) { // corona
+    ctx.fillStyle = "#f5c542"; ctx.beginPath(); ctx.moveTo(x - 6, hy - 5); ctx.lineTo(x - 6, hy - 11); ctx.lineTo(x - 3, hy - 8); ctx.lineTo(x, hy - 13); ctx.lineTo(x + 3, hy - 8); ctx.lineTo(x + 6, hy - 11); ctx.lineTo(x + 6, hy - 5); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "#a8741a"; ctx.lineWidth = 0.6; ctx.stroke();
+    ctx.fillStyle = hatC; for (const gx of [-3.5, 0, 3.5]) { ctx.beginPath(); ctx.arc(x + gx, hy - 6.6, 1.1, 0, 7); ctx.fill(); }
+  } else if (look.hat === 6) { // mago: cono con estrellas
+    ctx.fillStyle = dark; ctx.beginPath(); ctx.ellipse(x, hy - 5, 8.5, 3, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = hatC; ctx.beginPath(); ctx.moveTo(x - 6, hy - 5.5); ctx.quadraticCurveTo(x - 2, hy - 13, x + 3 + Math.sin(time * 2) * 1.5, hy - 19); ctx.quadraticCurveTo(x + 2, hy - 12, x + 6, hy - 5.5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#fff3b0"; star(x - 1, hy - 10, 1.8); star(x + 2, hy - 14, 1.2);
+  } else if (look.hat === 7) { // vikingo: cuernos
+    ctx.fillStyle = "#efe4c8"; for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(x + sd * 5, hy - 7); ctx.quadraticCurveTo(x + sd * 11, hy - 9, x + sd * 10, hy - 15); ctx.quadraticCurveTo(x + sd * 8, hy - 10, x + sd * 3.5, hy - 9); ctx.closePath(); ctx.fill(); }
+    ctx.fillStyle = hatC; ctx.beginPath(); ctx.arc(x, hy - 5, 6.4, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = dark; ctx.fillRect(x - 6.4, hy - 5.6, 12.8, 1.6); ctx.fillRect(x - 0.8, hy - 11, 1.6, 6);
+  } else if (look.hat === 8) { // chef: gorro alto blanco
+    ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(x - 3, hy - 11, 3.6, 0, 7); ctx.arc(x + 3, hy - 11, 3.6, 0, 7); ctx.arc(x, hy - 13, 4, 0, 7); ctx.fill();
+    ctx.fillRect(x - 5.5, hy - 11, 11, 6);
+    ctx.fillStyle = hatC; ctx.fillRect(x - 6, hy - 6.4, 12, 1.8);
+    ctx.strokeStyle = "rgba(0,0,0,0.12)"; ctx.lineWidth = 0.6; ctx.beginPath(); ctx.moveTo(x - 2, hy - 7); ctx.lineTo(x - 2, hy - 11); ctx.moveTo(x + 2, hy - 7); ctx.lineTo(x + 2, hy - 11); ctx.stroke();
+  } else if (look.hat === 9) { // pirata: tricornio con calavera
+    ctx.fillStyle = hatC; ctx.beginPath(); ctx.moveTo(x - 9, hy - 5); ctx.quadraticCurveTo(x, hy - 16, x + 9, hy - 5); ctx.quadraticCurveTo(x, hy - 8, x - 9, hy - 5); ctx.fill();
+    ctx.strokeStyle = "#d9b04a"; ctx.lineWidth = 0.7; ctx.stroke();
+    ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(x, hy - 9.5, 1.6, 0, 7); ctx.fill(); ctx.fillRect(x - 1.8, hy - 7.6, 3.6, 0.8);
   } else { // casco minero
     ctx.fillStyle = hatC; ctx.beginPath(); ctx.arc(x, hy - 5, 6.3, Math.PI, 0); ctx.fill();
     ctx.fillStyle = dark; ctx.fillRect(x - 6.3, hy - 5.5, 12.6, 1.3);
@@ -2776,6 +2901,14 @@ function drawPlayer() {
   ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.beginPath(); ctx.arc(-1.2, 3.6, 1.2, 0, 7); ctx.fill();
   ctx.restore();
   ctx.restore();
+  if (P.shield > 0) {
+    const fade = Math.min(1, P.shield) * (P.shield < 1.5 ? 0.5 + 0.5 * Math.sin(time * 20) : 1);
+    const g = ctx.createRadialGradient(P.x - 5, P.y - 6, 2, P.x, P.y, 20);
+    g.addColorStop(0, `rgba(255,255,255,${0.35 * fade})`); g.addColorStop(0.7, `rgba(150,210,255,${0.12 * fade})`); g.addColorStop(1, `rgba(150,210,255,${0.5 * fade})`);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(P.x, P.y, 19 + Math.sin(time * 6) * 1, 0, 7); ctx.fill();
+    ctx.strokeStyle = `rgba(220,240,255,${0.7 * fade})`; ctx.lineWidth = 1.2; ctx.stroke();
+  }
+  if (P.turbo > 0) { ctx.strokeStyle = `rgba(255,138,31,${0.4 + 0.3 * Math.sin(time * 18)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(P.x, P.y + 10, 14, 5, 0, 0, 7); ctx.stroke(); }
   if (P.reloading > 0) {
     const k = 1 - P.reloading / curW().reload;
     ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(P.x - 14, P.y - 24, 28, 4);
@@ -3019,6 +3152,11 @@ function drawProj(p) {
   }
   ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(Math.atan2(p.vy, p.vx));
   if (p.kind === "dart") drawDartShape(p.color, p.tip);
+  else if (p.kind === "shuriken") {
+    ctx.rotate(p.t * 30); ctx.fillStyle = p.color;
+    ctx.beginPath(); for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2, r = i % 2 ? 2 : 6.5; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); } ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0, 0, 1.4, 0, 7); ctx.fill();
+  }
   else if (p.kind === "mega") {
     ctx.fillStyle = "rgba(255,120,220,0.3)"; ctx.fillRect(-26, -3, 18, 6);
     ctx.save(); ctx.scale(2.3, 2.3); drawDartShape(p.color, p.tip); ctx.restore();
@@ -3091,15 +3229,11 @@ function drawHUD() {
   panel(VW - pw - 10, 10, pw, 50);
   ctx.fillStyle = "#f3e6c8"; ctx.fillText(l1, VW - 22, 30);
   ctx.fillStyle = "#f5c542"; ctx.font = `${small ? 11 : 13}px system-ui, sans-serif`; ctx.fillText(l2, VW - 22, 49);
-  // minimapa
-  if (settings.minimap && mini) {
-    const ms = small ? 2 : 3, mw = W * ms, mh = H * ms, mx = VW - mw - 14, my = 68;
-    panel(mx - 4, my - 4, mw + 8, mh + 8, 6);
-    ctx.globalAlpha = 0.9; ctx.imageSmoothingEnabled = false; ctx.drawImage(mini, mx, my, mw, mh); ctx.imageSmoothingEnabled = true; ctx.globalAlpha = 1;
-    for (const it of items) if (it.kind === "key" && seen[Math.floor(it.y / TS) * W + Math.floor(it.x / TS)]) { ctx.fillStyle = KEYS[it.c].c; ctx.fillRect(mx + it.x / TS * ms - 1.5, my + it.y / TS * ms - 1.5, 3, 3); }
-    if (Math.floor(time * 3) % 2 === 0) { ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(mx + P.x / TS * ms, my + P.y / TS * ms, ms * 0.9 + 0.5, 0, 7); ctx.fill(); }
+  // minimapa: vista local alrededor del jugador (o mapa completo con TAB)
+  if (settings.minimap === 1 && mini) {
+    const mw = small ? 128 : 184, mh = small ? 96 : 132, mx = VW - mw - 12, my = 68;
+    drawMiniMap(mx, my, mw, mh, small ? 4 : 5, true);
   }
-
   // barra de armas: todas las armas, con cargador | reserva
   hotbar = [];
   if (!touch.on) {
@@ -3109,27 +3243,28 @@ function drawHUD() {
     for (let i = 0; i < n; i++) drawSlot(ORDER[i], sx + i * (slotW + gap), sy, slotW, slotH, SLOT_KEYS[i]);
     const w = curW(), id = curId();
     ctx.textAlign = "center"; ctx.font = "bold 13px system-ui"; ctx.fillStyle = w.color;
-    ctx.fillText(`${w.name}  ·  ${P.ammo[id] || 0} | ${P.res[id] || 0}`, VW / 2 + 22, sy - 18);
+    ctx.fillText(`${tr(w.name)}  ·  ${P.ammo[id] || 0} | ${P.res[id] || 0}`, VW / 2 + 22, sy - 18);
     // esquive
     const dx = sx - 44, dy = sy + slotH / 2 - 2, k = P.dashCd > 0 ? 1 - P.dashCd / 0.8 : 1;
     ctx.fillStyle = "rgba(10,8,14,0.8)"; ctx.beginPath(); ctx.arc(dx, dy, 21, 0, 7); ctx.fill();
     ctx.strokeStyle = k >= 1 ? "#9be15d" : "rgba(243,230,200,0.4)"; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(dx, dy, 18, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); ctx.stroke();
     ctx.fillStyle = "#f3e6c8"; ctx.font = "bold 9px system-ui"; ctx.fillText("SHIFT", dx, dy + 3);
+    drawAbilityIcon(dx - 52, dy, 21);
   } else {
     // táctil: las armas que tienes, en una cuadrícula a la izquierda (tócalas para cambiar)
     const cols = 4, slotW = 44, slotH = 52, gap = 4, owned = ORDER.filter(id => P.weapons.includes(id));
     const rows = Math.ceil(owned.length / cols), x0 = 10, y0 = VH - 150 - rows * (slotH + gap);
     owned.forEach((id, i) => drawSlot(id, x0 + (i % cols) * (slotW + gap), y0 + Math.floor(i / cols) * (slotH + gap), slotW, slotH, ""));
     ctx.textAlign = "left"; ctx.font = "bold 12px system-ui"; ctx.fillStyle = curW().color;
-    ctx.fillText(`${curW().name} · ${P.ammo[curId()] || 0} | ${P.res[curId()] || 0}`, 12, y0 - 10);
+    ctx.fillText(`${tr(curW().name)} · ${P.ammo[curId()] || 0} | ${P.res[curId()] || 0}`, 12, y0 - 10);
   }
 
   // jefe
   const boss = monsters.find(m => m.def.boss && m.alert > 0);
   const bossY = small ? 76 : 16;
   if (boss) {
-    const bw = Math.min(420, VW - 40 - (settings.minimap && !small ? W * 3 + 30 : 0) - (small ? 0 : 140)), bx = VW / 2 - bw / 2;
+    const bw = Math.min(420, VW - 40 - (settings.minimap === 1 && !small ? 210 : 0) - (small ? 0 : 140)), bx = VW / 2 - bw / 2;
     panel(bx - 6, bossY - 4, bw + 12, 36);
     ctx.fillStyle = "#f3e6c8"; ctx.font = `bold 11px ${TITLE_FONT}`; ctx.textAlign = "center"; ctx.fillText(boss.def.title, VW / 2, bossY + 9);
     ctx.fillStyle = "#3a1d22"; ctx.fillRect(bx, bossY + 15, bw, 10);
@@ -3139,7 +3274,7 @@ function drawHUD() {
   // aviso
   if (toast.t > 0) {
     ctx.font = `bold ${small ? 13 : 16}px system-ui, sans-serif`; ctx.textAlign = "center";
-    const tw = Math.min(VW - 24, ctx.measureText(toast.txt).width + 32), ty = (boss ? bossY + 66 : small ? 100 : 96) + (small && settings.minimap ? H * 2 + 10 : 0);
+    const tw = Math.min(VW - 24, ctx.measureText(toast.txt).width + 32), ty = (boss ? bossY + 66 : small ? 100 : 96) + (small && settings.minimap === 1 ? 110 : 0);
     const age = (toast.max || 2.6) - toast.t, slide = (1 - ease(age * 4)) * -18;
     ctx.globalAlpha = Math.min(1, toast.t * 2.5, age * 5);
     panel(VW / 2 - tw / 2, ty - 22 + slide, tw, 34);
@@ -3159,6 +3294,53 @@ function drawHUD() {
   }
 }
 let hotbar = [];
+// dibuja el minimapa: local (centrado en el jugador) o el mapa entero
+function drawMiniMap(mx, my, mw, mh, sc, local) {
+  const cx = local ? P.x / TS : W / 2, cy = local ? P.y / TS : H / 2;
+  const ox = mx + mw / 2 - cx * sc, oy = my + mh / 2 - cy * sc, map = (tx, ty) => [ox + tx * sc, oy + ty * sc];
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 12;
+  ctx.fillStyle = "rgba(8,6,12,0.88)"; ctx.beginPath(); ctx.roundRect(mx - 5, my - 5, mw + 10, mh + 10, 12); ctx.fill(); ctx.shadowBlur = 0;
+  ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, 8); ctx.clip();
+  ctx.fillStyle = "#07060a"; ctx.fillRect(mx, my, mw, mh);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(mini, ox, oy, W * sc, H * sc);
+  ctx.imageSmoothingEnabled = true;
+  // cuadrícula sutil
+  ctx.strokeStyle = "rgba(255,255,255,0.03)"; ctx.lineWidth = 1;
+  for (let x = Math.floor(mx / (sc * 4)) * sc * 4; x < mx + mw; x += sc * 4) { ctx.beginPath(); ctx.moveTo(x + (ox % (sc * 4)), my); ctx.lineTo(x + (ox % (sc * 4)), my + mh); ctx.stroke(); }
+  const seenAt = (x, y) => seen[Math.floor(y / TS) * W + Math.floor(x / TS)];
+  // objetos y salida
+  for (const e of exits) if (seenAt(e.x, e.y)) { const [x, y] = map(e.x / TS, e.y / TS), pu = 1 + Math.sin(time * 4) * 0.25; ctx.fillStyle = "#7fd8ff"; ctx.shadowColor = "#7fd8ff"; ctx.shadowBlur = 8; ctx.beginPath(); ctx.moveTo(x, y - 4 * pu); ctx.lineTo(x + 4 * pu, y); ctx.lineTo(x, y + 4 * pu); ctx.lineTo(x - 4 * pu, y); ctx.fill(); ctx.shadowBlur = 0; }
+  for (const it of items) {
+    if (!seenAt(it.x, it.y)) continue;
+    const [x, y] = map(it.x / TS, it.y / TS);
+    if (it.kind === "key") { ctx.fillStyle = KEYS[it.c].c; ctx.beginPath(); ctx.arc(x, y, 2.6, 0, 7); ctx.fill(); ctx.strokeStyle = "#fff"; ctx.lineWidth = 0.8; ctx.stroke(); }
+    else if (it.kind === "weapon") { ctx.fillStyle = WEAPONS[it.w].color; ctx.fillRect(x - 2.5, y - 2.5, 5, 5); }
+    else if (it.kind === "bullets" || it.kind === "ammo") { ctx.fillStyle = "#ffb02e"; ctx.fillRect(x - 1.5, y - 1.5, 3, 3); }
+    else if (it.kind === "heart") { ctx.fillStyle = "#ff4d5e"; ctx.fillRect(x - 1.5, y - 1.5, 3, 3); }
+  }
+  // radar de monstruos cercanos que ya hayas visto
+  for (const m of monsters) {
+    if (!seenAt(m.x, m.y) || Math.hypot(m.x - P.x, m.y - P.y) > 15 * TS || !canHit(m)) continue;
+    const [x, y] = map(m.x / TS, m.y / TS);
+    ctx.fillStyle = m.def.boss ? "#ff3030" : "rgba(255,90,90,0.9)"; ctx.beginPath(); ctx.arc(x, y, m.def.boss ? 4 : 1.8, 0, 7); ctx.fill();
+  }
+  // jugador: flecha hacia donde apuntas
+  const [px, py] = map(P.x / TS, P.y / TS);
+  const vg = ctx.createRadialGradient(px, py, 0, px, py, sc * 6); vg.addColorStop(0, "rgba(255,240,200,0.18)"); vg.addColorStop(1, "rgba(255,240,200,0)");
+  ctx.fillStyle = vg; ctx.beginPath(); ctx.arc(px, py, sc * 6, 0, 7); ctx.fill();
+  ctx.save(); ctx.translate(px, py); ctx.rotate(P.aim);
+  ctx.fillStyle = "#ffffff"; ctx.shadowColor = "#fff"; ctx.shadowBlur = 6;
+  ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(-4, -4); ctx.lineTo(-2, 0); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // viñeta interior
+  const ig = ctx.createRadialGradient(mx + mw / 2, my + mh / 2, Math.min(mw, mh) * 0.35, mx + mw / 2, my + mh / 2, Math.max(mw, mh) * 0.7);
+  ig.addColorStop(0, "rgba(0,0,0,0)"); ig.addColorStop(1, "rgba(0,0,0,0.55)"); ctx.fillStyle = ig; ctx.fillRect(mx, my, mw, mh);
+  ctx.restore();
+  ctx.strokeStyle = "rgba(232,163,61,0.5)"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, 8); ctx.stroke();
+  ctx.fillStyle = "rgba(243,230,200,0.7)"; ctx.font = "bold 9px system-ui"; ctx.textAlign = "left"; ctx.fillText(local ? "MAPA · TAB" : "MAPA COMPLETO · TAB para cerrar", mx + 6, my + mh - 6);
+}
 function drawSlot(id, x, y, sw, sh, key) {
   const have = P.weapons.includes(id), cur = curId() === id, wd = WEAPONS[id], pulse = slotPulse[id] || 0;
   if (cur) y -= 4 + swapT * 5;
@@ -3191,6 +3373,29 @@ function drawSlot(id, x, y, sw, sh, key) {
   ctx.font = f2; ctx.fillStyle = r === 0 ? "#e5484d" : "rgba(243,230,200,0.6)"; ctx.fillText(t2, tx + w1, y + sh - 6);
   if (a + r === 0) { ctx.fillStyle = "rgba(229,72,77,0.18)"; ctx.beginPath(); ctx.roundRect(x, y, sw, sh, 7); ctx.fill(); }
 }
+function drawAbilityIcon(x, y, r) {
+  const ab = ABILITIES[look.hat] || ABILITIES[0], k = 1 - P.abilCd / ab.cd, ready = P.abilCd <= 0, pop = 1 + abilPop * 0.25 + (ready ? Math.sin(time * 4) * 0.03 : 0);
+  ctx.save(); ctx.translate(x, y); ctx.scale(pop, pop);
+  ctx.fillStyle = "rgba(10,8,14,0.85)"; ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fill();
+  if (ready) { ctx.shadowColor = ab.color; ctx.shadowBlur = 12; }
+  ctx.strokeStyle = ready ? ab.color : "rgba(243,230,200,0.35)"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(0, 0, r - 3, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); ctx.stroke(); ctx.shadowBlur = 0;
+  ctx.globalAlpha = ready ? 1 : 0.45; ctx.fillStyle = ab.color; ctx.strokeStyle = ab.color; ctx.lineWidth = 2;
+  if (look.hat === 0) { star(0, -2, 7); }
+  else if (look.hat === 1) { for (const o of [-4, 2]) { ctx.beginPath(); ctx.moveTo(o - 3, -7); ctx.lineTo(o + 3, -2); ctx.lineTo(o - 3, 3); ctx.stroke(); } }
+  else if (look.hat === 2) { ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(7, -5); ctx.quadraticCurveTo(7, 4, 0, 7); ctx.quadraticCurveTo(-7, 4, -7, -5); ctx.closePath(); ctx.stroke(); }
+  else if (look.hat === 3) { ctx.beginPath(); for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2 + time, rr = i % 2 ? 2 : 7; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr - 1); } ctx.closePath(); ctx.fill(); }
+  else if (look.hat === 4) { for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(-6, 2); ctx.lineTo(6, 2 + i * 6 - 4); ctx.stroke(); } }
+  else if (look.hat === 5) { drawCrown(0, -2, 0.7, 0); }
+  else if (look.hat === 6) { ctx.beginPath(); ctx.arc(0, -2, 6, 0.5, 5.5); ctx.stroke(); star(3, -6, 2.5); }
+  else if (look.hat === 7) { ctx.beginPath(); ctx.arc(0, -1, 3, 0, 7); ctx.stroke(); ctx.beginPath(); ctx.arc(0, -1, 7, -0.6, 0.6); ctx.stroke(); ctx.beginPath(); ctx.arc(0, -1, 7, Math.PI - 0.6, Math.PI + 0.6); ctx.stroke(); }
+  else if (look.hat === 8) { heart(0, -2, 6, ab.color); }
+  else { ctx.beginPath(); ctx.arc(0, 0, 5.5, 0, 7); ctx.fill(); ctx.strokeStyle = "#ffd23f"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(3, -4); ctx.quadraticCurveTo(6, -8, 8, -6); ctx.stroke(); }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = "#f3e6c8"; ctx.font = "bold 8px system-ui"; ctx.textAlign = "center";
+  ctx.fillText(ready ? "ESPACIO" : Math.ceil(P.abilCd) + "s", 0, r - 6);
+  ctx.restore();
+}
 function drawTouch() {
   const B = btns();
   if (touch.joy) {
@@ -3210,6 +3415,8 @@ function drawTouch() {
   btn(B.dash, "ESQUIVA", "rgba(155,225,93,0.35)", P.dashCd > 0 ? 1 - P.dashCd / 0.8 : 1);
   btn(B.swap, "ARMA", "rgba(63,183,255,0.35)");
   btn(B.reload, "R", "rgba(255,255,255,0.15)");
+  const ab = ABILITIES[look.hat] || ABILITIES[0];
+  btn(B.abil, P.abilCd > 0 ? Math.ceil(P.abilCd) + "s" : "HABILIDAD", P.abilCd > 0 ? "rgba(255,255,255,0.1)" : "rgba(255,210,63,0.4)", 1 - P.abilCd / ab.cd);
   btn(B.pause, "II", "rgba(255,255,255,0.12)");
 }
 
@@ -3254,7 +3461,7 @@ function drawPause() {
   menuList([
     { label: "Continuar", fn: resume },
     { label: "Reiniciar nivel", fn: () => loadLevel(levelIdx, true) },
-    { label: `Minimapa: ${settings.minimap ? "Sí" : "No"}`, fn: () => { settings.minimap = !settings.minimap; store.set("minimap", settings.minimap); } },
+    { label: `Minimapa: ${["No", "Pequeño", "Grande"][settings.minimap]}`, fn: () => { settings.minimap = (settings.minimap + 1) % 3; store.set("minimap", settings.minimap); } },
     { label: `Sonido: ${settings.sound ? "Sí" : "No"}`, fn: () => setSound(!settings.sound) },
     { label: `Efectos: ${settings.fx ? "Altos" : "Bajos"}`, fn: toggleFx },
     { label: "Salir al menú", fn: toMenu },
@@ -3262,7 +3469,7 @@ function drawPause() {
   if (!touch.on) {
     ctx.fillStyle = "rgba(243,230,200,0.55)"; ctx.font = "13px system-ui"; ctx.textAlign = "center";
     const y = VH * 0.2 + 30 + 6 * 54 + 24;
-    ["ESPACIO o clic: disparar  ·  WASD/flechas: moverse  ·  SHIFT o clic derecho: esquivar",
+    ["F, J o clic: disparar  ·  ESPACIO: habilidad del sombrero  ·  WASD/flechas: moverse  ·  SHIFT o clic derecho: esquivar",
      "1-9, 0, - / Q / rueda / clic en la barra: cambiar arma  ·  R: recargar  ·  TAB: minimapa  ·  M: sonido  ·  P/Esc: pausa"]
       .forEach((l, i) => ctx.fillText(l, VW / 2, y + i * 20, VW - 24));
   }
@@ -3387,8 +3594,8 @@ function drawTitle() {
   const yb = ty + (s ? 140 : 205) + items.length * (bh + 8) + 18;
   ctx.textAlign = "center"; ctx.fillStyle = "rgba(243,230,200,0.55)"; ctx.font = `${s ? 12 : 14}px system-ui`;
   const lines = touch.on || isTouch()
-    ? ["Joystick a la izquierda · DISPARA a la derecha", "(arrastra DISPARA para apuntar) · ESQUIVA · ARMA"]
-    : ["ESPACIO: disparar  ·  WASD/flechas: moverse  ·  SHIFT: esquivar",
+    ? ["Joystick a la izquierda · DISPARA a la derecha", "(arrastra DISPARA para apuntar) · ESQUIVA · HABILIDAD · ARMA"]
+    : ["F o clic: disparar  ·  ESPACIO: habilidad  ·  WASD: moverse  ·  SHIFT: esquivar",
        "Ratón: apuntar y disparar  ·  1-9, 0, -: cambiar arma  ·  R: recargar  ·  P: pausa"];
   lines.forEach((l, i) => ctx.fillText(l, VW / 2, yb + i * 20, VW - 24));
   if (best > 0) { ctx.fillStyle = "#f5c542"; ctx.font = `bold ${s ? 12 : 14}px system-ui`; ctx.fillText(`Récord: ${best} puntos`, VW / 2, yb + 50); }
@@ -3414,6 +3621,7 @@ function storyNext(d = 1) {
   story.i += d; story.t = 0;
 }
 function wrapText(text, maxW) {
+  text = tr(text);
   const words = text.split(" "), lines = []; let line = "";
   for (const w of words) { const t = line ? line + " " + w : w; if (ctx.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t; }
   if (line) lines.push(line);
@@ -3584,11 +3792,11 @@ function drawStory() {
 }
 
 // --- editor del personaje ---
-const SUIT_COLORS = ["#3d7ff0", "#e5484d", "#2fbf71", "#9b5cf0", "#ff8a1f", "#20b8c9", "#e85aa8", "#4a4a58"];
-const SKIN_TONES = ["#ffdfc4", "#f2c79b", "#d9a066", "#a86b3c", "#6b4226"];
-const HATS = ["Casco minero", "Gorra", "Gorro de lana", "Cinta ninja"];
-const HAT_COLORS = ["#ffd23f", "#e5484d", "#3e8ef7", "#2fbf71", "#ff8ad8", "#f3f3f3", "#2a2a2a"];
-const PACK_COLORS = ["#7a4218", "#2f2f38", "#2fbf71", "#e5484d", "#3e8ef7", "#f5c542"];
+const SUIT_COLORS = ["#3d7ff0", "#e5484d", "#2fbf71", "#9b5cf0", "#ff8a1f", "#20b8c9", "#e85aa8", "#4a4a58", "#ffd23f", "#8a5a2a", "#f3f3f3", "#1a1a1a", "#7fe0a0", "#ff6aa0", "#3a3ad8", "#8a1a2a"];
+const SKIN_TONES = ["#ffdfc4", "#f2c79b", "#d9a066", "#a86b3c", "#6b4226", "#fff0e6", "#e0ac69", "#4a2c18", "#9be15d", "#8fb8ff", "#c9a0ff"];
+const HATS = ["Casco minero", "Gorra", "Gorro de lana", "Cinta ninja", "Sombrero vaquero", "Corona", "Sombrero de mago", "Casco vikingo", "Gorro de chef", "Sombrero pirata"];
+const HAT_COLORS = ["#ffd23f", "#e5484d", "#3e8ef7", "#2fbf71", "#ff8ad8", "#f3f3f3", "#2a2a2a", "#ff8a1f", "#9b5cf0", "#20b8c9", "#8a5a2a", "#7fe0a0", "#c0c0c8", "#5a1a6a"];
+const PACK_COLORS = ["#7a4218", "#2f2f38", "#2fbf71", "#e5484d", "#3e8ef7", "#f5c542", "#9b5cf0", "#ff8a1f", "#20b8c9", "#f3f3f3", "#e85aa8", "#5a7a3a"];
 const DART_SKINS = [
   { name: "Clásico",   body: c => c,         tip: "#ff6a00" },
   { name: "Arcoíris",  body: () => `hsl(${Math.floor(time * 300 + Math.random() * 80) % 360},90%,60%)`, tip: "#ffffff", trail: "rainbow" },
@@ -3599,6 +3807,23 @@ const DART_SKINS = [
   { name: "Galaxia",   body: () => "#6a3bd8", tip: "#ff9cf0", trail: "stars" },
   { name: "Camuflaje", body: () => ["#5a7a3a", "#7a6a3a", "#3a5a2a"][Math.floor(Math.random() * 3)], tip: "#c9c08a" },
   { name: "Sandía",    body: () => "#3fbf4f", tip: "#ff4f6a" },
+  { name: "Chicle",    body: () => "#ff8ad8", tip: "#ffffff", trail: "neon" },
+  { name: "Lava",      body: () => "#3a1a10", tip: "#ff6a00", trail: "fire" },
+  { name: "Esmeralda", body: () => "#2fbf71", tip: "#d9ffe8", trail: "emerald" },
+  { name: "Fantasma",  body: () => "rgba(220,240,255,0.55)", tip: "#ffffff", trail: "ice" },
+];
+// cada sombrero tiene una habilidad especial (tecla ESPACIO)
+const ABILITIES = [
+  { name: "Destello minero", desc: "Un fogonazo aturde a los monstruos cercanos y revela el mapa", cd: 12, color: "#fff3b0" },
+  { name: "Turbo", desc: "Durante 5 segundos corres más y disparas el doble de rápido", cd: 14, color: "#ff8a1f" },
+  { name: "Escudo de lana", desc: "Una burbuja te protege de todos los golpes durante 6 segundos", cd: 16, color: "#9fd8ff" },
+  { name: "Lluvia de shurikens", desc: "Lanzas 12 estrellas de espuma a tu alrededor", cd: 10, color: "#ff5a6a" },
+  { name: "Tiro rápido", desc: "Disparas un abanico de 9 dardos sin gastar balas", cd: 9, color: "#d9a066" },
+  { name: "Orden real", desc: "Los monstruos cercanos huyen de ti durante 4 segundos", cd: 15, color: "#f5c542" },
+  { name: "Teletransporte", desc: "Apareces de golpe un poco más allá, hacia donde apuntas", cd: 8, color: "#c9a0ff" },
+  { name: "Grito vikingo", desc: "Una onda empuja y daña a los monstruos a tu alrededor", cd: 12, color: "#c0c0c8" },
+  { name: "Merienda", desc: "Te comes un bocadillo y recuperas dos corazones", cd: 25, color: "#ff8a8a" },
+  { name: "Bomba pirata", desc: "Dejas caer una bomba que estalla con gran fuerza", cd: 14, color: "#ffb02e" },
 ];
 const NAMES = ["Alex", "Sam", "Leo", "Mia", "Noa", "Iker", "Vega", "Teo", "Lía", "Max", "Luna", "Hugo"];
 const LOOK_DEFAULT = { name: "Alex", suit: 0, skin: 1, hat: 0, hatColor: 0, pack: 0, dart: 0 };
@@ -3613,6 +3838,7 @@ function dartTrail(p) {
   if (tr === "rainbow") return { ...base, c: `hsl(${Math.floor(time * 500) % 360},90%,65%)` };
   if (tr === "neon") return { ...base, c: "#ff2bd6", glow: true, life: 0.2, max: 0.2 };
   if (tr === "gold") return { ...base, c: "#ffe27a", glow: true, s: 1.4 };
+  if (tr === "emerald") return { ...base, c: "#7fffb0", glow: true, s: 1.5 };
   if (tr === "stars") return { ...base, c: ["#ffffff", "#ff9cf0", "#9cc8ff"][Math.floor(Math.random() * 3)], s: 1.3, life: 0.5, max: 0.5, glow: true };
   return null;
 }
@@ -3626,7 +3852,7 @@ nameInput.addEventListener("input", () => { look.name = nameInput.value.slice(0,
 nameInput.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === "Escape") nameInput.blur(); e.stopPropagation(); });
 nameInput.addEventListener("focus", () => { customRow = 0; });
 nameInput.addEventListener("blur", () => { if (!look.name.trim()) { look.name = "Alex"; nameInput.value = look.name; saveLook(); } });
-function openCustom(from) { customFrom = from; state = "custom"; uiSel = -1; customRow = 1; nameInput.value = look.name; previewDarts = []; previewParts = []; SFX.uiGo(); }
+function openCustom(from) { customFrom = from; state = "custom"; uiSel = -1; customRow = 2; nameInput.value = look.name; previewDarts = []; previewParts = []; SFX.uiGo(); }
 function customDone() {
   if (!look.name.trim()) look.name = "Alex";
   saveLook(); nameInput.blur(); nameInput.style.display = "none";
@@ -3639,6 +3865,7 @@ function randomLook() {
 }
 const CUSTOM_ROWS = [
   { label: "Nombre" },
+  { label: "País e idioma", key: "country" },
   { label: "Traje", key: "suit", list: SUIT_COLORS },
   { label: "Piel", key: "skin", list: SKIN_TONES },
   { label: "Sombrero", key: "hat", names: HATS },
@@ -3650,6 +3877,7 @@ function customChange(row, d) {
   const R = CUSTOM_ROWS[row];
   if (!R) return;
   if (!R.key) { look.name = NAMES[(NAMES.indexOf(look.name) + d + NAMES.length) % NAMES.length]; nameInput.value = look.name; }
+  else if (R.key === "country") { sortCountries(); const n = sortedCountries.length, i = sortedCountries.findIndex(c => c.iso === look.country); chooseCountry(sortedCountries[(i + d + n) % n]); return; }
   else { const n = (R.list || R.names).length; look[R.key] = (look[R.key] + d + n) % n; }
   saveLook(); SFX.ui();
 }
@@ -3688,11 +3916,17 @@ function drawCustom() {
   ctx.restore();
   ctx.restore();
   ctx.fillStyle = "#fff3dc"; ctx.font = `bold ${s ? 15 : 18}px system-ui`; ctx.textAlign = "center";
-  ctx.fillText(look.name || "Alex", pvX + pvW * (s ? 0.35 : 0.5), pvY + pvH - 14);
+  ctx.fillText(look.name || "Alex", pvX + pvW * (s ? 0.35 : 0.5), pvY + pvH - (s ? 30 : 58));
+  const ab = ABILITIES[look.hat] || ABILITIES[0];
+  ctx.fillStyle = ab.color; ctx.font = `bold ${s ? 11 : 13}px system-ui`;
+  ctx.fillText(`Habilidad (ESPACIO): ${ab.name}`, pvX + pvW / 2, pvY + pvH - (s ? 14 : 36), pvW - 16);
+  if (!s) { ctx.fillStyle = "rgba(243,230,200,0.65)"; ctx.font = "11px system-ui"; wrapText(ab.desc, pvW - 30).forEach((l, i) => ctx.fillText(l, pvX + pvW / 2, pvY + pvH - 20 + i * 13)); }
   // opciones
   const oX = s ? 12 : VW / 2 - 50, oW = s ? VW - 24 : 420, rowH = s ? 46 : 50, oY = s ? pvY + pvH + 10 : 90;
+  const rowHs = CUSTOM_ROWS.map(R => R.list && R.list.length > 9 ? rowH + (s ? 14 : 12) : rowH);
+  const rowY = rowHs.map((h, i) => oY + rowHs.slice(0, i).reduce((a, b) => a + b, 0));
   CUSTOM_ROWS.forEach((R, r) => {
-    const y = oY + r * rowH, sel = customRow === r;
+    const y = rowY[r], rowH = rowHs[r], sel = customRow === r;
     ctx.fillStyle = sel ? "rgba(232,163,61,0.16)" : "rgba(20,16,24,0.7)"; ctx.strokeStyle = sel ? "#e8a33d" : "rgba(243,230,200,0.12)"; ctx.lineWidth = sel ? 1.5 : 1;
     ctx.beginPath(); ctx.roundRect(oX, y, oW, rowH - 6, 9); ctx.fill(); ctx.stroke();
     ui.push({ x: oX, y, w: s ? 92 : 128, h: rowH - 6, fn: () => { customRow = r; if (!R.key) nameInput.focus(); } });
@@ -3702,13 +3936,21 @@ function drawCustom() {
     if (!R.key) {
       Object.assign(nameInput.style, { display: "block", left: x0 + "px", top: (y + 5) + "px", width: (cw - 44) + "px", height: (rowH - 16) + "px" });
       button("🎲", x0 + cw - 38, y + 5, 38, rowH - 16, () => { customRow = 0; customChange(0, 1 + Math.floor(Math.random() * 5)); }, { size: 15 });
+    } else if (R.key === "country") {
+      const c = countryOf(look.country);
+      button("‹", x0, y + 5, 34, rowH - 16, () => { customRow = r; customChange(r, -1); }, { size: 18 });
+      button("›", x0 + cw - 34, y + 5, 34, rowH - 16, () => { customRow = r; customChange(r, 1); }, { size: 18 });
+      ui.push({ x: x0 + 38, y: y + 4, w: cw - 76, h: rowH - 14, fn: () => { customRow = r; openPicker(); } });
+      ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.beginPath(); ctx.roundRect(x0 + 38, y + 5, cw - 76, rowH - 16, 8); ctx.fill();
+      ctx.textAlign = "center"; ctx.fillStyle = "#fff3dc"; ctx.font = `bold ${s ? 12 : 14}px system-ui`;
+      ctx.fillText(`${flagOf(c.iso)} ${countryName(c)} · ${LANG_NAMES[c.lang]} ▾`, x0 + cw / 2, mid + 5, cw - 84);
     } else if (R.list) {
-      const n = R.list.length, sw = Math.min(30, (cw - 4) / n - 6);
+      const n = R.list.length, perRow = n > 9 ? Math.ceil(n / 2) : n, sw = Math.min(n > 9 ? 22 : 30, (cw - 4) / perRow - 5);
       R.list.forEach((c, j) => {
-        const sx = x0 + j * (sw + 6) + sw / 2, on = look[R.key] === j;
-        ui.push({ x: sx - sw / 2 - 2, y: mid - sw / 2 - 2, w: sw + 4, h: sw + 4, fn: () => { customRow = r; look[R.key] = j; saveLook(); SFX.ui(); } });
-        ctx.fillStyle = c; ctx.beginPath(); ctx.arc(sx, mid, sw / 2 - (on ? 0 : 2), 0, 7); ctx.fill();
-        gloss(sx, mid, sw / 2 - (on ? 0 : 2), 0.3);
+        const sx = x0 + (j % perRow) * (sw + 5) + sw / 2, my2 = n > 9 ? mid + (Math.floor(j / perRow) - 0.5) * (sw + 4) : mid, on = look[R.key] === j;
+        ui.push({ x: sx - sw / 2 - 2, y: my2 - sw / 2 - 2, w: sw + 4, h: sw + 4, fn: () => { customRow = r; look[R.key] = j; saveLook(); SFX.ui(); } });
+        ctx.fillStyle = c; ctx.beginPath(); ctx.arc(sx, my2, sw / 2 - (on ? 0 : 2), 0, 7); ctx.fill();
+        gloss(sx, my2, sw / 2 - (on ? 0 : 2), 0.3);
         ctx.strokeStyle = on ? "#fff" : "rgba(0,0,0,0.5)"; ctx.lineWidth = on ? 2.5 : 1; ctx.stroke();
       });
     } else {
@@ -3723,12 +3965,13 @@ function drawCustom() {
       } else ctx.fillText(name, x0 + cw / 2, mid + 5);
     }
   });
-  const by = oY + CUSTOM_ROWS.length * rowH + 6, bw = (oW - 10) / 2;
+  const by = rowY[rowY.length - 1] + rowHs[rowHs.length - 1] + 6, bw = (oW - 10) / 2;
   button("Aleatorio", oX, by, bw, 44, randomLook, { size: 15 });
   button(customFrom === "new" ? "¡A jugar! ›" : "Guardar ›", oX + bw + 10, by, bw, 44, customDone, { size: 16 });
   if (customRow === CUSTOM_ROWS.length) { ctx.strokeStyle = "#e8a33d"; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(oX + bw + 8, by - 2, bw + 4, 48, 11); ctx.stroke(); }
   if (!s) { ctx.fillStyle = "rgba(243,230,200,0.5)"; ctx.font = "13px system-ui"; ctx.textAlign = "center"; ctx.fillText("↑↓ elegir fila  ·  ←→ cambiar  ·  ENTER jugar", VW / 2, by + 74); }
   ctx.globalAlpha = 1;
+  if (picker.open) drawPicker();
 }
 
 // ---------- Música, fanfarrias, combos, logros e historieta final ----------
@@ -3895,7 +4138,7 @@ function drawAchPop() {
   if (!achPop) return;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   const t = achPop.t, w = Math.min(290, VW - 24), h = 58, kin = ease(t * 4), kout = t > 3.1 ? ease((t - 3.1) * 3) : 0;
-  const x = VW - 12 - w * kin + (w + 20) * kout, y = sm() ? 150 : 158;
+  const x = VW - 12 - w * kin + (w + 20) * kout, y = sm() ? 176 : 214;
   ctx.save(); ctx.shadowColor = "rgba(255,200,60,0.5)"; ctx.shadowBlur = 16;
   const g = ctx.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, "rgba(60,44,20,0.96)"); g.addColorStop(1, "rgba(20,14,8,0.96)");
   ctx.fillStyle = g; ctx.strokeStyle = "#f5c542"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(x, y, w, h, 10); ctx.fill(); ctx.stroke(); ctx.restore();
@@ -4019,6 +4262,307 @@ function drawEndScene(i, t) {
     comicText("FIN", 60, 40, 30, -0.1);
   }
 }
+
+// ---------- Idiomas y países ----------
+// Todos los textos pasan por tr() al dibujarse; las plantillas con {0}, {1}... traducen textos con números o nombres.
+const LANG_NAMES = { es: "Español", en: "English", pt: "Português", fr: "Français", de: "Deutsch", it: "Italiano" };
+// nombre en español : código ISO : idioma del juego (si no se indica, inglés)
+const COUNTRY_DATA = "Afganistán:AF|Albania:AL|Alemania:DE:de|Andorra:AD:es|Angola:AO:pt|Antigua y Barbuda:AG|Arabia Saudita:SA|Argelia:DZ:fr|Argentina:AR:es|Armenia:AM|Australia:AU|Austria:AT:de|Azerbaiyán:AZ|Bahamas:BS|Bangladés:BD|Barbados:BB|Baréin:BH|Bélgica:BE:fr|Belice:BZ|Benín:BJ:fr|Bielorrusia:BY|Birmania:MM|Bolivia:BO:es|Bosnia y Herzegovina:BA|Botsuana:BW|Brasil:BR:pt|Brunéi:BN|Bulgaria:BG|Burkina Faso:BF:fr|Burundi:BI:fr|Bután:BT|Cabo Verde:CV:pt|Camboya:KH|Camerún:CM:fr|Canadá:CA|Catar:QA|Chad:TD:fr|Chile:CL:es|China:CN|Chipre:CY|Ciudad del Vaticano:VA:it|Colombia:CO:es|Comoras:KM:fr|Corea del Norte:KP|Corea del Sur:KR|Costa de Marfil:CI:fr|Costa Rica:CR:es|Croacia:HR|Cuba:CU:es|Dinamarca:DK|Dominica:DM|Ecuador:EC:es|Egipto:EG|El Salvador:SV:es|Emiratos Árabes Unidos:AE|Eritrea:ER|Eslovaquia:SK|Eslovenia:SI|España:ES:es|Estados Unidos:US|Estonia:EE|Esuatini:SZ|Etiopía:ET|Filipinas:PH|Finlandia:FI|Fiyi:FJ|Francia:FR:fr|Gabón:GA:fr|Gambia:GM|Georgia:GE|Ghana:GH|Granada:GD|Grecia:GR|Guatemala:GT:es|Guinea:GN:fr|Guinea Ecuatorial:GQ:es|Guinea-Bisáu:GW:pt|Guyana:GY|Haití:HT:fr|Honduras:HN:es|Hungría:HU|India:IN|Indonesia:ID|Irak:IQ|Irán:IR|Irlanda:IE|Islandia:IS|Islas Marshall:MH|Islas Salomón:SB|Israel:IL|Italia:IT:it|Jamaica:JM|Japón:JP|Jordania:JO|Kazajistán:KZ|Kenia:KE|Kirguistán:KG|Kiribati:KI|Kosovo:XK|Kuwait:KW|Laos:LA|Lesoto:LS|Letonia:LV|Líbano:LB:fr|Liberia:LR|Libia:LY|Liechtenstein:LI:de|Lituania:LT|Luxemburgo:LU:fr|Macedonia del Norte:MK|Madagascar:MG:fr|Malasia:MY|Malaui:MW|Maldivas:MV|Malí:ML:fr|Malta:MT|Marruecos:MA:fr|Mauricio:MU:fr|Mauritania:MR:fr|México:MX:es|Micronesia:FM|Moldavia:MD|Mónaco:MC:fr|Mongolia:MN|Montenegro:ME|Mozambique:MZ:pt|Namibia:NA|Nauru:NR|Nepal:NP|Nicaragua:NI:es|Níger:NE:fr|Nigeria:NG|Noruega:NO|Nueva Zelanda:NZ|Omán:OM|Países Bajos:NL|Pakistán:PK|Palaos:PW|Palestina:PS|Panamá:PA:es|Papúa Nueva Guinea:PG|Paraguay:PY:es|Perú:PE:es|Polonia:PL|Portugal:PT:pt|Reino Unido:GB|República Centroafricana:CF:fr|República Checa:CZ|República del Congo:CG:fr|República Democrática del Congo:CD:fr|República Dominicana:DO:es|Ruanda:RW:fr|Rumania:RO|Rusia:RU|Samoa:WS|San Cristóbal y Nieves:KN|San Marino:SM:it|San Vicente y las Granadinas:VC|Santa Lucía:LC|Santo Tomé y Príncipe:ST:pt|Senegal:SN:fr|Serbia:RS|Seychelles:SC|Sierra Leona:SL|Singapur:SG|Siria:SY|Somalia:SO|Sri Lanka:LK|Sudáfrica:ZA|Sudán:SD|Sudán del Sur:SS|Suecia:SE|Suiza:CH:de|Surinam:SR|Tailandia:TH|Taiwán:TW|Tanzania:TZ|Tayikistán:TJ|Timor Oriental:TL:pt|Togo:TG:fr|Tonga:TO|Trinidad y Tobago:TT|Túnez:TN:fr|Turkmenistán:TM|Turquía:TR|Tuvalu:TV|Ucrania:UA|Uganda:UG|Uruguay:UY:es|Uzbekistán:UZ|Vanuatu:VU|Venezuela:VE:es|Vietnam:VN|Yemen:YE|Yibuti:DJ:fr|Zambia:ZM|Zimbabue:ZW";
+const COUNTRIES = COUNTRY_DATA.split("|").map(e => { const [es, iso, lang] = e.split(":"); return { es, iso, lang: lang || "en" }; });
+const flagOf = iso => iso.replace(/./g, ch => String.fromCodePoint(0x1F1E6 + ch.charCodeAt(0) - 65));
+let regionNames = null;
+function countryName(c) {
+  if (LANG === "es") return c.es;
+  try { if (!regionNames || regionNames._l !== LANG) { regionNames = new Intl.DisplayNames([LANG], { type: "region" }); regionNames._l = LANG; } return regionNames.of(c.iso) || c.es; } catch (e) { return c.es; }
+}
+let sortedCountries = [];
+function sortCountries() { sortedCountries = COUNTRIES.slice().sort((a, b) => countryName(a).localeCompare(countryName(b), LANG)); }
+
+// tabla: español | inglés | portugués | francés | alemán | italiano
+const TR_ROWS = [
+["Nueva partida", "New game", "Novo jogo", "Nouvelle partie", "Neues Spiel", "Nuova partita"],
+["Continuar · Nivel {0} ({1})", "Continue · Level {0} ({1})", "Continuar · Nível {0} ({1})", "Continuer · Niveau {0} ({1})", "Weiter · Level {0} ({1})", "Continua · Livello {0} ({1})"],
+["Personaje: {0}", "Character: {0}", "Personagem: {0}", "Personnage : {0}", "Figur: {0}", "Personaggio: {0}"],
+["Logros ({0}/{1})", "Achievements ({0}/{1})", "Conquistas ({0}/{1})", "Succès ({0}/{1})", "Erfolge ({0}/{1})", "Obiettivi ({0}/{1})"],
+["Dificultad: {0}", "Difficulty: {0}", "Dificuldade: {0}", "Difficulté : {0}", "Schwierigkeit: {0}", "Difficoltà: {0}"],
+["Sonido: Sí", "Sound: On", "Som: Sim", "Son : Oui", "Ton: An", "Audio: Sì"],
+["Sonido: No", "Sound: Off", "Som: Não", "Son : Non", "Ton: Aus", "Audio: No"],
+["Efectos: Altos", "Effects: High", "Efeitos: Altos", "Effets : Élevés", "Effekte: Hoch", "Effetti: Alti"],
+["Efectos: Bajos", "Effects: Low", "Efeitos: Baixos", "Effets : Faibles", "Effekte: Niedrig", "Effetti: Bassi"],
+["Minimapa: No", "Minimap: Off", "Minimapa: Não", "Mini-carte : Non", "Minikarte: Aus", "Minimappa: No"],
+["Minimapa: Pequeño", "Minimap: Small", "Minimapa: Pequeno", "Mini-carte : Petite", "Minikarte: Klein", "Minimappa: Piccola"],
+["Minimapa: Grande", "Minimap: Large", "Minimapa: Grande", "Mini-carte : Grande", "Minikarte: Groß", "Minimappa: Grande"],
+["Fácil", "Easy", "Fácil", "Facile", "Leicht", "Facile"],
+["Normal", "Normal", "Normal", "Normal", "Normal", "Normale"],
+["Difícil", "Hard", "Difícil", "Difficile", "Schwer", "Difficile"],
+["· UNA AVENTURA BAJO TIERRA ·", "· AN UNDERGROUND ADVENTURE ·", "· UMA AVENTURA SUBTERRÂNEA ·", "· UNE AVENTURE SOUTERRAINE ·", "· EIN ABENTEUER UNTER TAGE ·", "· UN'AVVENTURA SOTTOTERRA ·"],
+["10 niveles: encuentra las llaves, abre las puertas y rescata a Chispa del Rey Ogro.", "10 levels: find the keys, open the doors and rescue Sparky from the Ogre King.", "10 níveis: encontre as chaves, abra as portas e resgate a Faísca do Rei Ogro.", "10 niveaux : trouve les clés, ouvre les portes et sauve Étincelle du Roi Ogre.", "10 Level: Finde die Schlüssel, öffne die Türen und rette Funke vor dem Oger-König.", "10 livelli: trova le chiavi, apri le porte e salva Scintilla dal Re Orco."],
+["Récord: {0} puntos", "Best: {0} points", "Recorde: {0} pontos", "Record : {0} points", "Rekord: {0} Punkte", "Record: {0} punti"],
+["F, J o clic: disparar  ·  ESPACIO: habilidad del sombrero  ·  WASD/flechas: moverse  ·  SHIFT o clic derecho: esquivar", "F, J or click: shoot  ·  SPACE: hat ability  ·  WASD/arrows: move  ·  SHIFT or right click: dodge", "F, J ou clique: atirar  ·  ESPAÇO: habilidade do chapéu  ·  WASD/setas: mover  ·  SHIFT ou clique direito: esquivar", "F, J ou clic : tirer  ·  ESPACE : pouvoir du chapeau  ·  ZQSD/flèches : bouger  ·  MAJ ou clic droit : esquiver", "F, J oder Klick: schießen  ·  LEERTASTE: Hut-Fähigkeit  ·  WASD/Pfeile: bewegen  ·  SHIFT oder Rechtsklick: ausweichen", "F, J o clic: sparare  ·  SPAZIO: abilità del cappello  ·  WASD/frecce: muoversi  ·  SHIFT o clic destro: schivare"],
+["1-9, 0, - / Q / rueda / clic en la barra: cambiar arma  ·  R: recargar  ·  TAB: minimapa  ·  M: sonido  ·  P/Esc: pausa", "1-9, 0, - / Q / wheel / click the bar: change weapon  ·  R: reload  ·  TAB: minimap  ·  M: sound  ·  P/Esc: pause", "1-9, 0, - / Q / roda / clique na barra: trocar arma  ·  R: recarregar  ·  TAB: minimapa  ·  M: som  ·  P/Esc: pausa", "1-9, 0, - / Q / molette / clic sur la barre : changer d'arme  ·  R : recharger  ·  TAB : mini-carte  ·  M : son  ·  P/Échap : pause", "1-9, 0, - / Q / Mausrad / Klick auf die Leiste: Waffe wechseln  ·  R: nachladen  ·  TAB: Minikarte  ·  M: Ton  ·  P/Esc: Pause", "1-9, 0, - / Q / rotella / clic sulla barra: cambia arma  ·  R: ricarica  ·  TAB: minimappa  ·  M: audio  ·  P/Esc: pausa"],
+["F o clic: disparar  ·  ESPACIO: habilidad  ·  WASD: moverse  ·  SHIFT: esquivar", "F or click: shoot  ·  SPACE: ability  ·  WASD: move  ·  SHIFT: dodge", "F ou clique: atirar  ·  ESPAÇO: habilidade  ·  WASD: mover  ·  SHIFT: esquivar", "F ou clic : tirer  ·  ESPACE : pouvoir  ·  ZQSD : bouger  ·  MAJ : esquiver", "F oder Klick: schießen  ·  LEERTASTE: Fähigkeit  ·  WASD: bewegen  ·  SHIFT: ausweichen", "F o clic: sparare  ·  SPAZIO: abilità  ·  WASD: muoversi  ·  SHIFT: schivare"],
+["Ratón: apuntar y disparar  ·  1-9, 0, -: cambiar arma  ·  R: recargar  ·  P: pausa", "Mouse: aim and shoot  ·  1-9, 0, -: change weapon  ·  R: reload  ·  P: pause", "Mouse: mirar e atirar  ·  1-9, 0, -: trocar arma  ·  R: recarregar  ·  P: pausa", "Souris : viser et tirer  ·  1-9, 0, - : changer d'arme  ·  R : recharger  ·  P : pause", "Maus: zielen und schießen  ·  1-9, 0, -: Waffe wechseln  ·  R: nachladen  ·  P: Pause", "Mouse: mira e spara  ·  1-9, 0, -: cambia arma  ·  R: ricarica  ·  P: pausa"],
+["Joystick a la izquierda · DISPARA a la derecha", "Joystick on the left · SHOOT on the right", "Joystick à esquerda · ATIRAR à direita", "Joystick à gauche · TIRER à droite", "Joystick links · SCHIESSEN rechts", "Joystick a sinistra · SPARA a destra"],
+["(arrastra DISPARA para apuntar) · ESQUIVA · HABILIDAD · ARMA", "(drag SHOOT to aim) · DODGE · ABILITY · WEAPON", "(arraste ATIRAR para mirar) · ESQUIVAR · HABILIDADE · ARMA", "(glisse TIRER pour viser) · ESQUIVE · POUVOIR · ARME", "(SCHIESSEN ziehen zum Zielen) · AUSWEICHEN · FÄHIGKEIT · WAFFE", "(trascina SPARA per mirare) · SCHIVA · ABILITÀ · ARMA"],
+["PAUSA", "PAUSED", "PAUSA", "PAUSE", "PAUSE", "PAUSA"],
+["Continuar", "Continue", "Continuar", "Continuer", "Weiter", "Continua"],
+["Reiniciar nivel", "Restart level", "Reiniciar nível", "Recommencer le niveau", "Level neu starten", "Ricomincia livello"],
+["Salir al menú", "Quit to menu", "Sair para o menu", "Retour au menu", "Zum Menü", "Esci al menu"],
+["NIVEL {0} COMPLETADO", "LEVEL {0} COMPLETE", "NÍVEL {0} CONCLUÍDO", "NIVEAU {0} TERMINÉ", "LEVEL {0} GESCHAFFT", "LIVELLO {0} COMPLETATO"],
+["Monstruos", "Monsters", "Monstros", "Monstres", "Monster", "Mostri"],
+["Oro encontrado", "Gold found", "Ouro encontrado", "Or trouvé", "Gold gefunden", "Oro trovato"],
+["Secretos", "Secrets", "Segredos", "Secrets", "Geheimnisse", "Segreti"],
+["Tiempo", "Time", "Tempo", "Temps", "Zeit", "Tempo"],
+["Bonus de rapidez", "Speed bonus", "Bônus de rapidez", "Bonus de vitesse", "Tempobonus", "Bonus velocità"],
+["Puntos totales", "Total score", "Pontos totais", "Score total", "Gesamtpunkte", "Punti totali"],
+["Siguiente nivel ›", "Next level ›", "Próximo nível ›", "Niveau suivant ›", "Nächstes Level ›", "Livello successivo ›"],
+["¡TE HAN ATRAPADO!", "YOU GOT CAUGHT!", "TE PEGARAM!", "TU T'ES FAIT ATTRAPER !", "DU WURDEST ERWISCHT!", "TI HANNO PRESO!"],
+["Consejo: {0}", "Tip: {0}", "Dica: {0}", "Astuce : {0}", "Tipp: {0}", "Consiglio: {0}"],
+["Reintentar nivel", "Retry level", "Tentar de novo", "Réessayer le niveau", "Level wiederholen", "Riprova livello"],
+["¡ESCAPASTE DEL ABISMO!", "YOU ESCAPED THE ABYSS!", "VOCÊ ESCAPOU DO ABISMO!", "TU AS FUI L'ABÎME !", "DU BIST DEM ABGRUND ENTKOMMEN!", "SEI FUGGITO DALL'ABISSO!"],
+["{0} ha rescatado a Chispa y ambos vuelven a la luz del sol.", "{0} rescued Sparky and both are back in the sunlight.", "{0} resgatou a Faísca e os dois voltaram à luz do sol.", "{0} a sauvé Étincelle et tous deux retrouvent le soleil.", "{0} hat Funke gerettet und beide sind zurück im Sonnenlicht.", "{0} ha salvato Scintilla e insieme tornano alla luce del sole."],
+["Dificultad", "Difficulty", "Dificuldade", "Difficulté", "Schwierigkeit", "Difficoltà"],
+["Monstruos derrotados", "Monsters defeated", "Monstros derrotados", "Monstres vaincus", "Besiegte Monster", "Mostri sconfitti"],
+["Oro", "Gold", "Ouro", "Or", "Gold", "Oro"],
+["Estrellas", "Stars", "Estrelas", "Étoiles", "Sterne", "Stelle"],
+["Tiempo total", "Total time", "Tempo total", "Temps total", "Gesamtzeit", "Tempo totale"],
+["¡NUEVO RÉCORD!", "NEW RECORD!", "NOVO RECORDE!", "NOUVEAU RECORD !", "NEUER REKORD!", "NUOVO RECORD!"],
+["Puntos", "Score", "Pontos", "Score", "Punkte", "Punti"],
+["Récord", "Best", "Recorde", "Record", "Rekord", "Record"],
+["Jugar de nuevo", "Play again", "Jogar de novo", "Rejouer", "Nochmal spielen", "Gioca ancora"],
+["Menú principal", "Main menu", "Menu principal", "Menu principal", "Hauptmenü", "Menu principale"],
+["Nivel {0}/{1} · {2}", "Level {0}/{1} · {2}", "Nível {0}/{1} · {2}", "Niveau {0}/{1} · {2}", "Level {0}/{1} · {2}", "Livello {0}/{1} · {2}"],
+["Oro {0}  ·  Puntos {1}", "Gold {0}  ·  Score {1}", "Ouro {0}  ·  Pontos {1}", "Or {0}  ·  Score {1}", "Gold {0}  ·  Punkte {1}", "Oro {0}  ·  Punti {1}"],
+["— NIVEL {0} —", "— LEVEL {0} —", "— NÍVEL {0} —", "— NIVEAU {0} —", "— LEVEL {0} —", "— LIVELLO {0} —"],
+["DISPARA", "SHOOT", "ATIRAR", "TIRER", "FEUER", "SPARA"],
+["ESQUIVA", "DODGE", "ESQUIVAR", "ESQUIVE", "AUSWEICHEN", "SCHIVA"],
+["ARMA", "WEAPON", "ARMA", "ARME", "WAFFE", "ARMA"],
+["HABILIDAD", "ABILITY", "HABILIDADE", "POUVOIR", "FÄHIGKEIT", "ABILITÀ"],
+["ESPACIO", "SPACE", "ESPAÇO", "ESPACE", "LEER", "SPAZIO"],
+["Desliza aquí para moverte", "Swipe here to move", "Deslize aqui para mover", "Glisse ici pour bouger", "Hier wischen zum Bewegen", "Scorri qui per muoverti"],
+["MAPA · TAB", "MAP · TAB", "MAPA · TAB", "CARTE · TAB", "KARTE · TAB", "MAPPA · TAB"],
+["MAPA COMPLETO · TAB para cerrar", "FULL MAP · TAB to close", "MAPA COMPLETO · TAB para fechar", "CARTE COMPLÈTE · TAB pour fermer", "GANZE KARTE · TAB zum Schließen", "MAPPA COMPLETA · TAB per chiudere"],
+["Las Galerías Olvidadas", "The Forgotten Galleries", "As Galerias Esquecidas", "Les Galeries Oubliées", "Die vergessenen Stollen", "Le Gallerie Dimenticate"],
+["Las Criptas Húmedas", "The Damp Crypts", "As Criptas Úmidas", "Les Cryptes Humides", "Die feuchten Krypten", "Le Cripte Umide"],
+["Las Minas de Cristal", "The Crystal Mines", "As Minas de Cristal", "Les Mines de Cristal", "Die Kristallminen", "Le Miniere di Cristallo"],
+["El Nido de las Arañas", "The Spider Nest", "O Ninho das Aranhas", "Le Nid des Araignées", "Das Spinnennest", "Il Nido dei Ragni"],
+["La Guarida de la Reina Araña", "The Spider Queen's Lair", "O Covil da Rainha Aranha", "Le Repaire de la Reine Araignée", "Der Bau der Spinnenkönigin", "La Tana della Regina Ragno"],
+["El Río Subterráneo", "The Underground River", "O Rio Subterrâneo", "La Rivière Souterraine", "Der unterirdische Fluss", "Il Fiume Sotterraneo"],
+["Las Catacumbas", "The Catacombs", "As Catacumbas", "Les Catacombes", "Die Katakomben", "Le Catacombe"],
+["La Forja de los Gólems", "The Golem Forge", "A Forja dos Golens", "La Forge des Golems", "Die Golemschmiede", "La Forgia dei Golem"],
+["El Laberinto de Espinas", "The Thorn Maze", "O Labirinto de Espinhos", "Le Labyrinthe d'Épines", "Das Dornenlabyrinth", "Il Labirinto di Spine"],
+["El Trono del Rey Ogro", "The Ogre King's Throne", "O Trono do Rei Ogro", "Le Trône du Roi Ogre", "Der Thron des Oger-Königs", "Il Trono del Re Orco"],
+["Pistola de mano", "Hand pistol", "Pistola de mão", "Pistolet", "Handpistole", "Pistola"],
+["Escopeta Nerf", "Nerf shotgun", "Espingarda Nerf", "Fusil à pompe Nerf", "Nerf-Schrotflinte", "Fucile a pompa Nerf"],
+["Semiautomática Nerf", "Nerf semi-auto", "Semiautomática Nerf", "Semi-automatique Nerf", "Nerf-Halbautomatik", "Semiautomatica Nerf"],
+["Rifle Nerf", "Nerf rifle", "Rifle Nerf", "Fusil Nerf", "Nerf-Gewehr", "Fucile Nerf"],
+["Ametralladora Nerf", "Nerf machine gun", "Metralhadora Nerf", "Mitrailleuse Nerf", "Nerf-Maschinengewehr", "Mitragliatrice Nerf"],
+["Ballesta Nerf", "Nerf crossbow", "Besta Nerf", "Arbalète Nerf", "Nerf-Armbrust", "Balestra Nerf"],
+["Lanzadiscos Nerf", "Nerf disc launcher", "Lança-discos Nerf", "Lance-disques Nerf", "Nerf-Scheibenwerfer", "Lanciadischi Nerf"],
+["Lanzagranadas Nerf", "Nerf grenade launcher", "Lança-granadas Nerf", "Lance-grenades Nerf", "Nerf-Granatwerfer", "Lanciagranate Nerf"],
+["Cañón lanza dardos", "Dart cannon", "Canhão de dardos", "Canon à fléchettes", "Pfeilkanone", "Cannone lanciadardi"],
+["Lanzacohetes Nerf", "Nerf rocket launcher", "Lança-foguetes Nerf", "Lance-roquettes Nerf", "Nerf-Raketenwerfer", "Lanciarazzi Nerf"],
+["roja", "red", "vermelha", "rouge", "rote", "rossa"], ["azul", "blue", "azul", "bleue", "blaue", "blu"], ["verde", "green", "verde", "verte", "grüne", "verde"], ["dorada", "golden", "dourada", "dorée", "goldene", "dorata"],
+["Puerta cerrada: necesitas la llave {0}", "Locked door: you need the {0} key", "Porta trancada: você precisa da chave {0}", "Porte fermée : il te faut la clé {0}", "Verschlossen: Du brauchst den {0} Schlüssel", "Porta chiusa: ti serve la chiave {0}"],
+["Tienes la llave {0}. ¡Busca su puerta!", "You have the {0} key. Find its door!", "Você tem a chave {0}. Ache a porta!", "Tu as la clé {0}. Trouve sa porte !", "Du hast den {0} Schlüssel. Finde die Tür!", "Hai la chiave {0}. Trova la sua porta!"],
+["Llave {0}", "{0} key", "Chave {0}", "Clé {0}", "{0} Schlüssel", "Chiave {0}"],
+["¡Puerta abierta!", "Door opened!", "Porta aberta!", "Porte ouverte !", "Tür offen!", "Porta aperta!"],
+["¡Secreto!", "Secret!", "Segredo!", "Secret !", "Geheimnis!", "Segreto!"],
+["¡Has descubierto un pasaje secreto! +100", "You found a secret passage! +100", "Você achou uma passagem secreta! +100", "Tu as trouvé un passage secret ! +100", "Geheimgang entdeckt! +100", "Hai scoperto un passaggio segreto! +100"],
+["+vida", "+life", "+vida", "+vie", "+Leben", "+vita"],
+["¡+1 corazón máximo y munición!", "+1 max heart and ammo!", "+1 coração máximo e munição!", "+1 cœur max et munitions !", "+1 Max-Herz und Munition!", "+1 cuore massimo e munizioni!"],
+["+{0} balas · {1}", "+{0} ammo · {1}", "+{0} balas · {1}", "+{0} munitions · {1}", "+{0} Munition · {1}", "+{0} munizioni · {1}"],
+["+{0} balas", "+{0} ammo", "+{0} balas", "+{0} munitions", "+{0} Munition", "+{0} munizioni"],
+["¡Nueva arma: {0}! (tecla {1})", "New weapon: {0}! (key {1})", "Nova arma: {0}! (tecla {1})", "Nouvelle arme : {0} ! (touche {1})", "Neue Waffe: {0}! (Taste {1})", "Nuova arma: {0}! (tasto {1})"],
+["¡Nueva arma: {0}! (tócala en la barra)", "New weapon: {0}! (tap it on the bar)", "Nova arma: {0}! (toque na barra)", "Nouvelle arme : {0} ! (touche-la sur la barre)", "Neue Waffe: {0}! (in der Leiste antippen)", "Nuova arma: {0}! (toccala nella barra)"],
+["Más munición para {0}", "More ammo for {0}", "Mais munição para {0}", "Plus de munitions pour {0}", "Mehr Munition für {0}", "Più munizioni per {0}"],
+["¡{0} sin balas! Cambias a {1}", "{0} is empty! Switching to {1}", "{0} sem balas! Trocando para {1}", "{0} est vide ! Tu passes à {1}", "{0} ist leer! Wechsel zu {1}", "{0} è scarica! Passi a {1}"],
+["¡Sin munición! Busca balas o recoge dardos del suelo", "Out of ammo! Find bullets or pick up darts from the floor", "Sem munição! Procure balas ou pegue dardos do chão", "Plus de munitions ! Trouve des balles ou ramasse des fléchettes", "Keine Munition! Suche Munition oder sammle Pfeile auf", "Niente munizioni! Cerca proiettili o raccogli dardi da terra"],
+["Puedes recoger algunos dardos del suelo para recuperar munición", "You can pick up some darts from the floor to recover ammo", "Você pode pegar alguns dardos do chão para recuperar munição", "Tu peux ramasser des fléchettes au sol pour récupérer des munitions", "Du kannst Pfeile vom Boden aufsammeln, um Munition zurückzubekommen", "Puoi raccogliere alcuni dardi da terra per recuperare munizioni"],
+["¡Poca vida! Busca corazones o rompe cajas.", "Low health! Find hearts or break crates.", "Pouca vida! Procure corações ou quebre caixas.", "Peu de vie ! Trouve des cœurs ou casse des caisses.", "Wenig Leben! Suche Herzen oder zerbrich Kisten.", "Poca vita! Cerca cuori o rompi casse."],
+["¡Un monstruo! Dispara con F o clic y esquiva con SHIFT", "A monster! Shoot with F or click and dodge with SHIFT", "Um monstro! Atire com F ou clique e esquive com SHIFT", "Un monstre ! Tire avec F ou clic et esquive avec MAJ", "Ein Monster! Schieß mit F oder Klick und weich mit SHIFT aus", "Un mostro! Spara con F o clic e schiva con SHIFT"],
+["¡Un monstruo! Mantén DISPARA y pulsa ESQUIVA para evitar golpes", "A monster! Hold SHOOT and tap DODGE to avoid hits", "Um monstro! Segure ATIRAR e toque ESQUIVAR", "Un monstre ! Maintiens TIRER et touche ESQUIVE", "Ein Monster! Halte FEUER und tippe AUSWEICHEN", "Un mostro! Tieni premuto SPARA e tocca SCHIVA"],
+["¡Adelante, {0}! Muévete con WASD, dispara con F o clic y usa tu habilidad con ESPACIO", "Go, {0}! Move with WASD, shoot with F or click and use your ability with SPACE", "Vai, {0}! Mova-se com WASD, atire com F ou clique e use a habilidade com ESPAÇO", "Allez, {0} ! Bouge avec ZQSD, tire avec F ou clic et utilise ton pouvoir avec ESPACE", "Los, {0}! Beweg dich mit WASD, schieß mit F oder Klick und nutze deine Fähigkeit mit LEERTASTE", "Vai, {0}! Muoviti con WASD, spara con F o clic e usa l'abilità con SPAZIO"],
+["Desliza a la izquierda para moverte y mantén DISPARA a la derecha", "Swipe on the left to move and hold SHOOT on the right", "Deslize à esquerda para mover e segure ATIRAR à direita", "Glisse à gauche pour bouger et maintiens TIRER à droite", "Links wischen zum Bewegen, rechts FEUER halten", "Scorri a sinistra per muoverti e tieni SPARA a destra"],
+["Las telarañas te frenan. ¡Los cohetes las queman!", "Webs slow you down. Rockets burn them!", "Teias te deixam lento. Foguetes queimam elas!", "Les toiles te ralentissent. Les roquettes les brûlent !", "Netze bremsen dich. Raketen verbrennen sie!", "Le ragnatele ti rallentano. I razzi le bruciano!"],
+["¡Es Chispa! Sus ladridos vienen de la dirección de la salida.", "It's Sparky! Her barks come from the direction of the exit.", "É a Faísca! Os latidos vêm da direção da saída.", "C'est Étincelle ! Ses aboiements viennent de la sortie.", "Das ist Funke! Ihr Bellen kommt aus Richtung Ausgang.", "È Scintilla! I suoi latrati vengono dall'uscita."],
+["¡Guau!", "Woof!", "Au au!", "Ouaf !", "Wuff!", "Bau!"],
+["¡Un fantasma! Atraviesa paredes y solo recibe daño cuando es visible.", "A ghost! It goes through walls and only takes damage when visible.", "Um fantasma! Atravessa paredes e só leva dano quando visível.", "Un fantôme ! Il traverse les murs et ne subit des dégâts que visible.", "Ein Geist! Er geht durch Wände und nimmt nur sichtbar Schaden.", "Un fantasma! Attraversa i muri e subisce danni solo se visibile."],
+["¡Escarabajo explosivo! Dispárale de lejos antes de que llegue a ti.", "Exploding beetle! Shoot it from afar before it reaches you.", "Besouro explosivo! Atire de longe antes que chegue.", "Scarabée explosif ! Tire-lui dessus de loin.", "Explosiver Käfer! Schieß ihn ab, bevor er dich erreicht.", "Scarabeo esplosivo! Colpiscilo da lontano."],
+["¡Ojo vigía! Cuando trace una línea roja, apártate.", "Watcher eye! When it draws a red line, move away.", "Olho vigia! Quando traçar uma linha vermelha, saia.", "Œil guetteur ! Quand il trace une ligne rouge, écarte-toi.", "Wächterauge! Bei der roten Linie: ausweichen!", "Occhio vigile! Quando traccia una linea rossa, spostati."],
+["¡Hongo venenoso! No te quedes en sus nubes de esporas.", "Poison mushroom! Don't stay in its spore clouds.", "Cogumelo venenoso! Não fique nas nuvens de esporos.", "Champignon vénéneux ! Ne reste pas dans ses spores.", "Giftpilz! Bleib nicht in seinen Sporenwolken.", "Fungo velenoso! Non restare nelle spore."],
+["¡Un topo! Bajo tierra no le puedes dañar: espera a que salga.", "A mole! You can't hurt it underground: wait for it to pop out.", "Uma toupeira! Debaixo da terra não leva dano: espere sair.", "Une taupe ! Sous terre elle est intouchable : attends qu'elle sorte.", "Ein Maulwurf! Unter der Erde unverwundbar: warte, bis er auftaucht.", "Una talpa! Sottoterra è invulnerabile: aspetta che esca."],
+["¡El Rey Ogro despierta!", "The Ogre King awakens!", "O Rei Ogro desperta!", "Le Roi Ogre se réveille !", "Der Oger-König erwacht!", "Il Re Orco si sveglia!"],
+["¡El Rey Ogro está furioso!", "The Ogre King is furious!", "O Rei Ogro está furioso!", "Le Roi Ogre est furieux !", "Der Oger-König ist wütend!", "Il Re Orco è furioso!"],
+["¡El Rey Ogro está aturdido! ¡Ataca!", "The Ogre King is stunned! Attack!", "O Rei Ogro está atordoado! Ataque!", "Le Roi Ogre est sonné ! Attaque !", "Der Oger-König ist benommen! Angriff!", "Il Re Orco è stordito! Attacca!"],
+["¡La Reina Araña defiende su nido!", "The Spider Queen defends her nest!", "A Rainha Aranha defende seu ninho!", "La Reine Araignée défend son nid !", "Die Spinnenkönigin verteidigt ihr Nest!", "La Regina Ragno difende il nido!"],
+["¡La Reina Araña está furiosa!", "The Spider Queen is furious!", "A Rainha Aranha está furiosa!", "La Reine Araignée est furieuse !", "Die Spinnenkönigin ist wütend!", "La Regina Ragno è furiosa!"],
+["¡La Reina Araña está aturdida! ¡Ataca!", "The Spider Queen is stunned! Attack!", "A Rainha Aranha está atordoada! Ataque!", "La Reine Araignée est sonnée ! Attaque !", "Die Spinnenkönigin ist benommen! Angriff!", "La Regina Ragno è stordita! Attacca!"],
+["¡Has derrotado al Rey Ogro! Ha soltado la llave dorada.", "You defeated the Ogre King! He dropped the golden key.", "Você derrotou o Rei Ogro! Ele largou a chave dourada.", "Tu as vaincu le Roi Ogre ! Il a lâché la clé dorée.", "Du hast den Oger-König besiegt! Er ließ den goldenen Schlüssel fallen.", "Hai sconfitto il Re Orco! Ha lasciato la chiave dorata."],
+["¡Has derrotado a la Reina Araña! Ha soltado la llave dorada.", "You defeated the Spider Queen! She dropped the golden key.", "Você derrotou a Rainha Aranha! Ela largou a chave dourada.", "Tu as vaincu la Reine Araignée ! Elle a lâché la clé dorée.", "Du hast die Spinnenkönigin besiegt! Sie ließ den goldenen Schlüssel fallen.", "Hai sconfitto la Regina Ragno! Ha lasciato la chiave dorata."],
+["REY OGRO · SEÑOR DEL ABISMO", "OGRE KING · LORD OF THE ABYSS", "REI OGRO · SENHOR DO ABISMO", "ROI OGRE · SEIGNEUR DE L'ABÎME", "OGER-KÖNIG · HERR DES ABGRUNDS", "RE ORCO · SIGNORE DELL'ABISSO"],
+["REINA ARAÑA · MADRE DEL NIDO", "SPIDER QUEEN · MOTHER OF THE NEST", "RAINHA ARANHA · MÃE DO NINHO", "REINE ARAIGNÉE · MÈRE DU NID", "SPINNENKÖNIGIN · MUTTER DES NESTS", "REGINA RAGNO · MADRE DEL NIDO"],
+["Efectos reducidos para que el juego vaya más fluido (puedes cambiarlo en Pausa)", "Effects lowered so the game runs smoother (change it in Pause)", "Efeitos reduzidos para o jogo rodar melhor (mude na Pausa)", "Effets réduits pour plus de fluidité (modifiable dans Pause)", "Effekte reduziert für flüssigeres Spiel (in der Pause änderbar)", "Effetti ridotti per maggiore fluidità (modificabile in Pausa)"],
+["¡DOBLE!", "DOUBLE!", "DUPLO!", "DOUBLÉ !", "DOPPEL!", "DOPPIO!"], ["¡TRIPLE!", "TRIPLE!", "TRIPLO!", "TRIPLÉ !", "DREIFACH!", "TRIPLO!"], ["¡CUÁDRUPLE!", "QUADRUPLE!", "QUÁDRUPLO!", "QUADRUPLÉ !", "VIERFACH!", "QUADRUPLO!"], ["¡IMPARABLE!", "UNSTOPPABLE!", "IMPARÁVEL!", "INARRÊTABLE !", "UNAUFHALTSAM!", "INARRESTABILE!"],
+["¡LOGRO DESBLOQUEADO!", "ACHIEVEMENT UNLOCKED!", "CONQUISTA DESBLOQUEADA!", "SUCCÈS DÉBLOQUÉ !", "ERFOLG FREIGESCHALTET!", "OBIETTIVO SBLOCCATO!"],
+["LOGROS", "ACHIEVEMENTS", "CONQUISTAS", "SUCCÈS", "ERFOLGE", "OBIETTIVI"],
+["{0} de {1} desbloqueados", "{0} of {1} unlocked", "{0} de {1} desbloqueadas", "{0} sur {1} débloqués", "{0} von {1} freigeschaltet", "{0} di {1} sbloccati"],
+["‹ Volver", "‹ Back", "‹ Voltar", "‹ Retour", "‹ Zurück", "‹ Indietro"],
+["Primer dardo", "First dart", "Primeiro dardo", "Première fléchette", "Erster Pfeil", "Primo dardo"], ["Derrota a tu primer monstruo", "Defeat your first monster", "Derrote seu primeiro monstro", "Vaincs ton premier monstre", "Besiege dein erstes Monster", "Sconfiggi il tuo primo mostro"],
+["¡Triple!", "Triple!", "Triplo!", "Triplé !", "Dreifach!", "Triplo!"], ["Consigue un combo x3", "Get a x3 combo", "Faça um combo x3", "Fais un combo x3", "Schaffe eine x3-Kombo", "Fai una combo x3"],
+["Imparable", "Unstoppable", "Imparável", "Inarrêtable", "Unaufhaltsam", "Inarrestabile"], ["Consigue un combo x5", "Get a x5 combo", "Faça um combo x5", "Fais un combo x5", "Schaffe eine x5-Kombo", "Fai una combo x5"],
+["Explorador", "Explorer", "Explorador", "Explorateur", "Entdecker", "Esploratore"], ["Descubre un pasaje secreto", "Find a secret passage", "Ache uma passagem secreta", "Trouve un passage secret", "Finde einen Geheimgang", "Scopri un passaggio segreto"],
+["¡Kabum!", "Kaboom!", "Kabum!", "Kaboum !", "Kawumm!", "Kabum!"], ["Derrota a 3 monstruos con una explosión", "Defeat 3 monsters with one explosion", "Derrote 3 monstros com uma explosão", "Vaincs 3 monstres d'une seule explosion", "Besiege 3 Monster mit einer Explosion", "Sconfiggi 3 mostri con un'esplosione"],
+["Intocable", "Untouchable", "Intocável", "Intouchable", "Unberührbar", "Intoccabile"], ["Termina un nivel sin recibir daño", "Finish a level without taking damage", "Termine um nível sem levar dano", "Termine un niveau sans dégâts", "Schaffe ein Level ohne Schaden", "Finisci un livello senza danni"],
+["Perfeccionista", "Perfectionist", "Perfeccionista", "Perfectionniste", "Perfektionist", "Perfezionista"], ["Consigue 3 estrellas en un nivel", "Get 3 stars in a level", "Ganhe 3 estrelas num nível", "Obtiens 3 étoiles dans un niveau", "Hol 3 Sterne in einem Level", "Ottieni 3 stelle in un livello"],
+["Reciclador", "Recycler", "Reciclador", "Recycleur", "Recycler", "Riciclatore"], ["Recoge 25 dardos del suelo", "Pick up 25 darts from the floor", "Pegue 25 dardos do chão", "Ramasse 25 fléchettes", "Sammle 25 Pfeile auf", "Raccogli 25 dardi da terra"],
+["Buscador de oro", "Gold digger", "Caçador de ouro", "Chercheur d'or", "Goldsucher", "Cercatore d'oro"], ["Reúne 500 de oro en una partida", "Collect 500 gold in one game", "Junte 500 de ouro numa partida", "Récolte 500 d'or en une partie", "Sammle 500 Gold in einem Spiel", "Raccogli 500 d'oro in una partita"],
+["Arsenal completo", "Full arsenal", "Arsenal completo", "Arsenal complet", "Volles Arsenal", "Arsenale completo"], ["Consigue las 11 armas", "Get all 11 weapons", "Consiga as 11 armas", "Obtiens les 11 armes", "Hol alle 11 Waffen", "Ottieni tutte le 11 armi"],
+["Matarañas", "Spider slayer", "Mata-aranhas", "Tueur d'araignées", "Spinnentöter", "Ammazzaragni"], ["Derrota a la Reina Araña", "Defeat the Spider Queen", "Derrote a Rainha Aranha", "Vaincs la Reine Araignée", "Besiege die Spinnenkönigin", "Sconfiggi la Regina Ragno"],
+["Héroe del abismo", "Hero of the abyss", "Herói do abismo", "Héros de l'abîme", "Held des Abgrunds", "Eroe dell'abisso"], ["Derrota al Rey Ogro y rescata a Chispa", "Defeat the Ogre King and rescue Sparky", "Derrote o Rei Ogro e resgate a Faísca", "Vaincs le Roi Ogre et sauve Étincelle", "Besiege den Oger-König und rette Funke", "Sconfiggi il Re Orco e salva Scintilla"],
+["Leyenda", "Legend", "Lenda", "Légende", "Legende", "Leggenda"], ["Termina el juego en Difícil", "Finish the game on Hard", "Termine o jogo no Difícil", "Termine le jeu en Difficile", "Schaffe das Spiel auf Schwer", "Finisci il gioco a Difficile"],
+["TU PERSONAJE", "YOUR CHARACTER", "SEU PERSONAGEM", "TON PERSONNAGE", "DEINE FIGUR", "IL TUO PERSONAGGIO"],
+["Nombre", "Name", "Nome", "Nom", "Name", "Nome"], ["País e idioma", "Country & language", "País e idioma", "Pays et langue", "Land & Sprache", "Paese e lingua"],
+["Traje", "Outfit", "Roupa", "Tenue", "Anzug", "Tuta"], ["Piel", "Skin", "Pele", "Peau", "Haut", "Pelle"], ["Sombrero", "Hat", "Chapéu", "Chapeau", "Hut", "Cappello"],
+["Color del sombrero", "Hat color", "Cor do chapéu", "Couleur du chapeau", "Hutfarbe", "Colore del cappello"], ["Mochila", "Backpack", "Mochila", "Sac à dos", "Rucksack", "Zaino"], ["Piel de los dardos", "Dart skin", "Visual dos dardos", "Style des fléchettes", "Pfeil-Design", "Stile dei dardi"],
+["Aleatorio", "Random", "Aleatório", "Aléatoire", "Zufällig", "Casuale"], ["¡A jugar! ›", "Let's play! ›", "Jogar! ›", "On joue ! ›", "Los geht's! ›", "Si gioca! ›"], ["Guardar ›", "Save ›", "Salvar ›", "Enregistrer ›", "Speichern ›", "Salva ›"],
+["↑↓ elegir fila  ·  ←→ cambiar  ·  ENTER jugar", "↑↓ pick row  ·  ←→ change  ·  ENTER play", "↑↓ escolher  ·  ←→ mudar  ·  ENTER jogar", "↑↓ choisir  ·  ←→ changer  ·  ENTRÉE jouer", "↑↓ Zeile  ·  ←→ ändern  ·  ENTER spielen", "↑↓ scegli  ·  ←→ cambia  ·  INVIO gioca"],
+["Habilidad (ESPACIO): {0}", "Ability (SPACE): {0}", "Habilidade (ESPAÇO): {0}", "Pouvoir (ESPACE) : {0}", "Fähigkeit (LEERTASTE): {0}", "Abilità (SPAZIO): {0}"],
+["Elige tu país", "Choose your country", "Escolha seu país", "Choisis ton pays", "Wähle dein Land", "Scegli il tuo paese"],
+["Escribe una letra para saltar · ENTER elegir · ESC cerrar", "Type a letter to jump · ENTER choose · ESC close", "Digite uma letra para pular · ENTER escolher · ESC fechar", "Tape une lettre pour sauter · ENTRÉE choisir · ÉCHAP fermer", "Buchstabe tippen zum Springen · ENTER wählen · ESC schließen", "Digita una lettera per saltare · INVIO scegli · ESC chiudi"],
+["Casco minero", "Miner helmet", "Capacete de mineiro", "Casque de mineur", "Grubenhelm", "Casco da minatore"], ["Gorra", "Cap", "Boné", "Casquette", "Kappe", "Berretto"], ["Gorro de lana", "Wool beanie", "Gorro de lã", "Bonnet", "Wollmütze", "Berretto di lana"], ["Cinta ninja", "Ninja headband", "Faixa ninja", "Bandeau ninja", "Ninja-Stirnband", "Fascia ninja"],
+["Sombrero vaquero", "Cowboy hat", "Chapéu de caubói", "Chapeau de cowboy", "Cowboyhut", "Cappello da cowboy"], ["Corona", "Crown", "Coroa", "Couronne", "Krone", "Corona"], ["Sombrero de mago", "Wizard hat", "Chapéu de mago", "Chapeau de magicien", "Zauberhut", "Cappello da mago"],
+["Casco vikingo", "Viking helmet", "Capacete viking", "Casque viking", "Wikingerhelm", "Elmo vichingo"], ["Gorro de chef", "Chef hat", "Chapéu de chef", "Toque de chef", "Kochmütze", "Cappello da chef"], ["Sombrero pirata", "Pirate hat", "Chapéu pirata", "Chapeau de pirate", "Piratenhut", "Cappello da pirata"],
+["Destello minero", "Miner flash", "Clarão mineiro", "Éclair du mineur", "Grubenblitz", "Lampo minerario"], ["Un fogonazo aturde a los monstruos cercanos y revela el mapa", "A flash stuns nearby monsters and reveals the map", "Um clarão atordoa monstros próximos e revela o mapa", "Un éclair étourdit les monstres proches et révèle la carte", "Ein Blitz betäubt Monster in der Nähe und enthüllt die Karte", "Un lampo stordisce i mostri vicini e rivela la mappa"],
+["Turbo", "Turbo", "Turbo", "Turbo", "Turbo", "Turbo"], ["Durante 5 segundos corres más y disparas el doble de rápido", "For 5 seconds you run faster and shoot twice as fast", "Por 5 segundos você corre mais e atira duas vezes mais rápido", "Pendant 5 s tu cours plus vite et tires deux fois plus vite", "5 Sekunden lang schneller laufen und doppelt so schnell schießen", "Per 5 secondi corri di più e spari il doppio"],
+["Escudo de lana", "Wool shield", "Escudo de lã", "Bouclier de laine", "Wollschild", "Scudo di lana"], ["Una burbuja te protege de todos los golpes durante 6 segundos", "A bubble protects you from every hit for 6 seconds", "Uma bolha te protege de todos os golpes por 6 segundos", "Une bulle te protège de tous les coups pendant 6 s", "Eine Blase schützt dich 6 Sekunden vor allen Treffern", "Una bolla ti protegge da tutti i colpi per 6 secondi"],
+["Lluvia de shurikens", "Shuriken storm", "Chuva de shurikens", "Pluie de shurikens", "Shuriken-Regen", "Pioggia di shuriken"], ["Lanzas 12 estrellas de espuma a tu alrededor", "You throw 12 foam stars all around you", "Você lança 12 estrelas de espuma ao redor", "Tu lances 12 étoiles en mousse autour de toi", "Du wirfst 12 Schaumsterne um dich herum", "Lanci 12 stelle di gommapiuma intorno a te"],
+["Tiro rápido", "Quick draw", "Saque rápido", "Tir rapide", "Schnellschuss", "Colpo rapido"], ["Disparas un abanico de 9 dardos sin gastar balas", "You fire a fan of 9 darts without using ammo", "Você dispara um leque de 9 dardos sem gastar balas", "Tu tires un éventail de 9 fléchettes sans munitions", "Du schießt einen Fächer aus 9 Pfeilen ohne Munition", "Spari un ventaglio di 9 dardi senza munizioni"],
+["Orden real", "Royal decree", "Ordem real", "Ordre royal", "Königlicher Befehl", "Ordine reale"], ["Los monstruos cercanos huyen de ti durante 4 segundos", "Nearby monsters flee from you for 4 seconds", "Monstros próximos fogem de você por 4 segundos", "Les monstres proches te fuient pendant 4 s", "Monster in der Nähe fliehen 4 Sekunden vor dir", "I mostri vicini fuggono da te per 4 secondi"],
+["Teletransporte", "Teleport", "Teletransporte", "Téléportation", "Teleport", "Teletrasporto"], ["Apareces de golpe un poco más allá, hacia donde apuntas", "You pop up a little further, where you are aiming", "Você aparece um pouco mais à frente, para onde mira", "Tu réapparais un peu plus loin, là où tu vises", "Du tauchst ein Stück weiter in Zielrichtung auf", "Ricompari un po' più in là, dove stai mirando"],
+["Grito vikingo", "Viking roar", "Grito viking", "Cri viking", "Wikingerschrei", "Urlo vichingo"], ["Una onda empuja y daña a los monstruos a tu alrededor", "A shockwave pushes and hurts the monsters around you", "Uma onda empurra e fere os monstros ao redor", "Une onde repousse et blesse les monstres autour de toi", "Eine Druckwelle stößt Monster um dich weg und verletzt sie", "Un'onda spinge e ferisce i mostri intorno a te"],
+["Merienda", "Snack time", "Lanchinho", "Goûter", "Brotzeit", "Merenda"], ["Te comes un bocadillo y recuperas dos corazones", "You eat a sandwich and recover two hearts", "Você come um lanche e recupera dois corações", "Tu manges un sandwich et récupères deux cœurs", "Du isst ein Brot und bekommst zwei Herzen zurück", "Mangi un panino e recuperi due cuori"],
+["Bomba pirata", "Pirate bomb", "Bomba pirata", "Bombe pirate", "Piratenbombe", "Bomba pirata"], ["Dejas caer una bomba que estalla con gran fuerza", "You drop a bomb that explodes with great force", "Você solta uma bomba que explode com força", "Tu lâches une bombe qui explose très fort", "Du lässt eine Bombe fallen, die heftig explodiert", "Lasci cadere una bomba che esplode con forza"],
+["¡{0}! Se recarga en {1} segundos", "{0}! Recharges in {1} seconds", "{0}! Recarrega em {1} segundos", "{0} ! Se recharge en {1} secondes", "{0}! Lädt in {1} Sekunden nach", "{0}! Si ricarica in {1} secondi"],
+["Clásico", "Classic", "Clássico", "Classique", "Klassisch", "Classico"], ["Arcoíris", "Rainbow", "Arco-íris", "Arc-en-ciel", "Regenbogen", "Arcobaleno"], ["Fuego", "Fire", "Fogo", "Feu", "Feuer", "Fuoco"], ["Hielo", "Ice", "Gelo", "Glace", "Eis", "Ghiaccio"], ["Neón", "Neon", "Neon", "Néon", "Neon", "Neon"], ["Dorado", "Golden", "Dourado", "Doré", "Gold", "Dorato"], ["Galaxia", "Galaxy", "Galáxia", "Galaxie", "Galaxie", "Galassia"], ["Camuflaje", "Camo", "Camuflagem", "Camouflage", "Tarnung", "Mimetico"], ["Sandía", "Watermelon", "Melancia", "Pastèque", "Wassermelone", "Anguria"], ["Chicle", "Bubblegum", "Chiclete", "Chewing-gum", "Kaugummi", "Gomma"], ["Lava", "Lava", "Lava", "Lave", "Lava", "Lava"], ["Esmeralda", "Emerald", "Esmeralda", "Émeraude", "Smaragd", "Smeraldo"], ["Fantasma", "Ghost", "Fantasma", "Fantôme", "Geist", "Fantasma"],
+["Saltar ›", "Skip ›", "Pular ›", "Passer ›", "Überspringen ›", "Salta ›"],
+["Haz clic o pulsa ENTER para continuar", "Click or press ENTER to continue", "Clique ou aperte ENTER para continuar", "Clique ou appuie sur ENTRÉE pour continuer", "Klicke oder drücke ENTER zum Fortfahren", "Fai clic o premi INVIO per continuare"],
+["Toca para continuar", "Tap to continue", "Toque para continuar", "Touche pour continuer", "Tippen zum Fortfahren", "Tocca per continuare"],
+["Pulsa ENTER para crear tu personaje", "Press ENTER to create your character", "Aperte ENTER para criar seu personagem", "Appuie sur ENTRÉE pour créer ton personnage", "Drücke ENTER, um deine Figur zu erstellen", "Premi INVIO per creare il tuo personaggio"],
+["Toca para crear tu personaje", "Tap to create your character", "Toque para criar seu personagem", "Touche pour créer ton personnage", "Tippen, um deine Figur zu erstellen", "Tocca per creare il tuo personaggio"],
+["Pulsa ENTER para ver tus resultados", "Press ENTER to see your results", "Aperte ENTER para ver os resultados", "Appuie sur ENTRÉE pour voir tes résultats", "Drücke ENTER für deine Ergebnisse", "Premi INVIO per vedere i risultati"],
+["Toca para ver tus resultados", "Tap to see your results", "Toque para ver os resultados", "Touche pour voir tes résultats", "Tippen für deine Ergebnisse", "Tocca per vedere i risultati"],
+["En el tranquilo pueblo de Villaroca, {0} jugaba con su lanzador Nerf y su perrita Chispa.", "In the quiet village of Rockville, {0} was playing with a Nerf blaster and a puppy named Sparky.", "Na tranquila vila de Vilarocha, {0} brincava com seu lançador Nerf e sua cachorrinha Faísca.", "Dans le paisible village de Rochebourg, {0} jouait avec son blaster Nerf et sa chienne Étincelle.", "Im ruhigen Dorf Felsheim spielte {0} mit dem Nerf-Blaster und Hündin Funke.", "Nel tranquillo paese di Roccavilla, {0} giocava con il suo blaster Nerf e la cagnolina Scintilla."],
+["De repente, la tierra tembló... ¡y Chispa cayó por una grieta hacia el abismo!", "Suddenly the ground shook... and Sparky fell through a crack into the abyss!", "De repente, a terra tremeu... e a Faísca caiu por uma fenda no abismo!", "Soudain, la terre trembla... et Étincelle tomba dans une faille vers l'abîme !", "Plötzlich bebte die Erde... und Funke fiel durch eine Spalte in den Abgrund!", "All'improvviso la terra tremò... e Scintilla cadde in una crepa verso l'abisso!"],
+["Allí abajo reina el malvado Rey Ogro, que ha encerrado a Chispa junto a su trono.", "Down there rules the evil Ogre King, who has locked Sparky up next to his throne.", "Lá embaixo reina o malvado Rei Ogro, que prendeu a Faísca ao lado do trono.", "En bas règne le méchant Roi Ogre, qui a enfermé Étincelle près de son trône.", "Dort unten herrscht der böse Oger-König, der Funke neben seinem Thron eingesperrt hat.", "Laggiù regna il malvagio Re Orco, che ha rinchiuso Scintilla accanto al suo trono."],
+["{0} se puso el casco de minero y cargó sus dardos de espuma.", "{0} put on the miner helmet and loaded the foam darts.", "{0} colocou o capacete de mineiro e carregou os dardos de espuma.", "{0} enfila le casque de mineur et chargea ses fléchettes en mousse.", "{0} setzte den Grubenhelm auf und lud die Schaumpfeile.", "{0} indossò il casco da minatore e caricò i dardi di gommapiuma."],
+["Encuentra las llaves, abre las puertas y llega hasta el trono. ¡La aventura comienza!", "Find the keys, open the doors and reach the throne. The adventure begins!", "Encontre as chaves, abra as portas e chegue ao trono. A aventura começa!", "Trouve les clés, ouvre les portes et atteins le trône. L'aventure commence !", "Finde die Schlüssel, öffne die Türen und erreiche den Thron. Das Abenteuer beginnt!", "Trova le chiavi, apri le porte e raggiungi il trono. L'avventura comincia!"],
+["Tras una batalla épica, el Rey Ogro cayó derrotado. ¡{0} lo había conseguido!", "After an epic battle, the Ogre King fell. {0} had done it!", "Depois de uma batalha épica, o Rei Ogro caiu. {0} conseguiu!", "Après un combat épique, le Roi Ogre tomba. {0} avait réussi !", "Nach einem epischen Kampf fiel der Oger-König. {0} hatte es geschafft!", "Dopo una battaglia epica, il Re Orco cadde. {0} ce l'aveva fatta!"],
+["Con la llave dorada abrió la jaula... ¡y Chispa saltó a sus brazos!", "With the golden key the cage opened... and Sparky jumped into their arms!", "Com a chave dourada abriu a jaula... e a Faísca pulou nos seus braços!", "Avec la clé dorée, la cage s'ouvrit... et Étincelle sauta dans ses bras !", "Mit dem goldenen Schlüssel ging der Käfig auf... und Funke sprang in die Arme!", "Con la chiave dorata aprì la gabbia... e Scintilla gli saltò in braccio!"],
+["Juntos subieron por la vieja escalera de la mina, de vuelta hacia la luz.", "Together they climbed the old mine ladder, back towards the light.", "Juntos subiram a velha escada da mina, de volta para a luz.", "Ensemble, ils remontèrent la vieille échelle de la mine vers la lumière.", "Zusammen kletterten sie die alte Grubenleiter hinauf, zurück ins Licht.", "Insieme salirono la vecchia scala della miniera, verso la luce."],
+["En Villaroca todos celebraron el regreso de {0} y Chispa. ¡Los héroes del abismo!", "All of Rockville celebrated the return of {0} and Sparky. The heroes of the abyss!", "Em Vilarocha todos comemoraram a volta de {0} e Faísca. Os heróis do abismo!", "À Rochebourg, tout le monde fêta le retour de {0} et Étincelle. Les héros de l'abîme !", "Ganz Felsheim feierte die Rückkehr von {0} und Funke. Die Helden des Abgrunds!", "A Roccavilla tutti festeggiarono il ritorno di {0} e Scintilla. Gli eroi dell'abisso!"],
+["Pero muy, muy abajo, en la oscuridad... algo abrió un ojo.", "But far, far below, in the darkness... something opened an eye.", "Mas lá no fundo, na escuridão... algo abriu um olho.", "Mais tout en bas, dans l'obscurité... quelque chose ouvrit un œil.", "Doch tief, tief unten in der Dunkelheit... öffnete etwas ein Auge.", "Ma giù, molto giù, nel buio... qualcosa aprì un occhio."],
+["¡JA, JA, JA! ¡Nadie llegará jamás a mi trono!", "HA, HA, HA! No one will ever reach my throne!", "HA, HA, HA! Ninguém chegará ao meu trono!", "HA, HA, HA ! Personne n'atteindra mon trône !", "HA, HA, HA! Niemand erreicht je meinen Thron!", "AH, AH, AH! Nessuno raggiungerà mai il mio trono!"],
+["¡Aguanta, Chispa! ¡Voy a por ti!", "Hang on, Sparky! I'm coming!", "Aguenta, Faísca! Estou indo!", "Tiens bon, Étincelle ! J'arrive !", "Halt durch, Funke! Ich komme!", "Resisti, Scintilla! Sto arrivando!"],
+["¡CHISPA!", "SPARKY!", "FAÍSCA!", "ÉTINCELLE !", "FUNKE!", "SCINTILLA!"], ["¡ALLÁ VOY!", "HERE I GO!", "LÁ VOU EU!", "J'ARRIVE !", "ICH KOMME!", "ARRIVO!"],
+["¡GUAU, GUAU!", "WOOF, WOOF!", "AU, AU!", "OUAF, OUAF !", "WUFF, WUFF!", "BAU, BAU!"], ["¡YA CASI!", "ALMOST THERE!", "QUASE LÁ!", "PRESQUE !", "FAST DA!", "CI SIAMO QUASI!"],
+["¡BIENVENIDOS, HÉROES!", "WELCOME, HEROES!", "BEM-VINDOS, HERÓIS!", "BIENVENUE, HÉROS !", "WILLKOMMEN, HELDEN!", "BENVENUTI, EROI!"], ["¿CONTINUARÁ...?", "TO BE CONTINUED...?", "CONTINUA...?", "À SUIVRE... ?", "FORTSETZUNG FOLGT...?", "CONTINUA...?"], ["FIN", "THE END", "FIM", "FIN", "ENDE", "FINE"],
+["Esquiva con Shift: durante el esquive eres invulnerable.", "Dodge with Shift: you are invulnerable while dodging.", "Esquive com Shift: você fica invulnerável.", "Esquive avec Maj : tu es invulnérable pendant l'esquive.", "Weich mit Shift aus: Dabei bist du unverwundbar.", "Schiva con Shift: mentre schivi sei invulnerabile."],
+["Los muros agrietados esconden secretos. ¡Dispárales!", "Cracked walls hide secrets. Shoot them!", "Paredes rachadas escondem segredos. Atire nelas!", "Les murs fissurés cachent des secrets. Tire dessus !", "Rissige Wände verbergen Geheimnisse. Schieß darauf!", "I muri crepati nascondono segreti. Sparagli!"],
+["Las arañas se agachan antes de saltar: es tu momento para esquivar.", "Spiders crouch before jumping: that's your moment to dodge.", "Aranhas se abaixam antes de pular: hora de esquivar.", "Les araignées se baissent avant de sauter : esquive à ce moment.", "Spinnen ducken sich vor dem Sprung: Jetzt ausweichen!", "I ragni si abbassano prima di saltare: è il momento di schivare."],
+["Cuando el gólem levanta los puños, ¡aléjate!", "When the golem raises its fists, back off!", "Quando o golem levanta os punhos, afaste-se!", "Quand le golem lève les poings, éloigne-toi !", "Wenn der Golem die Fäuste hebt: weg da!", "Quando il golem alza i pugni, allontanati!"],
+["Si el Rey Ogro choca contra un muro se queda aturdido unos segundos.", "If the Ogre King crashes into a wall he is stunned for a few seconds.", "Se o Rei Ogro bate num muro fica atordoado alguns segundos.", "Si le Roi Ogre percute un mur, il est sonné quelques secondes.", "Rammt der Oger-König eine Wand, ist er kurz benommen.", "Se il Re Orco sbatte contro un muro resta stordito qualche secondo."],
+["Los pinchos tiemblan justo antes de salir.", "Spikes shake right before they come out.", "Os espinhos tremem antes de sair.", "Les pics tremblent juste avant de sortir.", "Stacheln zittern kurz bevor sie herausschießen.", "Le punte tremano poco prima di uscire."],
+["La escopeta es devastadora a corta distancia.", "The shotgun is devastating up close.", "A espingarda é devastadora de perto.", "Le fusil à pompe est dévastateur de près.", "Die Schrotflinte ist aus der Nähe verheerend.", "Il fucile a pompa è devastante da vicino."],
+["Las cajas de dardos amplían tu vida máxima.", "Dart boxes increase your max health.", "Caixas de dardos aumentam sua vida máxima.", "Les boîtes de fléchettes augmentent ta vie max.", "Pfeilkisten erhöhen dein maximales Leben.", "Le scatole di dardi aumentano la vita massima."],
+["Los fantasmas solo reciben daño cuando se vuelven visibles.", "Ghosts only take damage when they become visible.", "Fantasmas só levam dano quando ficam visíveis.", "Les fantômes ne subissent des dégâts que visibles.", "Geister nehmen nur sichtbar Schaden.", "I fantasmi subiscono danni solo quando sono visibili."],
+["Mata a los escarabajos explosivos de lejos: ¡su explosión daña a otros monstruos!", "Kill exploding beetles from afar: their blast hurts other monsters!", "Mate besouros explosivos de longe: a explosão fere outros monstros!", "Tue les scarabées explosifs de loin : leur explosion blesse les autres !", "Erledige explosive Käfer aus der Ferne: Ihre Explosion trifft andere Monster!", "Uccidi gli scarabei esplosivi da lontano: l'esplosione ferisce altri mostri!"],
+["Cuando el ojo vigía traza una línea roja, apártate de ella.", "When the watcher eye draws a red line, step out of it.", "Quando o olho vigia traça uma linha vermelha, saia dela.", "Quand l'œil guetteur trace une ligne rouge, écarte-toi.", "Zeichnet das Wächterauge eine rote Linie, geh aus dem Weg.", "Quando l'occhio vigile traccia una linea rossa, spostati."],
+["La ballesta atraviesa a varios enemigos en fila.", "The crossbow pierces several enemies in a row.", "A besta atravessa vários inimigos em fila.", "L'arbalète transperce plusieurs ennemis alignés.", "Die Armbrust durchbohrt mehrere Gegner in einer Reihe.", "La balestra trapassa più nemici in fila."],
+["Los discos rebotan en las paredes: úsalos para disparar detrás de esquinas.", "Discs bounce off walls: use them to shoot around corners.", "Discos ricocheteiam nas paredes: atire atrás das esquinas.", "Les disques rebondissent : tire derrière les coins.", "Scheiben prallen ab: Schieß damit um Ecken.", "I dischi rimbalzano: usali per sparare dietro gli angoli."],
+["El Super Soaker empuja y frena a los monstruos.", "The Super Soaker pushes and slows monsters.", "O Super Soaker empurra e freia os monstros.", "Le Super Soaker repousse et ralentit les monstres.", "Der Super Soaker schiebt und bremst Monster.", "Il Super Soaker spinge e rallenta i mostri."],
+];
+let LANG = "es", TR_EXACT = {}, TR_PATS = [], trCache = new Map();
+function setLang(l) {
+  LANG = LANG_NAMES[l] ? l : "es";
+  const col = ["es", "en", "pt", "fr", "de", "it"].indexOf(LANG);
+  TR_EXACT = {}; TR_PATS = []; trCache.clear();
+  if (col > 0) for (const r of TR_ROWS) {
+    if (/\{\d\}/.test(r[0])) TR_PATS.push([new RegExp("^" + r[0].replace(/[.*+?^$()|[\]\\]/g, "\\$&").replace(/\{(\d)\}/g, "(.+?)") + "$"), r[col]]);
+    else TR_EXACT[r[0]] = r[col];
+  }
+  document.documentElement.lang = LANG;
+  if (typeof nameInput !== "undefined") nameInput.placeholder = tr("Tu nombre");
+  sortCountries();
+}
+function tr(s) {
+  if (LANG === "es" || typeof s !== "string" || s.length < 2) return s;
+  let r = trCache.get(s);
+  if (r !== undefined) return r;
+  r = TR_EXACT[s];
+  if (r === undefined) {
+    r = s;
+    for (const [re, out] of TR_PATS) { const m = s.match(re); if (m) { r = out.replace(/\{(\d)\}/g, (_, i) => tr(m[+i + 1])); break; } }
+  }
+  if (trCache.size > 4000) trCache.clear();
+  trCache.set(s, r);
+  return r;
+}
+TR_ROWS.push(["Tu nombre", "Your name", "Seu nome", "Ton nom", "Dein Name", "Il tuo nome"]);
+// todo el texto del lienzo pasa por el traductor
+{
+  const P2 = CanvasRenderingContext2D.prototype, _f = P2.fillText, _s = P2.strokeText, _m = P2.measureText;
+  P2.fillText = function (t, ...a) { return _f.call(this, tr(String(t)), ...a); };
+  P2.strokeText = function (t, ...a) { return _s.call(this, tr(String(t)), ...a); };
+  P2.measureText = function (t) { return _m.call(this, tr(String(t))); };
+}
+// país guardado (o el del navegador)
+function defaultCountry() {
+  try { const reg = (navigator.language || "es-ES").split("-")[1]; if (reg && COUNTRIES.some(c => c.iso === reg.toUpperCase())) return reg.toUpperCase(); } catch (e) {}
+  return "ES";
+}
+const countryOf = iso => COUNTRIES.find(c => c.iso === iso) || COUNTRIES.find(c => c.iso === "ES");
+// selector de país
+const picker = { open: false, scroll: 0, sel: 0, drag: null };
+function openPicker() {
+  picker.open = true; sortCountries();
+  picker.sel = Math.max(0, sortedCountries.findIndex(c => c.iso === look.country));
+  picker.scroll = Math.max(0, picker.sel * 40 - 160); SFX.ui();
+}
+function chooseCountry(c) {
+  look.country = c.iso; saveLook(); setLang(c.lang); picker.open = false; SFX.uiGo();
+}
+function drawPicker() {
+  const s = VW < 640, w = Math.min(VW - 24, 420), h = Math.min(VH - 80, 560), x = VW / 2 - w / 2, y = VH / 2 - h / 2, ih = 40, top = y + 58, lh = h - 92;
+  ctx.fillStyle = "rgba(3,2,6,0.7)"; ctx.fillRect(0, 0, VW, VH);
+  ui = [];
+  ui.push({ x: 0, y: 0, w: VW, h: VH, fn: () => { picker.open = false; } });
+  panel(x, y, w, h, 14);
+  ui.push({ x, y, w, h, fn: () => {} });
+  ctx.fillStyle = "#fff3dc"; ctx.font = `bold ${s ? 16 : 18}px system-ui`; ctx.textAlign = "center"; ctx.fillText("Elige tu país", VW / 2, y + 30);
+  ctx.fillStyle = "rgba(243,230,200,0.55)"; ctx.font = "11px system-ui"; ctx.fillText("Escribe una letra para saltar · ENTER elegir · ESC cerrar", VW / 2, y + 48, w - 20);
+  const maxScroll = Math.max(0, sortedCountries.length * ih - lh);
+  picker.scroll = clamp(picker.scroll, 0, maxScroll);
+  ctx.save(); ctx.beginPath(); ctx.rect(x + 6, top, w - 12, lh); ctx.clip();
+  const first = Math.floor(picker.scroll / ih), last = Math.min(sortedCountries.length - 1, first + Math.ceil(lh / ih) + 1);
+  for (let i = first; i <= last; i++) {
+    const c = sortedCountries[i], iy = top + i * ih - picker.scroll, on = c.iso === look.country, hi = i === picker.sel;
+    ctx.fillStyle = hi ? "rgba(232,163,61,0.22)" : on ? "rgba(155,225,93,0.12)" : i % 2 ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0)";
+    ctx.fillRect(x + 8, iy + 2, w - 16, ih - 4);
+    ctx.font = "22px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = "#fff"; ctx.fillText(flagOf(c.iso), x + 18, iy + 28);
+    ctx.font = `${on ? "bold " : ""}15px system-ui`; ctx.fillStyle = "#fff3dc"; ctx.fillText(countryName(c), x + 56, iy + 26, w - 170);
+    ctx.textAlign = "right"; ctx.font = "12px system-ui"; ctx.fillStyle = "rgba(243,230,200,0.55)"; ctx.fillText(LANG_NAMES[c.lang] + (on ? "  ✓" : ""), x + w - 18, iy + 26);
+    if (iy > top - ih && iy < top + lh) ui.push({ x: x + 8, y: Math.max(top, iy), w: w - 16, h: Math.min(ih, top + lh - iy), fn: () => chooseCountry(c) });
+  }
+  ctx.restore();
+  // barra de desplazamiento
+  if (maxScroll > 0) { const bh = lh * lh / (sortedCountries.length * ih); ctx.fillStyle = "rgba(243,230,200,0.25)"; ctx.fillRect(x + w - 7, top + (lh - bh) * picker.scroll / maxScroll, 3, bh); }
+  // ui va de atrás hacia delante: el último elemento añadido es el de más arriba
+  ui.reverse();
+}
+
+if (!look.country || !COUNTRIES.some(c => c.iso === look.country)) look.country = defaultCountry();
+setLang(countryOf(look.country).lang);
 
 // ---------- Bucle ----------
 let last = performance.now(), slowT = 0, fxAuto = true;
