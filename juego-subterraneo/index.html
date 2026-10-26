@@ -13,10 +13,13 @@
   :root[data-theme="dark"] { --bg: #07060a; --fg: #f3e6c8; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden; }
   canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: crosshair; }
+  canvas:focus { outline: none; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
+<canvas id="c" tabindex="0" role="application" aria-label="Abismo Nerf. Usa las flechas para moverte por el menú y Enter para elegir." aria-describedby="sr"></canvas>
+<div id="sr" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 <script>
 "use strict";
 // ============================================================
@@ -450,6 +453,8 @@ const store = {
 };
 const settings = { device: null, diff: store.get("diff", 1), sound: store.get("sound", true), minimap: +store.get("minimap", 1), fx: store.get("fx", true) };
 if (!(settings.minimap >= 0 && settings.minimap <= 2)) settings.minimap = 1;
+settings.a11y = Object.assign({ text: 0, contrast: false, motion: matchMedia("(prefers-reduced-motion: reduce)").matches, voice: false }, store.get("a11y", {}) || {});
+const A11 = () => settings.a11y, UIK = () => [1, 1.2, 1.4][A11().text] || 1;
 settings.device = ["pc", "tablet", "phone"].includes(store.get("device", null)) ? store.get("device", null) : null;
 let best = store.get("best", 0);
 let saved = store.get("save", null);
@@ -1305,6 +1310,10 @@ addEventListener("keydown", e => {
     else if (["Enter", "Space"].includes(e.code)) { const b = ui[uiSel]; if (b) { SFX.uiGo(); b.fn(); } keys.Space = false; }
     else if (e.code === "Escape" && state === "pause") resume();
     else if (e.code === "Escape" && state === "ach") { state = "title"; uiSel = 0; }
+    else if (e.code === "Escape" && (state === "options" || state === "access")) closeSub();
+    else if (e.code === "Tab" && ui.length) { uiSel = (uiSel + (e.shiftKey ? ui.length - 1 : 1)) % ui.length; SFX.ui(); }
+    else if (e.code === "Home" && ui.length) { uiSel = 0; SFX.ui(); }
+    else if (e.code === "End" && ui.length) { uiSel = ui.length - 1; SFX.ui(); }
     else if (e.code === "KeyH") goHome();
     else if ((e.code === "ArrowLeft" || e.code === "ArrowRight") && ui[uiSel] && ui[uiSel].lr) { SFX.ui(); ui[uiSel].lr(e.code === "ArrowRight" ? 1 : -1); }
     return;
@@ -1737,6 +1746,7 @@ function update(rdt) {
   gameT += dt; lv.time += dt; run.time += dt;
   banner -= rdt; toast.t -= rdt; fade = Math.max(0, fade - rdt * 2); hurtFlash = Math.max(0, hurtFlash - rdt);
   shake = Math.max(0, shake - rdt * 30);
+  if (A11().motion) { shake = 0; zoomPunch = 0; }
 
   updatePlayer(dt);
   computeFlow();
@@ -2343,7 +2353,7 @@ function finishLevel() {
 
 // ---------- Dibujo ----------
 let camX = 0, camY = 0;
-function draw() { drawMain(); drawHomeBtn(); drawAchPop(); }
+function draw() { drawMain(); drawHomeBtn(); drawAchPop(); announceUI(); }
 function drawMain() {
   ui = [];
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -2354,6 +2364,7 @@ function drawMain() {
   if (state === "custom") { drawCustom(); return; }
   if (state === "ach") { drawAchScreen(); return; }
   if (state === "device") { drawDeviceScreen(); return; }
+  if (state === "options" || state === "access") { drawSubMenu(); return; }
   CZ = ZOOM * (1 + zoomPunch);
   const vw = VW / CZ, vh = VH / CZ;
   // cámara adelantada hacia donde apuntas
@@ -3517,18 +3528,20 @@ function drawTouch() {
 // Botones de menú (ratón, toque o teclado con flechas + Enter/Espacio)
 function button(label, x, y, w, h, fn, opts = {}) {
   const idx = ui.length;
-  ui.push({ x, y, w, h, fn, lr: opts.lr });
-  const sel = uiSel === idx;
-  uiAnim[idx] = (uiAnim[idx] || 0) + ((sel ? 1 : 0) - (uiAnim[idx] || 0)) * Math.min(1, frameDt * 14);
-  const an = uiAnim[idx], ap = ease((stateT - 0.08 - Math.min(idx, 8) * 0.06) * 4);
-  ctx.save(); ctx.globalAlpha = ap; ctx.translate(x + w / 2, y + h / 2 + (1 - ap) * 22); ctx.scale(1 + an * 0.04, 1 + an * 0.04); ctx.translate(-x - w / 2, -y - h / 2);
-  if (an > 0.02) { ctx.shadowColor = `rgba(232,163,61,${0.5 * an})`; ctx.shadowBlur = 18 * an; }
-  ctx.fillStyle = sel ? "rgba(232,163,61,0.22)" : "rgba(20,16,24,0.85)";
-  ctx.strokeStyle = sel ? "#e8a33d" : "rgba(243,230,200,0.2)"; ctx.lineWidth = sel ? 2 : 1;
-  ctx.beginPath(); ctx.roundRect(x, y, w, h, 10); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = sel ? "#ffe2a8" : "#f3e6c8"; ctx.font = `bold ${opts.size || 16}px system-ui, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText(label, x + w / 2, y + h / 2 + 1, w - 16); ctx.textBaseline = "alphabetic";
-  if (opts.lr) { const o = an * Math.sin(time * 6) * 2; ctx.fillStyle = sel ? "#e8a33d" : "rgba(243,230,200,0.35)"; ctx.fillText("‹", x + 16 - o, y + h / 2 + 6); ctx.fillText("›", x + w - 16 + o, y + h / 2 + 6); }
+  ui.push({ x, y, w, h, fn, lr: opts.lr, label, hint: opts.hint });
+  const sel = uiSel === idx, A = A11(), hc = A.contrast;
+  uiAnim[idx] = A.motion ? (sel ? 1 : 0) : (uiAnim[idx] || 0) + ((sel ? 1 : 0) - (uiAnim[idx] || 0)) * Math.min(1, frameDt * 14);
+  const an = uiAnim[idx], ap = A.motion ? 1 : ease((stateT - 0.08 - Math.min(idx, 8) * 0.06) * 4), zs = A.motion ? 0 : an * 0.04;
+  ctx.save(); ctx.globalAlpha = ap; ctx.translate(x + w / 2, y + h / 2 + (1 - ap) * 22); ctx.scale(1 + zs, 1 + zs); ctx.translate(-x - w / 2, -y - h / 2);
+  if (an > 0.02 && !hc) { ctx.shadowColor = `rgba(232,163,61,${0.5 * an})`; ctx.shadowBlur = 18 * an; }
+  ctx.fillStyle = hc ? (sel ? "#3d2e00" : "#000") : sel ? "rgba(232,163,61,0.22)" : "rgba(20,16,24,0.85)";
+  ctx.strokeStyle = hc ? (sel ? "#ffd400" : "#fff") : sel ? "#e8a33d" : "rgba(243,230,200,0.2)"; ctx.lineWidth = hc ? (sel ? 4 : 2) : sel ? 2 : 1;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 10); ctx.fill(); ctx.stroke(); ctx.shadowBlur = 0;
+  ctx.fillStyle = hc ? (sel ? "#ffd400" : "#fff") : sel ? "#ffe2a8" : "#f3e6c8"; ctx.font = `bold ${(opts.size || 16) * UIK()}px system-ui, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(label, x + w / 2, y + h / 2 + 1, w - (opts.lr ? 52 : 16)); ctx.textBaseline = "alphabetic";
+  // marca de foco con forma, no solo con color
+  if (sel && w > 60 && x > 26) { ctx.fillStyle = hc ? "#ffd400" : "#e8a33d"; ctx.beginPath(); const mx = x - 10 - (A.motion ? 0 : Math.sin(time * 5) * 2), my = y + h / 2; ctx.moveTo(mx, my); ctx.lineTo(mx - 9, my - 7); ctx.lineTo(mx - 9, my + 7); ctx.fill(); }
+  if (opts.lr) { const o = A.motion ? 0 : an * Math.sin(time * 6) * 2; ctx.fillStyle = hc ? (sel ? "#ffd400" : "#fff") : sel ? "#e8a33d" : "rgba(243,230,200,0.35)"; ctx.fillText("‹", x + 16 - o, y + h / 2 + 6); ctx.fillText("›", x + w - 16 + o, y + h / 2 + 6); }
   ctx.restore();
 }
 function menuList(items, cx, y0, w = 280, h = 46, gap = 10) {
@@ -3536,10 +3549,10 @@ function menuList(items, cx, y0, w = 280, h = 46, gap = 10) {
   items.forEach((it, i) => button(it.label, cx - w / 2, y0 + i * (h + gap), w, h, it.fn, it));
 }
 function titleText(txt, y, size, color = "#f3e6c8") {
-  const k = easeBack(stateT * 2.5);
+  const k = A11().motion ? 1 : easeBack(stateT * 2.5);
   ctx.save(); ctx.globalAlpha = clamp(stateT * 4, 0, 1); ctx.translate(VW / 2, y); ctx.scale(0.6 + k * 0.4, 0.6 + k * 0.4);
   ctx.textAlign = "center"; ctx.fillStyle = color; ctx.font = `900 ${size}px ${TITLE_FONT}`;
-  ctx.shadowColor = "rgba(232,163,61,0.55)"; ctx.shadowBlur = 22 + Math.sin(time * 2) * 6;
+  ctx.shadowColor = "rgba(232,163,61,0.55)"; ctx.shadowBlur = A11().motion ? 22 : 22 + Math.sin(time * 2) * 6;
   ctx.fillText(txt, 0, 0, VW - 24); ctx.restore();
 }
 function dim(a = 0.75) { ctx.fillStyle = `rgba(5,4,7,${a * ease(stateT * 3)})`; ctx.fillRect(0, 0, VW, VH); }
@@ -3651,7 +3664,7 @@ function drawTitle() {
   cave(VH * 0.93, 50, 7, "#0d0907", false);
   cave(VH * 0.97, 30, 9, "#070504", false);
   for (const e of embers) {
-    e.y -= e.v * 0.016; if (e.y < -0.05) { e.y = 1.05; e.x = Math.random(); }
+    if (!A11().motion) { e.y -= e.v * 0.016; if (e.y < -0.05) { e.y = 1.05; e.x = Math.random(); } }
     ctx.globalAlpha = 0.4 + 0.4 * Math.sin(time * 3 + e.p);
     ctx.fillStyle = e.s > 2 ? "#ff8a1f" : "#3fb7ff";
     ctx.save(); ctx.translate(e.x * VW + Math.sin(time + e.p) * 10, e.y * VH); ctx.rotate(Math.sin(time + e.p)); ctx.fillRect(-e.s * 1.5, -e.s / 2, e.s * 3, e.s); ctx.restore();
@@ -3666,13 +3679,14 @@ function drawTitle() {
   ctx.font = `900 ${s ? 42 : 78}px ${TITLE_FONT}`; ctx.fillStyle = tg;
   ctx.shadowColor = "rgba(255,138,31,0.5)"; ctx.shadowBlur = 30;
   ctx.fillText("ABISMO NERF", VW / 2, ty + (s ? 52 : 84), VW - 24); ctx.shadowBlur = 0;
-  ctx.fillStyle = "rgba(243,230,200,0.75)"; ctx.font = `${s ? 13 : 16}px system-ui`;
+  ctx.fillStyle = A11().contrast ? "#fff" : "rgba(243,230,200,0.75)"; ctx.font = `${s ? 13 : 16}px system-ui`;
   ctx.fillText("10 niveles: encuentra las llaves, abre las puertas y rescata a Chispa del Rey Ogro.", VW / 2, ty + (s ? 80 : 120), VW - 24);
 
   // lanzadores girando
   const gsp = s ? Math.min(42, (VW - 40) / ORDER.length) : 62;
   ctx.save(); ctx.translate(VW / 2 - gsp * (ORDER.length - 1) / 2, ty + (s ? 112 : 168));
-  ORDER.forEach((id, i) => { ctx.save(); ctx.translate(i * gsp, Math.sin(time * 2.4 + i * 0.8) * 3); ctx.rotate(Math.sin(time * 2 + i) * 0.15); drawGun(id, s ? 1.15 : 1.7); ctx.restore(); });
+  const mt = A11().motion ? 0 : time;
+  ORDER.forEach((id, i) => { ctx.save(); ctx.translate(i * gsp, Math.sin(mt * 2.4 + i * 0.8) * 3); ctx.rotate(Math.sin(mt * 2 + i) * 0.15); drawGun(id, s ? 1.15 : 1.7); ctx.restore(); });
   ctx.restore();
 
   const items = [];
@@ -3681,20 +3695,19 @@ function drawTitle() {
   items.push({ label: "Tutorial", fn: startTutorial });
   items.push({ label: `Personaje: ${look.name}`, fn: () => openCustom("menu") });
   items.push({ label: `Logros (${ACH.filter(a => achieved[a.id]).length}/${ACH.length})`, fn: () => { state = "ach"; uiSel = 0; } });
-  items.push({ label: `Dificultad: ${DIFF().name}`, fn: () => toggleDiff(1), lr: toggleDiff });
-  items.push({ label: `Sonido: ${settings.sound ? "Sí" : "No"}`, fn: () => setSound(!settings.sound) });
-  items.push({ label: `Efectos: ${settings.fx ? "Altos" : "Bajos"}`, fn: toggleFx });
-  items.push({ label: `Dispositivo: ${{ pc: "Computador", tablet: "Tableta o iPad", phone: "Celular" }[settings.device] || "?"}`, fn: () => openDevice() });
-  const bh = s ? 40 : 46;
-  menuList(items, VW / 2, ty + (s ? 140 : 205), Math.min(340, VW - 40), bh, 8);
+  items.push({ label: "Opciones", fn: () => openSub("options") });
+  items.push({ label: "Accesibilidad", fn: () => openSub("access") });
+  const y0 = ty + (s ? 140 : 205), room = VH - y0 - (s ? 70 : 80);
+  const bh = Math.max(40, Math.min((s ? 40 : 46) * UIK(), room / items.length - 8));
+  menuList(items, VW / 2, y0, Math.min(340 * Math.min(UIK(), 1.15), VW - 40), bh, 8);
 
-  const yb = ty + (s ? 140 : 205) + items.length * (bh + 8) + 18;
-  ctx.textAlign = "center"; ctx.fillStyle = "rgba(243,230,200,0.55)"; ctx.font = `${s ? 12 : 14}px system-ui`;
+  const yb = y0 + items.length * (bh + 8) + 18;
+  ctx.textAlign = "center"; ctx.fillStyle = A11().contrast ? "#fff" : "rgba(243,230,200,0.55)"; ctx.font = `${(s ? 12 : 14) * Math.min(UIK(), 1.2)}px system-ui`;
   const lines = touch.on || isTouch()
     ? ["Joystick a la izquierda · DISPARA a la derecha", "(arrastra DISPARA para apuntar) · ESQUIVA · HABILIDAD · ARMA"]
     : ["F o clic: disparar  ·  ESPACIO: habilidad  ·  WASD: moverse  ·  SHIFT: esquivar",
        "Ratón: apuntar y disparar  ·  1-9, 0, -: cambiar arma  ·  R: recargar  ·  P: pausa"];
-  lines.forEach((l, i) => ctx.fillText(l, VW / 2, yb + i * 20, VW - 24));
+  lines.forEach((l, i) => ctx.fillText(l, VW / 2, yb + i * 20 * Math.min(UIK(), 1.2), VW - 24));
   if (best > 0) { ctx.fillStyle = "#f5c542"; ctx.font = `bold ${s ? 12 : 14}px system-ui`; ctx.fillText(`Récord: ${best} puntos`, VW / 2, yb + 50); }
 }
 
@@ -4100,7 +4113,7 @@ const ARPS = { story: [[57, 60, 64, 69], [53, 57, 60, 65], [55, 59, 62, 67], [52
                ending: [[60, 64, 67, 72], [55, 59, 62, 67], [57, 60, 64, 69], [53, 57, 60, 65]] };
 const END_MELODY = [72, 0, 76, 79, 0, 77, 76, 74, 72, 0, 74, 76, 0, 79, 77, 76];
 function musicMode() {
-  if (state === "title" || state === "custom" || state === "ach") return "title";
+  if (state === "title" || state === "custom" || state === "ach" || state === "options" || state === "access") return "title";
   if (state === "story") return story.pages === ENDING ? "ending" : "story";
   if (state === "win") return "ending";
   if (state === "play" && monsters.some(m => m.def.boss && m.alert > 0)) return "boss";
@@ -4685,6 +4698,96 @@ function drawPicker() {
 if (!look.country || !COUNTRIES.some(c => c.iso === look.country)) look.country = defaultCountry();
 setLang(countryOf(look.country).lang);
 
+// ---------- Accesibilidad: submenús, lector de pantalla y voz ----------
+function openSub(which) { state = which; uiSel = 0; }
+function closeSub() { const back = state === "options" ? 4 : 5; state = "title"; uiSel = Math.max(0, saved && saved.level > 0 ? back + 1 : back); SFX.ui(); }
+function saveA11y() { store.set("a11y", settings.a11y); }
+function a11yItems() {
+  const A = A11(), yes = v => v ? "Sí" : "No";
+  return [
+    { label: `Tamaño del texto: ${["Normal", "Grande", "Muy grande"][A.text]}`, hint: "Agranda los botones y las letras del menú",
+      fn: () => { A.text = (A.text + 1) % 3; saveA11y(); }, lr: d => { A.text = (A.text + d + 3) % 3; saveA11y(); } },
+    { label: `Alto contraste: ${yes(A.contrast)}`, hint: "Botones en blanco y negro con bordes gruesos", fn: () => { A.contrast = !A.contrast; saveA11y(); } },
+    { label: `Reducir movimiento: ${yes(A.motion)}`, hint: "Quita animaciones, brillos que se mueven y temblores de cámara", fn: () => { A.motion = !A.motion; saveA11y(); } },
+    { label: `Leer el menú en voz alta: ${yes(A.voice)}`, hint: "Dice en voz alta el botón seleccionado", fn: () => { A.voice = !A.voice; saveA11y(); lastSaid = ""; if (!A.voice && window.speechSynthesis) speechSynthesis.cancel(); } },
+    { label: "‹ Volver", fn: closeSub },
+  ];
+}
+function optionItems() {
+  return [
+    { label: `Dificultad: ${DIFF().name}`, fn: () => toggleDiff(1), lr: toggleDiff },
+    { label: `Sonido: ${settings.sound ? "Sí" : "No"}`, fn: () => setSound(!settings.sound) },
+    { label: `Efectos: ${settings.fx ? "Altos" : "Bajos"}`, hint: "Bajos va mejor en equipos lentos", fn: toggleFx },
+    { label: `Dispositivo: ${{ pc: "Computador", tablet: "Tableta o iPad", phone: "Celular" }[settings.device] || "?"}`, fn: () => openDevice() },
+    { label: "‹ Volver", fn: closeSub },
+  ];
+}
+function drawSubMenu() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const hc = A11().contrast;
+  if (hc) { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, VW, VH); }
+  else { const g = ctx.createRadialGradient(VW / 2, VH * 0.4, 0, VW / 2, VH * 0.4, Math.max(VW, VH) * 0.7); g.addColorStop(0, "#2a1c12"); g.addColorStop(1, "#060406"); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH); }
+  ui = [];
+  const s = sm(), acc = state === "access", items = acc ? a11yItems() : optionItems();
+  titleText(acc ? "ACCESIBILIDAD" : "OPCIONES", s ? 92 : 120, s ? 28 : 44, hc ? "#fff" : undefined);
+  const w = Math.min(420 * Math.min(UIK(), 1.15), VW - 48), bh = (s ? 46 : 52) * UIK(), y0 = s ? 132 : 175;
+  menuList(items, VW / 2, y0, w, bh, 10);
+  // explicación del botón seleccionado
+  const it = items[uiSel];
+  if (it && it.hint) {
+    ctx.textAlign = "center"; ctx.fillStyle = hc ? "#fff" : "rgba(243,230,200,0.8)"; ctx.font = `${15 * Math.min(UIK(), 1.25)}px system-ui`;
+    ctx.fillText(it.hint, VW / 2, y0 + items.length * (bh + 10) + 22, VW - 32);
+  }
+  ctx.textAlign = "center"; ctx.fillStyle = hc ? "#fff" : "rgba(243,230,200,0.5)"; ctx.font = `${13 * Math.min(UIK(), 1.2)}px system-ui`;
+  ctx.fillText(isTouch() ? "Toca una opción para cambiarla" : "↑↓ o TAB: elegir  ·  ←→ / ENTER: cambiar  ·  ESC: volver", VW / 2, VH - 28, VW - 24);
+}
+// anuncia el botón seleccionado al lector de pantalla y, si se pide, en voz alta
+const srEl = document.getElementById("sr");
+let lastSaid = "", lastState = "";
+const VOICE_LANG = { es: "es-ES", en: "en-US", pt: "pt-BR", fr: "fr-FR", de: "de-DE", it: "it-IT" };
+function announceUI() {
+  if (state === "play") { lastSaid = ""; return; }
+  const b = ui[uiSel];
+  const head = state !== lastState ? ({ title: "Menú principal", options: "Opciones", access: "Accesibilidad", device: "¿Dónde vas a jugar?", ach: "Logros", custom: "Tu personaje", pause: "Pausa" }[state] || "") : "";
+  const label = state === "device" ? DEVICES[deviceSel].name : b && b.label;
+  if (!label) return;
+  const msg = (head ? tr(head) + ". " : "") + tr(label) + (b && b.hint && state !== "device" ? ". " + tr(b.hint) : "");
+  const key = state + "|" + label;
+  if (key === lastSaid) return;
+  lastSaid = key; lastState = state;
+  srEl.textContent = msg;
+  if (A11().voice && window.speechSynthesis) {
+    try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(msg); u.lang = VOICE_LANG[LANG] || "es-ES"; u.rate = 1.05; speechSynthesis.speak(u); } catch (e) { /* sin voz disponible */ }
+  }
+}
+TR_ROWS.push(
+["Opciones", "Options", "Opções", "Options", "Optionen", "Opzioni"],
+["OPCIONES", "OPTIONS", "OPÇÕES", "OPTIONS", "OPTIONEN", "OPZIONI"],
+["Accesibilidad", "Accessibility", "Acessibilidade", "Accessibilité", "Barrierefreiheit", "Accessibilità"],
+["ACCESIBILIDAD", "ACCESSIBILITY", "ACESSIBILIDADE", "ACCESSIBILITÉ", "BARRIEREFREIHEIT", "ACCESSIBILITÀ"],
+["Tamaño del texto: {0}", "Text size: {0}", "Tamanho do texto: {0}", "Taille du texte : {0}", "Textgröße: {0}", "Dimensione del testo: {0}"],
+["Normal", "Normal", "Normal", "Normale", "Normal", "Normale"],
+["Grande", "Large", "Grande", "Grande", "Groß", "Grande"],
+["Muy grande", "Extra large", "Muito grande", "Très grande", "Sehr groß", "Molto grande"],
+["Alto contraste: {0}", "High contrast: {0}", "Alto contraste: {0}", "Contraste élevé : {0}", "Hoher Kontrast: {0}", "Alto contrasto: {0}"],
+["Reducir movimiento: {0}", "Reduce motion: {0}", "Reduzir movimento: {0}", "Réduire les animations : {0}", "Bewegung reduzieren: {0}", "Riduci movimento: {0}"],
+["Leer el menú en voz alta: {0}", "Read menu aloud: {0}", "Ler o menu em voz alta: {0}", "Lire le menu à voix haute : {0}", "Menü vorlesen: {0}", "Leggi il menu ad alta voce: {0}"],
+["‹ Volver", "‹ Back", "‹ Voltar", "‹ Retour", "‹ Zurück", "‹ Indietro"],
+["Agranda los botones y las letras del menú", "Makes menu buttons and letters bigger", "Aumenta os botões e as letras do menu", "Agrandit les boutons et le texte du menu", "Vergrößert Menüknöpfe und Schrift", "Ingrandisce pulsanti e testo del menu"],
+["Botones en blanco y negro con bordes gruesos", "Black and white buttons with thick borders", "Botões em preto e branco com bordas grossas", "Boutons noir et blanc avec bords épais", "Schwarz-weiße Knöpfe mit dicken Rändern", "Pulsanti in bianco e nero con bordi spessi"],
+["Quita animaciones, brillos que se mueven y temblores de cámara", "Removes animations, moving glows and camera shake", "Remove animações, brilhos em movimento e tremores de câmera", "Supprime animations, lueurs mobiles et tremblements de caméra", "Entfernt Animationen, bewegte Lichter und Kamerawackeln", "Rimuove animazioni, bagliori in movimento e scosse della telecamera"],
+["Dice en voz alta el botón seleccionado", "Says the selected button out loud", "Diz em voz alta o botão selecionado", "Dit à voix haute le bouton sélectionné", "Liest den ausgewählten Knopf vor", "Dice ad alta voce il pulsante selezionato"],
+["Bajos va mejor en equipos lentos", "Low runs better on slow devices", "Baixos funciona melhor em aparelhos lentos", "Bas fonctionne mieux sur les appareils lents", "Niedrig läuft besser auf langsamen Geräten", "Bassi va meglio sui dispositivi lenti"],
+["Toca una opción para cambiarla", "Tap an option to change it", "Toque numa opção para mudá-la", "Touche une option pour la changer", "Tippe auf eine Option, um sie zu ändern", "Tocca un'opzione per cambiarla"],
+["↑↓ o TAB: elegir  ·  ←→ / ENTER: cambiar  ·  ESC: volver", "↑↓ or TAB: choose  ·  ←→ / ENTER: change  ·  ESC: back", "↑↓ ou TAB: escolher  ·  ←→ / ENTER: mudar  ·  ESC: voltar", "↑↓ ou TAB : choisir  ·  ←→ / ENTRÉE : changer  ·  ÉCHAP : retour", "↑↓ oder TAB: wählen  ·  ←→ / ENTER: ändern  ·  ESC: zurück", "↑↓ o TAB: scegli  ·  ←→ / INVIO: cambia  ·  ESC: indietro"],
+["Menú principal", "Main menu", "Menu principal", "Menu principal", "Hauptmenü", "Menu principale"],
+["Tu personaje", "Your character", "Seu personagem", "Ton personnage", "Deine Figur", "Il tuo personaggio"],
+["Pausa", "Pause", "Pausa", "Pause", "Pause", "Pausa"],
+["Sí", "Yes", "Sim", "Oui", "Ja", "Sì"],
+["No", "No", "Não", "Non", "Nein", "No"],
+["Logros", "Achievements", "Conquistas", "Succès", "Erfolge", "Obiettivi"],
+);
+
 // ---------- Botón para volver al inicio ----------
 let homeBtn = null, homeAsk = 0;
 function goHome() {
@@ -4828,6 +4931,7 @@ TR_ROWS.push(
 ["Dispositivo: {0}", "Device: {0}", "Dispositivo: {0}", "Appareil : {0}", "Gerät: {0}", "Dispositivo: {0}"],
 );
 if (!settings.device) openDevice(); else touch.on = settings.device !== "pc";
+try { cv.focus(); } catch (e) { /* sin foco */ }
 setLang(LANG); // vuelve a cargar la tabla con las traducciones añadidas arriba
 
 // ---------- Bucle ----------
