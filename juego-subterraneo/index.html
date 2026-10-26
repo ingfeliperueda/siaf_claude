@@ -447,9 +447,12 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
     this.arcTo(x, y + h, x, y, r); this.arcTo(x, y, x + w, y, r); this.closePath();
   };
 }
+// estas claves viven solo en memoria: al cerrar y volver a abrir el juego, todo empieza otra vez
+const SESSION_KEYS = new Set(["save", "device", "tutorialDone"]), sessionMem = {};
+try { for (const k of SESSION_KEYS) localStorage.removeItem("abismoNerf." + k); } catch (e) { /* sin almacenamiento */ }
 const store = {
-  get(k, d) { try { const v = localStorage.getItem("abismoNerf." + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem("abismoNerf." + k, JSON.stringify(v)); } catch (e) {} },
+  get(k, d) { if (SESSION_KEYS.has(k)) return k in sessionMem ? sessionMem[k] : d; try { const v = localStorage.getItem("abismoNerf." + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { if (SESSION_KEYS.has(k)) { sessionMem[k] = v; return; } try { localStorage.setItem("abismoNerf." + k, JSON.stringify(v)); } catch (e) {} },
 };
 const settings = { device: null, diff: store.get("diff", 1), sound: store.get("sound", true), minimap: +store.get("minimap", 1), fx: store.get("fx", true) };
 if (!(settings.minimap >= 0 && settings.minimap <= 2)) settings.minimap = 1;
@@ -644,7 +647,9 @@ function continueGame() {
   Object.assign(P, { weapons: saved.weapons.filter(w => WEAPONS[w]), maxHp: saved.maxHp, hp: saved.hp, cur: 0 });
   P.ammo = { ...(saved.ammo || {}) }; P.res = { ...(saved.res || {}) };
   for (const w of P.weapons) { if (P.ammo[w] === undefined) P.ammo[w] = WEAPONS[w].clip; if (P.res[w] === undefined) P.res[w] = WEAPONS[w].res; }
+  const ck = saved.full;
   loadLevel(saved.level);
+  if (ck) restoreCheckpoint(ck);
 }
 
 function loadLevel(i, retry) {
@@ -653,6 +658,7 @@ function loadLevel(i, retry) {
     snapshot = { weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
     if (!inTutorial) saved = { level: i, diff: settings.diff, weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
     store.set("save", saved);
+    if (!inTutorial) { saveIcon = 1.8; ckT = 0; ckWant = false; }
   } else {
     P.weapons = snapshot.weapons.slice(); P.maxHp = snapshot.maxHp; P.hp = Math.max(Math.ceil(P.maxHp * 0.67), snapshot.hp);
     run = { ...snapshot.run };
@@ -1315,6 +1321,7 @@ addEventListener("keydown", e => {
     else if (e.code === "Home" && ui.length) { uiSel = 0; SFX.ui(); }
     else if (e.code === "End" && ui.length) { uiSel = ui.length - 1; SFX.ui(); }
     else if (e.code === "KeyH") goHome();
+    else if (e.code === "Backspace") goBack();
     else if ((e.code === "ArrowLeft" || e.code === "ArrowRight") && ui[uiSel] && ui[uiSel].lr) { SFX.ui(); ui[uiSel].lr(e.code === "ArrowRight" ? 1 : -1); }
     return;
   }
@@ -1526,7 +1533,7 @@ function tryDoor(h) {
   if (tiles[idx] !== DOOR) return;
   const c = doorCol[idx];
   if (P.keys[c] > 0) {
-    P.keys[c]--; tiles[idx] = FLOOR; SFX.door(); shake = 7; flowDirty = true; if (inTutorial) tut.door = true;
+    P.keys[c]--; tiles[idx] = FLOOR; SFX.door(); shake = 7; flowDirty = true; ckWant = true; if (inTutorial) tut.door = true;
     const cx = h.tx * TS + TS / 2, cy = h.ty * TS + TS / 2;
     doorAnims.push({ x: h.tx * TS, y: h.ty * TS, c: KEYS[c].c, t: 0 });
     for (let i = 0; i < 30; i++) parts.push({ x: cx + rand(-14, 14), y: cy + rand(-14, 14), vx: rand(-110, 110), vy: rand(-110, 110), life: rand(0.4, 0.9), max: 0.9, c: i % 2 ? KEYS[c].c : "#6b5a4a", s: rand(2, 4), glow: i % 2 === 0 });
@@ -1759,6 +1766,7 @@ function update(rdt) {
 
   updateAmbient(dt);
   comboT -= dt; updateBark(dt); updateTutorial(dt);
+  ckT += dt; if ((ckWant || ckT > 30) && P.exiting <= 0 && P.hp > 0) checkpoint();
   const ptx = Math.floor(P.x / TS), pty = Math.floor(P.y / TS);
   if (P.exiting > 0) {
     P.exiting -= rdt; P.inv = 1;
@@ -2209,12 +2217,13 @@ function updateItems(dt) {
     if (Math.random() < dt * 1.5 && (it.kind === "gold" || it.kind === "key" || it.kind === "bullets")) glints.push({ x: it.x + rand(-6, 6), y: it.y + rand(-8, 4), life: 0.4 });
     if (d > P.r + 12 || !wants) continue;
     if (it.kind === "key") {
-      P.keys[it.c]++; SFX.key(); run.score += 50;
+      P.keys[it.c]++; SFX.key(); run.score += 50; ckWant = true;
       floatText(it.x, it.y - 6, `Llave ${KEYS[it.c].name}`, KEYS[it.c].c, 12);
       showToast(`Tienes la llave ${KEYS[it.c].name}. ¡Busca su puerta!`);
       rings.push({ x: it.x, y: it.y, r: 6, max: 40, life: 0.4, c: KEYS[it.c].c });
     } else if (it.kind === "weapon") {
       const isNew = !P.weapons.includes(it.w), wd = WEAPONS[it.w];
+      ckWant = true;
       if (isNew) { P.weapons.push(it.w); P.weapons.sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b)); P.ammo[it.w] = wd.clip; P.res[it.w] = wd.res; }
       else P.res[it.w] = Math.min(wd.max, (P.res[it.w] || 0) + wd.res);
       P.cur = P.weapons.indexOf(it.w); P.reloading = 0; swapT = 1; slotPulse[it.w] = 1;
@@ -2353,7 +2362,7 @@ function finishLevel() {
 
 // ---------- Dibujo ----------
 let camX = 0, camY = 0;
-function draw() { drawMain(); drawHomeBtn(); drawAchPop(); announceUI(); }
+function draw() { drawMain(); drawNavBtns(); drawSaveIcon(); drawAchPop(); announceUI(); }
 function drawMain() {
   ui = [];
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -3559,7 +3568,15 @@ function dim(a = 0.75) { ctx.fillStyle = `rgba(5,4,7,${a * ease(stateT * 3)})`; 
 const sm = () => VW < 560 || VH < 560;
 const toggleDiff = (d = 1) => { settings.diff = (settings.diff + d + DIFFS.length) % DIFFS.length; store.set("diff", settings.diff); };
 const toggleFx = () => { settings.fx = !settings.fx; store.set("fx", settings.fx); slowT = 0; fxAuto = false; };
-const toMenu = () => { inTutorial = false; state = "title"; uiSel = 0; saved = store.get("save", null); };
+const toMenu = () => {
+  if (!inTutorial && (state === "play" || state === "pause")) { state = "play"; checkpoint(); }
+  // si sales tras superar un nivel, «Continuar» empieza en el siguiente
+  if (!inTutorial && state === "levelDone" && levelIdx < LEVELS.length - 1) {
+    saved = { level: levelIdx + 1, diff: settings.diff, weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
+    store.set("save", saved); saveIcon = 1.8;
+  }
+  inTutorial = false; state = "title"; uiSel = 0; saved = store.get("save", null);
+};
 
 function drawPause() {
   dim(0.72);
@@ -4789,54 +4806,129 @@ TR_ROWS.push(
 );
 
 // ---------- Botón para volver al inicio ----------
-let homeBtn = null, homeAsk = 0;
+let navBtns = [], homeAsk = 0;
 function goHome() {
-  // en plena partida pide confirmar con un segundo toque; el progreso queda guardado al inicio del nivel
+  // en plena partida pide confirmar con un segundo toque; antes de salir se guarda el progreso
   if ((state === "play" || state === "pause") && homeAsk <= 0) { homeAsk = 2.5; SFX.ui(); return; }
   homeAsk = 0; SFX.uiGo();
   if (state === "custom") { picker.open = false; saveLook(); }
   for (const k in keys) keys[k] = false; mouse.down = false; touch.fire = false;
   toMenu();
 }
-function homeHit(x, y) {
-  const b = homeBtn;
-  if (!b || x < b.x - 4 || x > b.x + b.w + 4 || y < b.y - 4 || y > b.y + b.h + 4) return false;
-  goHome(); return true;
-}
-function homeRect() {
-  if (state === "title" || (state === "device" && !settings.device)) return null;
-  const ask = homeAsk > 0, w = ask ? 158 : 44, h = 40;
-  if (state === "play" || state === "pause") {
-    // en partida: arriba al centro (junto al botón de pausa en pantallas táctiles)
-    const x = isTouch() ? Math.max(8, VW / 2 - 30 - w) : VW / 2 - w / 2;
-    return { x, y: 14, w, h, ask };
+// «Volver»: un paso atrás desde cualquier pantalla
+function goBack() {
+  SFX.ui(); homeAsk = 0;
+  for (const k in keys) keys[k] = false; mouse.down = false; touch.fire = false;
+  if (state === "story") { if (story.i > 0) storyNext(-1); else { state = "title"; uiSel = 0; } }
+  else if (state === "custom") {
+    if (picker.open) { picker.open = false; return; }
+    saveLook();
+    if (customFrom === "new") { startNewGameFlow(); story.i = STORY.length - 1; } else { state = "title"; uiSel = 0; }
   }
-  return { x: 16, y: 16, w: ask ? w : 104, h, ask, label: true };
+  else if (state === "options" || state === "access") closeSub();
+  else if (state === "play") pause();
+  else if (state === "pause") resume();
+  else toMenu();
 }
-function drawHomeBtn() {
+const showNav = () => !(state === "title" || (state === "device" && !settings.device));
+function navHit(x, y) {
+  for (const b of navBtns) if (x >= b.x - 4 && x <= b.x + b.w + 4 && y >= b.y - 4 && y <= b.y + b.h + 4) { b.kind === "home" ? goHome() : goBack(); return true; }
+  return false;
+}
+const homeHit = navHit;
+function navRects() {
+  if (!showNav()) return [];
+  const ask = homeAsk > 0, h = 40, inGame = state === "play" || state === "pause";
+  if (inGame) {
+    // en partida: arriba al centro; en pantallas táctiles el botón de pausa ya hace de «Volver»
+    const hw = ask ? 158 : 44;
+    if (isTouch()) return [{ kind: "home", x: Math.max(8, VW / 2 - 30 - hw), y: 14, w: hw, h, ask }];
+    const bw = 44, x0 = VW / 2 - (bw + 8 + hw) / 2;
+    return [{ kind: "back", x: x0, y: 14, w: bw, h }, { kind: "home", x: x0 + bw + 8, y: 14, w: hw, h, ask }];
+  }
+  const nw = VW < 360 ? 44 : 104, lab = nw > 44;
+  return [{ kind: "back", x: 16, y: 16, w: nw, h, label: lab }, { kind: "home", x: 16 + nw + 8, y: 16, w: ask ? 158 : nw, h, ask, label: lab }];
+}
+function drawNavBtns() {
   homeAsk = Math.max(0, homeAsk - frameDt);
   if (state !== "play" && state !== "pause") homeAsk = 0;
-  const b = homeBtn = homeRect();
-  if (!b) return;
+  navBtns = navRects();
+  if (!navBtns.length) return;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  const hov = mouse.x >= b.x && mouse.x <= b.x + b.w && mouse.y >= b.y && mouse.y <= b.y + b.h && time - mouse.last < 3;
-  ctx.save();
-  ctx.fillStyle = b.ask ? "rgba(150,40,30,0.9)" : hov ? "rgba(232,163,61,0.3)" : "rgba(20,16,24,0.78)";
-  ctx.strokeStyle = b.ask ? "#ff8a6a" : hov ? "#e8a33d" : "rgba(243,230,200,0.28)"; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, b.h / 2); ctx.fill(); ctx.stroke();
-  // casita
-  const cx = b.x + 22, cy = b.y + b.h / 2 + 1;
-  ctx.strokeStyle = ctx.fillStyle = "#fff3dc"; ctx.lineWidth = 2; ctx.lineJoin = "round";
-  ctx.beginPath(); ctx.moveTo(cx - 9, cy - 1); ctx.lineTo(cx, cy - 9); ctx.lineTo(cx + 9, cy - 1); ctx.stroke();
-  ctx.beginPath(); ctx.rect(cx - 6, cy - 2, 12, 10); ctx.stroke();
-  ctx.fillRect(cx - 2, cy + 3, 4, 5);
-  ctx.font = "bold 14px system-ui"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-  if (b.ask) ctx.fillText("¿Salir? Pulsa otra vez", b.x + 38, b.y + b.h / 2, b.w - 44);
-  else if (b.label) ctx.fillText("Inicio", b.x + 40, b.y + b.h / 2, b.w - 46);
+  const hc = A11().contrast;
+  for (const b of navBtns) {
+    const hov = mouse.x >= b.x && mouse.x <= b.x + b.w && mouse.y >= b.y && mouse.y <= b.y + b.h && time - mouse.last < 3;
+    ctx.save();
+    ctx.fillStyle = b.ask ? "rgba(150,40,30,0.9)" : hc ? "#000" : hov ? "rgba(232,163,61,0.3)" : "rgba(20,16,24,0.78)";
+    ctx.strokeStyle = b.ask ? "#ff8a6a" : hc ? "#fff" : hov ? "#e8a33d" : "rgba(243,230,200,0.28)"; ctx.lineWidth = hc ? 2 : 1.5;
+    ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, b.h / 2); ctx.fill(); ctx.stroke();
+    const cx = b.x + 22, cy = b.y + b.h / 2 + 1;
+    ctx.strokeStyle = ctx.fillStyle = "#fff3dc"; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.lineCap = "round";
+    if (b.kind === "home") {
+      // casita
+      ctx.beginPath(); ctx.moveTo(cx - 9, cy - 1); ctx.lineTo(cx, cy - 9); ctx.lineTo(cx + 9, cy - 1); ctx.stroke();
+      ctx.beginPath(); ctx.rect(cx - 6, cy - 2, 12, 10); ctx.stroke();
+      ctx.fillRect(cx - 2, cy + 3, 4, 5);
+    } else {
+      // flecha hacia atrás
+      ctx.beginPath(); ctx.moveTo(cx + 8, cy - 1); ctx.lineTo(cx - 7, cy - 1); ctx.moveTo(cx - 2, cy - 7); ctx.lineTo(cx - 8, cy - 1); ctx.lineTo(cx - 2, cy + 5); ctx.stroke();
+    }
+    ctx.font = "bold 14px system-ui"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    if (b.ask) ctx.fillText("¿Salir? Pulsa otra vez", b.x + 38, b.y + b.h / 2, b.w - 44);
+    else if (b.label) ctx.fillText(b.kind === "home" ? "Inicio" : "Volver", b.x + 40, b.y + b.h / 2, b.w - 46);
+    ctx.restore(); ctx.textBaseline = "alphabetic";
+  }
+}
+
+// ---------- Guardado del progreso ----------
+let saveIcon = 0, ckT = 0, ckWant = false;
+function checkpoint() {
+  ckWant = false; ckT = 0;
+  if (inTutorial || state !== "play" || !saved) return;
+  try {
+    saved.full = structuredClone({
+      tiles, thp, seen, doorCol, items, lv, run, gameT,
+      monsters: monsters.map(m => ({ ...m, def: null })),
+      P: { x: P.x, y: P.y, hp: P.hp, maxHp: P.maxHp, weapons: P.weapons, cur: P.cur, ammo: P.ammo, res: P.res, keys: P.keys },
+    });
+  } catch (e) { return; }
+  Object.assign(saved, { hp: P.hp, maxHp: P.maxHp, weapons: P.weapons.slice(), run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } });
+  store.set("save", saved); saveIcon = 1.8;
+}
+function restoreCheckpoint(ck) {
+  tiles = ck.tiles.slice(); thp = ck.thp.slice(); seen = ck.seen.slice(); doorCol = { ...ck.doorCol };
+  items = structuredClone(ck.items);
+  monsters = structuredClone(ck.monsters).map(m => Object.assign(m, { def: MON[m.type] }));
+  Object.assign(P, structuredClone(ck.P)); P.cur = Math.min(P.cur, P.weapons.length - 1);
+  run = { ...ck.run }; lv = { ...ck.lv }; gameT = ck.gameT;
+  buildTileCache();
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (seen[y * W + x]) paintMini(x, y);
+  flowDirty = true; flowFrom = -1; camX = P.x - VW / 2; camY = P.y - VH / 2;
+  saved.full = ck; store.set("save", saved);
+  showToast("Partida cargada: sigues donde lo dejaste", 3);
+}
+function drawSaveIcon() {
+  if (saveIcon <= 0) return;
+  saveIcon -= frameDt;
+  const a = Math.min(1, saveIcon * 2.5, (1.8 - saveIcon) * 6), done = saveIcon < 0.8;
+  const play = state === "play" || state === "pause", touchy = isTouch();
+  const w = 190, h = 44, x = play && touchy ? VW / 2 - w / 2 : VW - w - 16, y = play && touchy ? 62 : VH - h - 16;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.fillStyle = "rgba(14,10,16,0.88)"; ctx.strokeStyle = done ? "rgba(155,225,93,0.7)" : "rgba(255,138,31,0.6)"; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 12); ctx.fill(); ctx.stroke();
+  // pistola Nerf girando
+  ctx.save(); ctx.translate(x + 26, y + h / 2); ctx.rotate(done ? 0 : time * (A11().motion ? 3 : 9)); drawGun("pistola", 1.6); ctx.restore();
+  ctx.fillStyle = done ? "#9be15d" : "#ffe2a8"; ctx.font = "bold 14px system-ui"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillText(done ? "Progreso guardado ✓" : "Guardando…", x + 50, y + h / 2 + 1, w - 58);
   ctx.restore(); ctx.textBaseline = "alphabetic";
 }
 TR_ROWS.push(
 ["Inicio", "Home", "Início", "Accueil", "Start", "Inizio"],
+["Volver", "Back", "Voltar", "Retour", "Zurück", "Indietro"],
+["Guardando…", "Saving…", "Salvando…", "Sauvegarde…", "Speichern…", "Salvataggio…"],
+["Progreso guardado ✓", "Progress saved ✓", "Progresso salvo ✓", "Progression sauvegardée ✓", "Fortschritt gespeichert ✓", "Progressi salvati ✓"],
+["Partida cargada: sigues donde lo dejaste", "Game loaded: you're right where you left off", "Jogo carregado: você continua de onde parou", "Partie chargée : tu reprends là où tu t'étais arrêté", "Spiel geladen: du machst dort weiter, wo du aufgehört hast", "Partita caricata: riprendi da dove avevi lasciato"],
 ["¿Salir? Pulsa otra vez", "Leave? Press again", "Sair? Aperte de novo", "Quitter ? Appuie encore", "Beenden? Nochmal drücken", "Uscire? Premi ancora"],
 );
 
