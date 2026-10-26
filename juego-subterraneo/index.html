@@ -502,6 +502,7 @@ let dripT = 2, musicT = 0, musicStep = 0, heartT = 0;
 const BOSS_BASS = [55, 55, 65.4, 55, 49, 55, 73.4, 65.4];
 function updateAudio(dt) {
   if (!AC) return;
+  updateMusic(dt);
   dripT -= dt;
   if (dripT <= 0) {
     dripT = rand(1.5, 5);
@@ -624,7 +625,8 @@ function loadLevel(i, retry) {
   buildTileCache();
   mini = document.createElement("canvas"); mini.width = W * 4; mini.height = H * 4; miniCtx = mini.getContext("2d");
   flowDirty = true; flowFrom = -1;
-  banner = 3.2; bossSeen = false; fade = 1; shake = 0; hitstop = 0; hurtFlash = 0; gameT = 0;
+  banner = 3.2; bossSeen = false; combo = 0; comboT = 0; comboShow = 0; barkT = rand(14, 22);
+  if (AC) JINGLES.start(); fade = 1; shake = 0; hitstop = 0; hurtFlash = 0; gameT = 0;
   toast.t = 0;
   state = "play";
   if (i === 0 && !retry) {
@@ -1190,7 +1192,7 @@ addEventListener("keydown", e => {
   if (state === "story") {
     if (["Enter", "Space", "ArrowRight", "KeyD"].includes(e.code)) storyNext(1);
     else if (["ArrowLeft", "KeyA"].includes(e.code)) storyNext(-1);
-    else if (e.code === "Escape") openCustom("new");
+    else if (e.code === "Escape") story.done();
     keys.Space = false; return;
   }
   if (state === "custom") {
@@ -1209,6 +1211,7 @@ addEventListener("keydown", e => {
     else if (["ArrowDown", "KeyS"].includes(e.code)) { uiSel = (uiSel + 1) % Math.max(1, ui.length); SFX.ui(); }
     else if (["Enter", "Space"].includes(e.code)) { const b = ui[uiSel]; if (b) { SFX.uiGo(); b.fn(); } keys.Space = false; }
     else if (e.code === "Escape" && state === "pause") resume();
+    else if (e.code === "Escape" && state === "ach") { state = "title"; uiSel = 0; }
     else if ((e.code === "ArrowLeft" || e.code === "ArrowRight") && ui[uiSel] && ui[uiSel].lr) { SFX.ui(); ui[uiSel].lr(e.code === "ArrowRight" ? 1 : -1); }
     return;
   }
@@ -1320,6 +1323,7 @@ function giveAmmo(id, n) {
   return P.res[id] - before;
 }
 const slotPulse = {};
+let coinChain = 0, lastCoin = -9;
 
 // ---------- Física ----------
 function hitTile(x, y, r) {
@@ -1446,6 +1450,9 @@ function killMon(m) {
   dying.push({ m: Object.assign({}, m, { hp: 1, exclaim: 0, stun: 0, sq: 0.5 }), t: 0, dur: m.def.boss ? 1.1 : 0.38, spin: Math.random() < 0.5 ? -1 : 1 });
   if (m.def.boss) zoomPunch = Math.max(zoomPunch, 0.14);
   run.kills++; lv.kills++; SFX.squish(m);
+  unlock("first"); addCombo();
+  if (m.type === "Q") unlock("queen");
+  if (m.type === "O") unlock("ogre");
   const pts = Math.round(m.def.pts * DIFF().pts);
   run.score += pts;
   floatText(m.x, m.y - m.r - 14, `+${pts}`, "#e8a33d", 10);
@@ -1489,7 +1496,7 @@ function damageTile(tx, ty, d) {
     else if (r < 0.75) items.push({ kind: "gold", x: cx, y: cy, t: 0 });
   } else {
     SFX.rock(cx, cy); SFX.secret(); shake = 8;
-    lv.secrets++; run.secrets++; run.score += 100;
+    lv.secrets++; run.secrets++; run.score += 100; unlock("secret");
     showToast("¡Has descubierto un pasaje secreto! +100", 3);
     floatText(cx, cy, "¡Secreto!", "#ffd23f", 13);
   }
@@ -1500,7 +1507,9 @@ function explode(x, y, rad, dmg) {
   for (let i = 0; i < 46; i++) { const a = Math.random() * 7, s = rand(40, 280); parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: rand(0.3, 0.8), max: 0.8, c: ["#ff4fa3", "#ffd23f", "#3fb7ff", "#ffffff"][i % 4], s: rand(2, 5), glow: true }); }
   flashes.push({ x, y, r: rad * 2.6, life: 0.25 });
   rings.push({ x, y, r: 6, max: rad * 1.2, life: 0.3, c: "#ff4fa3" });
-  for (const m of monsters) { const d = Math.hypot(m.x - x, m.y - y); if (d < rad + m.r && canHit(m)) damageMon(m, dmg * (d < rad * 0.5 ? 1 : 0.6), Math.atan2(m.y - y, m.x - x), true); }
+  let kills = 0;
+  for (const m of monsters) { const d = Math.hypot(m.x - x, m.y - y); if (d < rad + m.r && canHit(m)) { const alive = m.hp > 0; damageMon(m, dmg * (d < rad * 0.5 ? 1 : 0.6), Math.atan2(m.y - y, m.x - x), true); if (alive && m.hp <= 0) kills++; } }
+  if (kills >= 3) unlock("kaboom");
   const t0x = Math.floor((x - rad) / TS), t1x = Math.floor((x + rad) / TS), t0y = Math.floor((y - rad) / TS), t1y = Math.floor((y + rad) / TS);
   for (let ty = t0y; ty <= t1y; ty++) for (let tx = t0x; tx <= t1x; tx++) {
     if (Math.hypot(tx * TS + 16 - x, ty * TS + 16 - y) > rad + 16) continue;
@@ -1511,7 +1520,7 @@ function explode(x, y, rad, dmg) {
 }
 function hurtPlayer(d, sx, sy) {
   if (P.inv > 0 || P.dash > 0 || state !== "play") return;
-  P.hp -= d; P.inv = 1; shake = 9; hitstop = 0.07; hurtFlash = 0.35; SFX.hurt(); heartPulse = 1; zoomPunch = Math.max(zoomPunch, 0.025);
+  P.hp -= d; P.inv = 1; shake = 9; if (lv) lv.hurt = true; hitstop = 0.07; hurtFlash = 0.35; SFX.hurt(); heartPulse = 1; zoomPunch = Math.max(zoomPunch, 0.025);
   const a = Math.atan2(P.y - sy, P.x - sx) || rand(0, 6);
   P.kx += Math.cos(a) * 260; P.ky += Math.sin(a) * 260;
   for (let i = 0; i < 12; i++) parts.push({ x: P.x, y: P.y, vx: rand(-110, 110), vy: rand(-110, 110), life: 0.5, max: 0.5, c: "#e5484d", s: 2.5 });
@@ -1519,6 +1528,7 @@ function hurtPlayer(d, sx, sy) {
   else if (P.hp <= 2) hint("low", "¡Poca vida! Busca corazones o rompe cajas.", 3);
 }
 function die() {
+  JINGLES.death();
   state = "dead"; uiSel = 0; deathTip = TIPS[Math.floor(Math.random() * TIPS.length)];
   for (let i = 0; i < 40; i++) parts.push({ x: P.x, y: P.y, vx: rand(-200, 200), vy: rand(-200, 200), life: rand(0.5, 1.2), max: 1.2, c: i % 2 ? "#2f6fd6" : "#ffd23f", s: rand(2, 4) });
 }
@@ -1543,6 +1553,7 @@ function onAlert(m) {
 // ---------- Actualización ----------
 function update(rdt) {
   time += rdt; frameDt = rdt;
+  updateAch(rdt); comboShow -= rdt;
   if (state !== prevState) { prevState = state; stateT = 0; } stateT += rdt;
   zoomPunch *= Math.pow(0.015, rdt); camKick.x *= Math.pow(0.0005, rdt); camKick.y *= Math.pow(0.0005, rdt);
   updateAudio(rdt);
@@ -1565,6 +1576,7 @@ function update(rdt) {
   updateFx(dt);
 
   updateAmbient(dt);
+  comboT -= dt; updateBark(dt);
   const ptx = Math.floor(P.x / TS), pty = Math.floor(P.y / TS);
   if (P.exiting > 0) {
     P.exiting -= rdt; P.inv = 1;
@@ -1616,7 +1628,7 @@ function updatePlayer(dt) {
     P.face = Math.atan2(my, mx);
     const prev = P.walk; P.walk += dt * 12 * (onWeb ? 0.5 : 1);
     if (Math.floor(prev / Math.PI) !== Math.floor(P.walk / Math.PI)) {
-      SFX.step();
+      stepSound();
       for (let i = 0; i < 3; i++) parts.push({ x: P.x + rand(-4, 4), y: P.y + 10, vx: rand(-18, 18) - mx * 25, vy: rand(-14, -2) - my * 20, life: 0.4, max: 0.4, c: "rgba(175,155,135,0.55)", s: rand(1.5, 3) });
     }
   }
@@ -1634,7 +1646,11 @@ function updatePlayer(dt) {
     for (const m of monsters) { const d = Math.hypot(m.x - P.x, m.y - P.y); if (d < bd && canHit(m) && los(P.x, P.y, m.x, m.y)) { bd = d; bestM = m; } }
     P.aim = bestM ? Math.atan2(bestM.y - P.y, bestM.x - P.x) : P.face;
   }
-  if ((keys.Space || mouse.down || keys.KeyJ || touch.fire) && P.cd <= 0 && P.dash <= 0) fire();
+  const firing = keys.Space || mouse.down || keys.KeyJ || touch.fire;
+  if (firing && P.cd <= 0 && P.dash <= 0) fire();
+  // si te quedas quieto un rato, tu personaje se echa una siestecita
+  P.idleT = ml > 0.1 || firing ? 0 : (P.idleT || 0) + dt;
+  if (P.idleT > 8 && Math.random() < dt * 0.9) texts.push({ x: P.x + 6 + rand(-2, 2), y: P.y - 16, txt: "z", c: "#cfe0ff", life: 1.4, size: 9 + Math.random() * 5, vy: -20 });
 
   // pinchos
   const t = T(Math.floor(P.x / TS), Math.floor(P.y / TS));
@@ -1710,6 +1726,7 @@ function updateMonsters(dt) {
     if (m.def.ghost) m.vis = 0.5 + 0.5 * Math.sin(m.t * 1.5 + (m.seed ?? (m.seed = Math.random() * 7)));
     if (m.sees) { if (m.alert <= 0) onAlert(m); m.alert = Math.max(m.alert, 4); } else m.alert -= dt;
     m.wet = Math.max(0, (m.wet || 0) - dt);
+    if (m.alert > 0 && Math.random() < dt * 0.3) idleSound(m);
     if (m.wet > 0 && Math.random() < dt * 6) parts.push({ x: m.x + rand(-m.r, m.r) * 0.6, y: m.y + rand(-4, 4), vx: 0, vy: 30, life: 0.3, max: 0.3, c: "#7fd8ff", s: 1.5 });
     const mtx = Math.floor(m.x / TS), mty = Math.floor(m.y / TS), mt = T(mtx, mty);
     const slow = !m.def.fly && m.type !== "x" && m.type !== "Q" && mt === WEB ? 0.5 : 1;
@@ -2015,6 +2032,7 @@ function updateItems(dt) {
       if (isNew) { P.weapons.push(it.w); P.weapons.sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b)); P.ammo[it.w] = wd.clip; P.res[it.w] = wd.res; }
       else P.res[it.w] = Math.min(wd.max, (P.res[it.w] || 0) + wd.res);
       P.cur = P.weapons.indexOf(it.w); P.reloading = 0; swapT = 1; slotPulse[it.w] = 1;
+      if (P.weapons.length >= ORDER.length) unlock("arsenal");
       SFX.key(); SFX.secret(); floatText(it.x, it.y, isNew ? wd.name : `+${wd.res} balas`, wd.color, 13);
       showToast(isNew ? `¡Nueva arma: ${wd.name}! ` + (isTouch() ? "(tócala en la barra)" : `(tecla ${SLOT_KEYS[ORDER.indexOf(it.w)]})`) : `Más munición para ${wd.name}`, 3.5);
       rings.push({ x: it.x, y: it.y, r: 6, max: 60, life: 0.5, c: WEAPONS[it.w].color });
@@ -2022,7 +2040,12 @@ function updateItems(dt) {
       P.hp = Math.min(P.maxHp, P.hp + 2); SFX.pick(); floatText(it.x, it.y, "+vida", "#ff6b6b");
     } else if (it.kind === "gold") {
       run.gold += 10; run.score += 10; if (it.counted) lv.goldGot++;
-      SFX.coin(); floatText(it.x, it.y, "+10", "#f5c542");
+      // las monedas seguidas suenan cada vez más agudas
+      coinChain = time - lastCoin < 1.2 ? coinChain + 1 : 0; lastCoin = time;
+      const cf = 1200 * Math.pow(1.06, Math.min(coinChain, 14));
+      beep(cf, 0.05, "square", 0.03); setTimeout(() => beep(cf * 1.33, 0.08, "square", 0.03), 50);
+      floatText(it.x, it.y, "+10", "#f5c542");
+      if (run.gold >= 500) unlock("rich");
     } else if (it.kind === "ammo") {
       if (P.maxHp < 12) { P.maxHp += 2; }
       P.hp = Math.min(P.maxHp, P.hp + 2);
@@ -2091,6 +2114,7 @@ function pickFloorDarts() {
     if (d.kind !== "dart" || !d.w || !P.weapons.includes(d.w) || (P.res[d.w] || 0) >= WEAPONS[d.w].max) continue;
     if (Math.abs(d.x - P.x) > 16 || Math.abs(d.y - P.y) > 16) continue;
     P.res[d.w]++; slotPulse[d.w] = 1; decals.splice(i, 1);
+    run.darts = (run.darts || 0) + 1; if (run.darts >= 25) unlock("darts");
     beep(1500, 0.03, "triangle", 0.025); floatText(d.x, d.y - 4, "+1", "#d8d0c0", 9);
     hint("darts", "Puedes recoger algunos dardos del suelo para recuperar munición", 3.5);
   }
@@ -2130,16 +2154,20 @@ function finishLevel() {
     + (lv.secretTotal === 0 || lv.secrets >= lv.secretTotal ? 0 : -0);
   lv.stars = Math.min(3, lv.stars);
   run.stars += lv.stars;
+  if (!lv.hurt) unlock("nohit");
+  if (lv.stars >= 3) unlock("stars3");
   if (levelIdx + 1 >= LEVELS.length) {
-    state = "win"; uiSel = 0;
+    if (settings.diff === 2) unlock("legend");
+    startEnding();
     if (run.score > best) { best = run.score; store.set("best", best); lv.record = true; }
     saved = null; store.set("save", null);
-  } else { state = "levelDone"; uiSel = 0; }
+  } else { state = "levelDone"; uiSel = 0; JINGLES.clear(); }
 }
 
 // ---------- Dibujo ----------
 let camX = 0, camY = 0;
-function draw() {
+function draw() { drawMain(); drawAchPop(); }
+function drawMain() {
   ui = [];
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = "#050407"; ctx.fillRect(0, 0, cv.width, cv.height);
@@ -2147,6 +2175,7 @@ function draw() {
   if (state === "title") { drawTitle(); return; }
   if (state === "story") { drawStory(); return; }
   if (state === "custom") { drawCustom(); return; }
+  if (state === "ach") { drawAchScreen(); return; }
   CZ = ZOOM * (1 + zoomPunch);
   const vw = VW / CZ, vh = VH / CZ;
   // cámara adelantada hacia donde apuntas
@@ -2372,6 +2401,7 @@ function draw() {
   }
   if (state === "play" || state === "pause") drawHUD();
   if (touch.on && state === "play") drawTouch();
+  if (state === "play") drawCombo();
   if (fade > 0) { ctx.fillStyle = `rgba(5,4,7,${fade})`; ctx.fillRect(0, 0, VW, VH); }
   if (state === "pause") drawPause();
   if (state === "dead") drawDead();
@@ -3347,6 +3377,7 @@ function drawTitle() {
   if (saved && saved.level > 0) items.push({ label: `Continuar · Nivel ${saved.level + 1} (${DIFFS[saved.diff].name})`, fn: continueGame });
   items.push({ label: "Nueva partida", fn: startNewGameFlow });
   items.push({ label: `Personaje: ${look.name}`, fn: () => openCustom("menu") });
+  items.push({ label: `Logros (${ACH.filter(a => achieved[a.id]).length}/${ACH.length})`, fn: () => { state = "ach"; uiSel = 0; } });
   items.push({ label: `Dificultad: ${DIFF().name}`, fn: () => toggleDiff(1), lr: toggleDiff });
   items.push({ label: `Sonido: ${settings.sound ? "Sí" : "No"}`, fn: () => setSound(!settings.sound) });
   items.push({ label: `Efectos: ${settings.fx ? "Altos" : "Bajos"}`, fn: toggleFx });
@@ -3372,14 +3403,14 @@ const STORY = [
   { cap: n => `${n} se puso el casco de minero y cargó sus dardos de espuma.` },
   { cap: () => "Encuentra las llaves, abre las puertas y llega hasta el trono. ¡La aventura comienza!" },
 ];
-const story = { i: 0, t: 0 };
+const story = { i: 0, t: 0, pages: STORY, scene: (i, t) => drawScene(i, t), done: () => openCustom("new"), last: "crear tu personaje" };
 const halftone = (() => { const c = document.createElement("canvas"); c.width = c.height = 6; const g = c.getContext("2d"); g.fillStyle = "rgba(0,0,0,0.13)"; g.beginPath(); g.arc(3, 3, 1.2, 0, 7); g.fill(); return c; })();
 let halftonePat = null;
-function startNewGameFlow() { story.i = 0; story.t = 0; state = "story"; uiSel = -1; SFX.page(); }
+function startNewGameFlow() { Object.assign(story, { i: 0, t: 0, pages: STORY, scene: (i, t) => drawScene(i, t), done: () => openCustom("new"), last: "crear tu personaje" }); state = "story"; uiSel = -1; SFX.page(); }
 function storyNext(d = 1) {
   SFX.page();
   if (story.i + d < 0) return;
-  if (story.i + d >= STORY.length) { openCustom("new"); return; }
+  if (story.i + d >= story.pages.length) { story.done(); return; }
   story.i += d; story.t = 0;
 }
 function wrapText(text, maxW) {
@@ -3525,7 +3556,7 @@ function drawStory() {
   ctx.save(); ctx.beginPath(); ctx.rect(px, py, pw, ph); ctx.clip();
   ctx.fillStyle = "#000"; ctx.fillRect(px, py, pw, ph);
   ctx.translate(px + (pw - 400 * sc) / 2, py + (ph - 250 * sc) / 2); ctx.scale(sc, sc);
-  drawScene(story.i, story.t);
+  story.scene(story.i, story.t);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   if (!halftonePat) halftonePat = ctx.createPattern(halftone, "repeat");
   ctx.fillStyle = halftonePat; ctx.fillRect(px, py, pw, ph);
@@ -3533,7 +3564,7 @@ function drawStory() {
   ctx.lineWidth = 5; ctx.strokeStyle = "#111"; ctx.strokeRect(px, py, pw, ph);
   // cuadro de texto amarillo
   ctx.font = `${s ? 15 : 19}px ${COMIC_FONT}`;
-  const capW = Math.min(pw * (s ? 0.92 : 0.6), 440), lines = wrapText(STORY[story.i].cap(look.name || "Alex"), capW - 24), capH = lines.length * (s ? 18 : 23) + 18;
+  const capW = Math.min(pw * (s ? 0.92 : 0.6), 440), lines = wrapText(story.pages[story.i].cap(look.name || "Alex"), capW - 24), capH = lines.length * (s ? 18 : 23) + 18;
   ctx.save(); ctx.translate(px - (s ? 4 : 14), py - (s ? 40 : 22)); ctx.rotate(-0.015);
   ctx.fillStyle = "#ffe27a"; ctx.strokeStyle = "#111"; ctx.lineWidth = 3; ctx.fillRect(0, 0, capW, capH); ctx.strokeRect(0, 0, capW, capH);
   ctx.fillStyle = "#1a1208"; ctx.textAlign = "left";
@@ -3544,12 +3575,12 @@ function drawStory() {
   ctx.restore();
   // páginas y controles
   const dy = py + ph + 30;
-  for (let j = 0; j < STORY.length; j++) { ctx.fillStyle = j === story.i ? "#ffd23f" : "rgba(243,230,200,0.25)"; ctx.beginPath(); ctx.arc(VW / 2 + (j - (STORY.length - 1) / 2) * 18, dy, j === story.i ? 5 : 4, 0, 7); ctx.fill(); }
+  for (let j = 0; j < story.pages.length; j++) { ctx.fillStyle = j === story.i ? "#ffd23f" : "rgba(243,230,200,0.25)"; ctx.beginPath(); ctx.arc(VW / 2 + (j - (story.pages.length - 1) / 2) * 18, dy, j === story.i ? 5 : 4, 0, 7); ctx.fill(); }
   ctx.globalAlpha = 0.55 + 0.45 * Math.sin(time * 4); ctx.fillStyle = "#f3e6c8"; ctx.font = `${s ? 13 : 15}px system-ui`; ctx.textAlign = "center";
-  ctx.fillText(story.i < STORY.length - 1 ? (isTouch() ? "Toca para continuar" : "Haz clic o pulsa ENTER para continuar") : (isTouch() ? "Toca para crear tu personaje" : "Pulsa ENTER para crear tu personaje"), VW / 2, dy + 28, VW - 24);
+  ctx.fillText(story.i < story.pages.length - 1 ? (isTouch() ? "Toca para continuar" : "Haz clic o pulsa ENTER para continuar") : (isTouch() ? `Toca para ${story.last}` : `Pulsa ENTER para ${story.last}`), VW / 2, dy + 28, VW - 24);
   ctx.globalAlpha = 1;
   ui = [];
-  button("Saltar ›", VW - 120, 16, 104, 36, () => openCustom("new"), { size: 14 });
+  button("Saltar ›", VW - 120, 16, 104, 36, () => story.done(), { size: 14 });
 }
 
 // --- editor del personaje ---
@@ -3698,6 +3729,295 @@ function drawCustom() {
   if (customRow === CUSTOM_ROWS.length) { ctx.strokeStyle = "#e8a33d"; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(oX + bw + 8, by - 2, bw + 4, 48, 11); ctx.stroke(); }
   if (!s) { ctx.fillStyle = "rgba(243,230,200,0.5)"; ctx.font = "13px system-ui"; ctx.textAlign = "center"; ctx.fillText("↑↓ elegir fila  ·  ←→ cambiar  ·  ENTER jugar", VW / 2, by + 74); }
   ctx.globalAlpha = 1;
+}
+
+// ---------- Música, fanfarrias, combos, logros e historieta final ----------
+const NOTE = n => 440 * Math.pow(2, (n - 69) / 12);
+// nota con ataque suave y caída larga, a través del canal de música
+function tone(f, dur, type = "sine", vol = 0.03, attack = 0.02, cutoff = 1800) {
+  if (!AC) return;
+  const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain(), lp = AC.createBiquadFilter();
+  o.type = type; o.frequency.value = f; lp.type = "lowpass"; lp.frequency.value = cutoff;
+  g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(lp).connect(g).connect(musBus); o.start(t); o.stop(t + dur + 0.05);
+}
+function jingle(notes, step = 0.12, type = "square", vol = 0.05) {
+  notes.forEach((n, i) => setTimeout(() => { if (n) tone(NOTE(n), step * 2.4, type, vol, 0.01, 3000); }, i * step * 1000));
+}
+const JINGLES = {
+  start: () => jingle([60, 64, 67, 72, 0, 72], 0.1, "triangle", 0.06),
+  clear: () => { jingle([67, 72, 76, 79, 0, 84], 0.11, "square", 0.045); setTimeout(() => jingle([48, 0, 55, 0, 60], 0.11, "triangle", 0.06), 0); },
+  death: () => jingle([64, 63, 62, 0, 61], 0.3, "sawtooth", 0.04),
+  win: () => { jingle([72, 76, 79, 84, 0, 79, 84, 88], 0.12, "square", 0.045); jingle([48, 0, 55, 0, 60, 0, 64, 67], 0.12, "triangle", 0.06); },
+  ach: () => jingle([79, 84, 88, 91], 0.07, "triangle", 0.05),
+};
+const MUS = { mode: "", t: 0, step: 0 };
+const LEVEL_ROOTS = [57, 50, 54, 52, 49, 55, 53, 48, 56, 45];
+const MINOR_PENT = [0, 3, 5, 7, 10, 12, 15];
+const TITLE_SONG = [[69, 1], [72, 1], [76, 2], [74, 1], [72, 1], [71, 2], [69, 1], [67, 1], [69, 2], [64, 2],
+  [69, 1], [72, 1], [76, 2], [79, 1], [77, 1], [76, 2], [74, 1], [72, 1], [71, 2], [69, 2], [0, 2]];
+const ARPS = { story: [[57, 60, 64, 69], [53, 57, 60, 65], [55, 59, 62, 67], [52, 55, 59, 64]],
+               ending: [[60, 64, 67, 72], [55, 59, 62, 67], [57, 60, 64, 69], [53, 57, 60, 65]] };
+const END_MELODY = [72, 0, 76, 79, 0, 77, 76, 74, 72, 0, 74, 76, 0, 79, 77, 76];
+function musicMode() {
+  if (state === "title" || state === "custom" || state === "ach") return "title";
+  if (state === "story") return story.pages === ENDING ? "ending" : "story";
+  if (state === "win") return "ending";
+  if (state === "play" && monsters.some(m => m.def.boss && m.alert > 0)) return "boss";
+  return "level";
+}
+function updateMusic(dt) {
+  const mode = musicMode();
+  if (mode !== MUS.mode) { MUS.mode = mode; MUS.step = 0; MUS.t = 0.4; }
+  if (mode === "boss") return;
+  MUS.t -= dt; if (MUS.t > 0) return;
+  const st = MUS.step++;
+  if (mode === "title") {
+    const [n, b] = TITLE_SONG[st % TITLE_SONG.length], beat = 0.24;
+    if (n) { tone(NOTE(n), beat * b * 1.7, "triangle", 0.04); if (st % 2 === 0) tone(NOTE(n - 24), beat * 2.4, "sine", 0.05, 0.03); }
+    MUS.t = beat * b;
+  } else if (mode === "story" || mode === "ending") {
+    const ch = ARPS[mode][Math.floor(st / 8) % 4], step = mode === "ending" ? 0.2 : 0.28;
+    tone(NOTE(ch[st % 4] + (st % 8 >= 4 ? 12 : 0)), step * 3, "triangle", 0.032);
+    if (st % 8 === 0) tone(NOTE(ch[0] - 12), step * 8, "sine", 0.05, 0.05);
+    if (mode === "ending" && END_MELODY[st % 16]) tone(NOTE(END_MELODY[st % 16]), step * 1.8, "square", 0.018, 0.01, 2400);
+    MUS.t = step;
+  } else {
+    if (state !== "play") { MUS.t = 0.5; return; }
+    const root = LEVEL_ROOTS[levelIdx % LEVEL_ROOTS.length];
+    if (Math.random() < 0.7) tone(NOTE(root + 12 + MINOR_PENT[Math.floor(Math.random() * MINOR_PENT.length)]), 1.8, "sine", 0.02, 0.08);
+    if (st % 8 === 0) tone(NOTE(root - 12), 3.6, "triangle", 0.03, 0.3, 600);
+    MUS.t = rand(0.45, 0.85);
+  }
+}
+
+// --- sonidos ambientales únicos ---
+function stepSound() {
+  if (!AC) return;
+  const tx = Math.floor(P.x / TS), ty = Math.floor((P.y + 8) / TS), t = T(tx, ty);
+  const wet = decor.some(d => d.kind === "puddle" && Math.abs(d.x - P.x) < 15 && Math.abs(d.y - P.y - 6) < 11);
+  if (wet) { noise(0.08, 0.05, 1800, "bandpass"); beep(rand(500, 700), 0.05, "sine", 0.02, -250); }
+  else if (t === WEB) noise(0.09, 0.035, 500, "lowpass");
+  else if (t === SPIKE) beep(rand(1500, 1900), 0.025, "square", 0.012);
+  else noise(0.035, 0.02, rand(240, 380), "lowpass");
+}
+function idleSound(m) {
+  const v = near(m.x, m.y);
+  if (v < 0.25) return;
+  switch (m.type) {
+    case "s": beep(rand(110, 150), 0.22, "sine", 0.035 * v, -50); break;
+    case "t": beep(rand(1800, 2300), 0.05, "square", 0.012 * v, 400); break;
+    case "k": SFX.rattle(m); break;
+    case "x": noise(0.12, 0.025 * v, 3500); break;
+    case "q": beep(55, 0.4, "sawtooth", 0.03 * v, -10); break;
+    case "f": beep(rand(280, 360), 0.7, "sine", 0.022 * v, 120); break;
+    case "e": SFX.chitter(m); break;
+    case "o": beep(180, 0.5, "sine", 0.02 * v, 20); break;
+    case "p": SFX.dig(m); break;
+  }
+}
+// ladridos de Chispa: te guían hacia la salida
+let barkT = 16;
+function bark(vol) { beep(560, 0.09, "sawtooth", 0.05 * vol, -180); setTimeout(() => beep(520, 0.11, "sawtooth", 0.045 * vol, -200), 140); }
+function updateBark(dt) {
+  if (!exits.length) return;
+  barkT -= dt; if (barkT > 0) return;
+  barkT = rand(22, 36);
+  const e = exits[0], d = Math.hypot(e.x - P.x, e.y - P.y);
+  if (d < 160) return;
+  const a = Math.atan2(e.y - P.y, e.x - P.x);
+  bark(clamp(1 - d / 1500, 0.3, 1));
+  floatText(P.x + Math.cos(a) * 120, P.y + Math.sin(a) * 80, "¡Guau!", "#ffd9a0", 14);
+  hint("bark", "¡Es Chispa! Sus ladridos vienen de la dirección de la salida.", 4);
+}
+// combos: derrotas encadenadas dan puntos extra
+let combo = 0, comboT = 0, comboShow = 0, comboTxt = "";
+function addCombo() {
+  combo = comboT > 0 ? combo + 1 : 1; comboT = 2.3;
+  if (combo < 2) return;
+  const pts = combo * 15; run.score += pts;
+  comboTxt = combo === 2 ? "¡DOBLE!" : combo === 3 ? "¡TRIPLE!" : combo === 4 ? "¡CUÁDRUPLE!" : "¡IMPARABLE!";
+  comboShow = 1.4;
+  tone(NOTE(74 + Math.min(combo, 10) * 2), 0.3, "square", 0.04, 0.005, 3000);
+  if (combo >= 3) unlock("combo3");
+  if (combo >= 5) unlock("combo5");
+}
+function drawCombo() {
+  if (comboShow <= 0) return;
+  const k = 1.4 - comboShow, sc = easeBack(k * 4) * (1 + Math.max(0, comboShow - 1.2) * 0.5), a = Math.min(1, comboShow * 2.5);
+  ctx.save(); ctx.globalAlpha = a; ctx.translate(VW / 2, VH * 0.27); ctx.rotate(-0.05 + Math.sin(time * 9) * 0.02); ctx.scale(sc, sc);
+  ctx.font = `${sm() ? 30 : 42}px ${COMIC_FONT}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineJoin = "round";
+  ctx.lineWidth = 7; ctx.strokeStyle = "#1a0a04"; ctx.strokeText(comboTxt, 0, 0);
+  const g = ctx.createLinearGradient(0, -20, 0, 20); g.addColorStop(0, "#fff36a"); g.addColorStop(1, "#ff8a1f");
+  ctx.fillStyle = g; ctx.fillText(comboTxt, 0, 0);
+  ctx.font = `${sm() ? 15 : 19}px ${COMIC_FONT}`; ctx.lineWidth = 4; ctx.strokeText(`COMBO x${combo}  ·  +${combo * 15}`, 0, sm() ? 26 : 34);
+  ctx.fillStyle = "#fff"; ctx.fillText(`COMBO x${combo}  ·  +${combo * 15}`, 0, sm() ? 26 : 34);
+  ctx.textBaseline = "alphabetic"; ctx.restore();
+}
+
+// --- logros ---
+const ACH = [
+  { id: "first",   name: "Primer dardo",       desc: "Derrota a tu primer monstruo" },
+  { id: "combo3",  name: "¡Triple!",           desc: "Consigue un combo x3" },
+  { id: "combo5",  name: "Imparable",          desc: "Consigue un combo x5" },
+  { id: "secret",  name: "Explorador",         desc: "Descubre un pasaje secreto" },
+  { id: "kaboom",  name: "¡Kabum!",            desc: "Derrota a 3 monstruos con una explosión" },
+  { id: "nohit",   name: "Intocable",          desc: "Termina un nivel sin recibir daño" },
+  { id: "stars3",  name: "Perfeccionista",     desc: "Consigue 3 estrellas en un nivel" },
+  { id: "darts",   name: "Reciclador",         desc: "Recoge 25 dardos del suelo" },
+  { id: "rich",    name: "Buscador de oro",    desc: "Reúne 500 de oro en una partida" },
+  { id: "arsenal", name: "Arsenal completo",   desc: "Consigue las 11 armas" },
+  { id: "queen",   name: "Matarañas",          desc: "Derrota a la Reina Araña" },
+  { id: "ogre",    name: "Héroe del abismo",   desc: "Derrota al Rey Ogro y rescata a Chispa" },
+  { id: "legend",  name: "Leyenda",            desc: "Termina el juego en Difícil" },
+];
+const achieved = store.get("ach", {});
+const achQueue = []; let achPop = null;
+function unlock(id) {
+  if (achieved[id]) return;
+  achieved[id] = true; store.set("ach", achieved);
+  achQueue.push({ a: ACH.find(a => a.id === id), t: 0 });
+}
+function trophy(x, y, s, on) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  const g = ctx.createLinearGradient(-8, -10, 8, 10); g.addColorStop(0, on ? "#fff1a8" : "#6a6470"); g.addColorStop(1, on ? "#d99a1f" : "#3a3640");
+  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(-8, -9); ctx.lineTo(8, -9); ctx.quadraticCurveTo(8, 3, 0, 4); ctx.quadraticCurveTo(-8, 3, -8, -9); ctx.fill();
+  ctx.strokeStyle = on ? "#d99a1f" : "#4a4650"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(-8, -5, 3.5, Math.PI * 0.5, Math.PI * 1.5); ctx.stroke(); ctx.beginPath(); ctx.arc(8, -5, 3.5, -Math.PI * 0.5, Math.PI * 0.5); ctx.stroke();
+  ctx.fillStyle = on ? "#c98a1a" : "#3a3640"; ctx.fillRect(-1.5, 4, 3, 4); ctx.fillRect(-5, 8, 10, 3);
+  if (on) { ctx.fillStyle = "rgba(255,255,255,0.6)"; ctx.fillRect(-5, -7, 2, 6); }
+  ctx.restore();
+}
+function updateAch(dt) {
+  if (!achPop && achQueue.length) { achPop = achQueue.shift(); JINGLES.ach(); }
+  if (achPop) { achPop.t += dt; if (achPop.t > 3.6) achPop = null; }
+}
+function drawAchPop() {
+  if (!achPop) return;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const t = achPop.t, w = Math.min(290, VW - 24), h = 58, kin = ease(t * 4), kout = t > 3.1 ? ease((t - 3.1) * 3) : 0;
+  const x = VW - 12 - w * kin + (w + 20) * kout, y = sm() ? 150 : 158;
+  ctx.save(); ctx.shadowColor = "rgba(255,200,60,0.5)"; ctx.shadowBlur = 16;
+  const g = ctx.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, "rgba(60,44,20,0.96)"); g.addColorStop(1, "rgba(20,14,8,0.96)");
+  ctx.fillStyle = g; ctx.strokeStyle = "#f5c542"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(x, y, w, h, 10); ctx.fill(); ctx.stroke(); ctx.restore();
+  trophy(x + 28, y + 30, 1.3 + Math.max(0, Math.sin(t * 8)) * 0.1 * (t < 1 ? 1 : 0), true);
+  ctx.textAlign = "left"; ctx.fillStyle = "#f5c542"; ctx.font = "bold 11px system-ui"; ctx.fillText("¡LOGRO DESBLOQUEADO!", x + 54, y + 20);
+  ctx.fillStyle = "#fff3dc"; ctx.font = "bold 15px system-ui"; ctx.fillText(achPop.a.name, x + 54, y + 38, w - 64);
+  ctx.fillStyle = "rgba(243,230,200,0.65)"; ctx.font = "11px system-ui"; ctx.fillText(achPop.a.desc, x + 54, y + 52, w - 64);
+}
+function drawAchScreen() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const g = ctx.createRadialGradient(VW / 2, VH * 0.4, 0, VW / 2, VH * 0.4, Math.max(VW, VH) * 0.7);
+  g.addColorStop(0, "#2a1c12"); g.addColorStop(1, "#060406"); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+  ui = [];
+  const s = VW < 640, n = ACH.filter(a => achieved[a.id]).length;
+  titleText("LOGROS", s ? 46 : 62, s ? 26 : 38);
+  ctx.fillStyle = "rgba(243,230,200,0.7)"; ctx.font = `${s ? 13 : 15}px system-ui`; ctx.textAlign = "center"; ctx.fillText(`${n} de ${ACH.length} desbloqueados`, VW / 2, s ? 72 : 92);
+  const cols = s ? 1 : 2, cw = s ? VW - 24 : Math.min(360, (VW - 60) / 2), ch = s ? 50 : 58, gap = 8;
+  const x0 = VW / 2 - (cols * cw + (cols - 1) * gap) / 2, y0 = s ? 86 : 112;
+  ACH.forEach((a, i) => {
+    const on = !!achieved[a.id], x = x0 + (i % cols) * (cw + gap), y = y0 + Math.floor(i / cols) * (ch + gap), k = ease((stateT - i * 0.04) * 4);
+    ctx.save(); ctx.globalAlpha = k; ctx.translate(0, (1 - k) * 14);
+    ctx.fillStyle = on ? "rgba(60,44,20,0.9)" : "rgba(20,16,24,0.8)"; ctx.strokeStyle = on ? "#f5c542" : "rgba(243,230,200,0.12)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(x, y, cw, ch, 9); ctx.fill(); ctx.stroke();
+    trophy(x + 26, y + ch / 2 + 1, s ? 1.05 : 1.2, on);
+    ctx.textAlign = "left"; ctx.fillStyle = on ? "#fff3dc" : "rgba(243,230,200,0.45)"; ctx.font = `bold ${s ? 13 : 14}px system-ui`; ctx.fillText(on ? a.name : "???  " + a.name, x + 50, y + ch / 2 - 3, cw - 60);
+    ctx.fillStyle = on ? "rgba(243,230,200,0.7)" : "rgba(243,230,200,0.35)"; ctx.font = `${s ? 11 : 12}px system-ui`; ctx.fillText(a.desc, x + 50, y + ch / 2 + 14, cw - 60);
+    ctx.restore();
+  });
+  const rows = Math.ceil(ACH.length / cols);
+  button("‹ Volver", VW / 2 - 100, Math.min(VH - 60, y0 + rows * (ch + gap) + 10), 200, 44, () => { state = "title"; uiSel = 0; });
+}
+
+// --- historieta final ---
+const ENDING = [
+  { cap: n => `Tras una batalla épica, el Rey Ogro cayó derrotado. ¡${n} lo había conseguido!` },
+  { cap: () => "Con la llave dorada abrió la jaula... ¡y Chispa saltó a sus brazos!" },
+  { cap: () => "Juntos subieron por la vieja escalera de la mina, de vuelta hacia la luz." },
+  { cap: n => `En Villaroca todos celebraron el regreso de ${n} y Chispa. ¡Los héroes del abismo!` },
+  { cap: () => "Pero muy, muy abajo, en la oscuridad... algo abrió un ojo." },
+];
+function startEnding() {
+  Object.assign(story, { i: 0, t: 0, pages: ENDING, scene: drawEndScene, done: () => { state = "win"; uiSel = 0; JINGLES.win(); }, last: "ver tus resultados" });
+  state = "story"; uiSel = -1;
+}
+function caveBg(t) {
+  const bg = ctx.createRadialGradient(200, 140, 20, 200, 140, 260); bg.addColorStop(0, "#4a2a3a"); bg.addColorStop(1, "#120a12");
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, 400, 250);
+  ctx.fillStyle = "#1f1218"; for (let k = 0; k < 9; k++) { ctx.beginPath(); ctx.moveTo(k * 48 - 10, 0); ctx.lineTo(k * 48 + 8, 30 + (k % 3) * 14); ctx.lineTo(k * 48 + 26, 0); ctx.fill(); }
+  ctx.fillStyle = "#2a1a20"; ctx.fillRect(0, 205, 400, 45);
+  for (const tx of [50, 350]) { ctx.fillStyle = "#3a2a1a"; ctx.fillRect(tx - 3, 110, 6, 30); flame(tx, 112, 7, 22 + Math.sin(t * 12 + tx) * 3, Math.sin(t * 5) * 2, "#ff8a1f"); flame(tx, 112, 3.5, 13, 0, "#ffe08a"); }
+}
+function drawCrown(x, y, s, rot) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(s, s);
+  ctx.fillStyle = "#f5c542"; ctx.beginPath(); ctx.moveTo(-10, 5); ctx.lineTo(-10, -4); ctx.lineTo(-5, 1); ctx.lineTo(0, -7); ctx.lineTo(5, 1); ctx.lineTo(10, -4); ctx.lineTo(10, 5); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = "#8a5a10"; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = "#e5484d"; ctx.beginPath(); ctx.arc(0, 1, 1.8, 0, 7); ctx.fill();
+  ctx.restore();
+}
+function drawEndScene(i, t) {
+  if (i === 0) {
+    caveBg(t);
+    ctx.save(); ctx.translate(250, 182); ctx.rotate(Math.min(1, t * 1.5) * 1.4); ctx.scale(2.4, 2.4);
+    const o = fakeMon("O", 0, 0, t); o.stun = 1; drawMonster(o); ctx.restore();
+    const ct = Math.min(t, 2);
+    drawCrown(300 + ct * 30, 120 - ct * 70 + ct * ct * 24, 2, t * 6);
+    ctx.save(); ctx.translate(120, 185); ctx.scale(3, 3); drawHeroStatic(0, 0, -0.6, "cohete", 0); ctx.restore();
+    comicText("¡ZAS!", 220, 70, 44 + Math.sin(t * 14) * 3, -0.15);
+    bubble("¡NOOOO...!", 330, 150, 100, 285, 175);
+  } else if (i === 1) {
+    caveBg(t);
+    ctx.save(); ctx.translate(290, 190);
+    ctx.strokeStyle = "#8a8a94"; ctx.lineWidth = 2.5; for (let k = 0; k <= 2; k++) { ctx.beginPath(); ctx.moveTo(k * 9, -38); ctx.lineTo(k * 9, 14); ctx.stroke(); }
+    ctx.save(); ctx.translate(-20, -12); ctx.rotate(-Math.min(1, t * 2) * 1.2); ctx.strokeStyle = "#8a8a94"; for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.moveTo(-k * 9, -26); ctx.lineTo(-k * 9, 26); ctx.stroke(); } ctx.restore();
+    ctx.fillStyle = "#5a5a64"; ctx.fillRect(-24, -42, 48, 6); ctx.fillRect(-24, 12, 48, 5); ctx.restore();
+    ctx.save(); ctx.translate(268, 172); ctx.rotate(0.6); ctx.fillStyle = "#f5c542"; ctx.strokeStyle = "#f5c542"; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(-4, 0, 4, 0, 7); ctx.stroke(); ctx.fillRect(0, -1.2, 11, 2.6); ctx.restore();
+    const k = Math.min(1, t * 0.8), dx = 270 - k * 95, dy = 195 - Math.sin(k * Math.PI) * 70;
+    ctx.save(); ctx.translate(130, 188); ctx.scale(3, 3); drawHeroStatic(0, 0, 0, "pistola", 0); ctx.restore();
+    drawDog(dx, dy, 2.2, t, false);
+    for (let h = 0; h < 6; h++) { const ht = (t * 0.7 + h / 6) % 1; ctx.globalAlpha = 1 - ht; heart(150 + Math.sin(h * 2 + t * 2) * 30, 150 - ht * 120, 6 + h % 3 * 2, "#ff4d6a"); }
+    ctx.globalAlpha = 1;
+    comicText("¡GUAU, GUAU!", 300, 70, 30, 0.12, "#ffffff");
+  } else if (i === 2) {
+    const bg = ctx.createLinearGradient(0, 0, 0, 250); bg.addColorStop(0, "#5a4a30"); bg.addColorStop(0.4, "#2a2018"); bg.addColorStop(1, "#0a0806");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, 400, 250);
+    const lg = ctx.createRadialGradient(200, -20, 10, 200, -20, 220); lg.addColorStop(0, "rgba(255,240,180,0.85)"); lg.addColorStop(1, "rgba(255,240,180,0)");
+    ctx.fillStyle = lg; ctx.fillRect(0, 0, 400, 250);
+    for (let r = 0; r < 12; r++) { ctx.fillStyle = r % 2 ? "#3a2c20" : "#2e2218"; ctx.fillRect(0, r * 22, 110 + Math.sin(r * 1.7) * 14, 22); ctx.fillRect(290 - Math.sin(r * 2.3) * 14, r * 22, 120, 22); }
+    ctx.fillStyle = "#7a5230"; ctx.fillRect(176, 0, 6, 250); ctx.fillRect(222, 0, 6, 250);
+    for (let r = 0; r < 14; r++) { const yy = (r * 22 + t * 45) % 270 - 10; ctx.fillStyle = "#8a6038"; ctx.fillRect(176, yy, 52, 5); }
+    ctx.save(); ctx.translate(202, 150 + Math.sin(t * 6) * 3); ctx.scale(2.8, 2.8); drawHeroStatic(0, 0, -Math.PI / 2, "pistola", t * 6); ctx.restore();
+    drawDog(214, 122 + Math.sin(t * 6) * 3, 1.5, t, false);
+    for (let b2 = 0; b2 < 2; b2++) { ctx.save(); ctx.globalAlpha = 0.6; ctx.translate(120 + b2 * 160, 225 + Math.sin(t * 3 + b2) * 6); ctx.scale(1.3, 1.3); drawMonster(fakeMon("t", 0, 0, t + b2)); ctx.restore(); }
+    comicText("¡YA CASI!", 310, 60, 26, 0.1, "#ffffff");
+  } else if (i === 3) {
+    const sky = ctx.createLinearGradient(0, 0, 0, 200); sky.addColorStop(0, "#2a2a6a"); sky.addColorStop(0.6, "#c0607a"); sky.addColorStop(1, "#ffb070");
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, 400, 250);
+    for (let k = 0; k < 5; k++) {
+      const ph = (t * 0.6 + k * 0.37) % 1.4; if (ph > 1) continue;
+      const cx = 50 + k * 75, cy = 50 + (k % 2) * 30, col = ["#ffd23f", "#ff4fa3", "#3fb7ff", "#9be15d", "#ff8a1f"][k];
+      for (let j = 0; j < 14; j++) { const a = j / 14 * Math.PI * 2; ctx.globalAlpha = 1 - ph; ctx.fillStyle = col; ctx.fillRect(cx + Math.cos(a) * ph * 40, cy + Math.sin(a) * ph * 40 + ph * ph * 10, 2.5, 2.5); }
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#3a2a3a"; for (const [hx, hw, hh] of [[10, 60, 50], [75, 50, 40], [300, 55, 48], [350, 60, 36]]) { ctx.fillRect(hx, 200 - hh, hw, hh); ctx.beginPath(); ctx.moveTo(hx - 5, 200 - hh); ctx.lineTo(hx + hw / 2, 200 - hh - 22); ctx.lineTo(hx + hw + 5, 200 - hh); ctx.fill(); }
+    ctx.fillStyle = "#5a8a3a"; ctx.fillRect(0, 198, 400, 52);
+    ctx.strokeStyle = "#5a3a1a"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(110, 60); ctx.quadraticCurveTo(200, 80, 290, 60); ctx.stroke();
+    ctx.fillStyle = "#e5484d"; ctx.beginPath(); ctx.moveTo(130, 66); ctx.quadraticCurveTo(200, 86, 270, 66); ctx.lineTo(268, 88); ctx.quadraticCurveTo(200, 108, 132, 88); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#fff3dc"; ctx.font = `14px ${COMIC_FONT}`; ctx.textAlign = "center"; ctx.fillText("¡BIENVENIDOS, HÉROES!", 200, 90);
+    const folks = ["#e5484d", "#3e8ef7", "#2fbf71", "#ffd23f", "#9b5cf0", "#ff8a1f"];
+    folks.forEach((c, j) => { const fx = j < 3 ? 40 + j * 30 : 280 + (j - 3) * 30, fy = 205 - Math.abs(Math.sin(t * 6 + j)) * 8; ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(fx, fy, 9, 12, 0, 0, 7); ctx.fill(); ctx.fillStyle = SKIN_TONES[j % 5]; ctx.beginPath(); ctx.arc(fx, fy - 15, 6, 0, 7); ctx.fill();
+      ctx.strokeStyle = c; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(fx - 7, fy - 5); ctx.lineTo(fx - 12, fy - 18 - Math.sin(t * 8 + j) * 3); ctx.moveTo(fx + 7, fy - 5); ctx.lineTo(fx + 12, fy - 18 + Math.sin(t * 8 + j) * 3); ctx.stroke(); });
+    for (let c = 0; c < 30; c++) { const cx = (c * 37 + t * 20) % 400, cy = (c * 53 + t * 60) % 250; ctx.fillStyle = ["#ffd23f", "#ff4fa3", "#3fb7ff", "#9be15d"][c % 4]; ctx.save(); ctx.translate(cx, cy); ctx.rotate(t * 4 + c); ctx.fillRect(-2, -1, 4, 2); ctx.restore(); }
+    ctx.save(); ctx.translate(185, 192 - Math.abs(Math.sin(t * 4)) * 10); ctx.scale(3, 3); drawHeroStatic(0, 0, -Math.PI / 2, "pistola", 0); ctx.restore();
+    drawDog(232, 205 - Math.abs(Math.sin(t * 5 + 1)) * 16, 2.2, t, false);
+  } else {
+    ctx.fillStyle = "#020103"; ctx.fillRect(0, 0, 400, 250);
+    const open = clamp((t - 0.6) * 1.5, 0, 1), g = ctx.createRadialGradient(200, 118, 0, 200, 118, 110);
+    g.addColorStop(0, `rgba(160,40,80,${0.35 * open})`); g.addColorStop(1, "rgba(160,40,80,0)"); ctx.fillStyle = g; ctx.fillRect(0, 0, 400, 250);
+    ctx.save(); ctx.translate(200, 118); ctx.scale(4, 4); const e = fakeMon("o", 0, 0, t); e.wind = open > 0.9 ? 0.5 : 0; e.ca = Math.PI / 2; drawMonster(e); ctx.restore();
+    ctx.fillStyle = "#020103"; ctx.fillRect(0, 0, 400, 118 - 60 * open); ctx.fillRect(0, 118 + 60 * open, 400, 140);
+    comicText("¿CONTINUARÁ...?", 200, 215, 32, -0.04, "#ffffff");
+    comicText("FIN", 60, 40, 30, -0.1);
+  }
 }
 
 // ---------- Bucle ----------
