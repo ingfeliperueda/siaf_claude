@@ -1305,6 +1305,7 @@ addEventListener("keydown", e => {
     else if (["Enter", "Space"].includes(e.code)) { const b = ui[uiSel]; if (b) { SFX.uiGo(); b.fn(); } keys.Space = false; }
     else if (e.code === "Escape" && state === "pause") resume();
     else if (e.code === "Escape" && state === "ach") { state = "title"; uiSel = 0; }
+    else if (e.code === "KeyH") goHome();
     else if ((e.code === "ArrowLeft" || e.code === "ArrowRight") && ui[uiSel] && ui[uiSel].lr) { SFX.ui(); ui[uiSel].lr(e.code === "ArrowRight" ? 1 : -1); }
     return;
   }
@@ -1326,6 +1327,7 @@ cv.addEventListener("mousemove", e => {
 });
 cv.addEventListener("mousedown", e => {
   audio(); mouse.x = e.clientX; mouse.y = e.clientY; mouse.last = time;
+  if (homeHit(e.clientX, e.clientY)) return;
   if (state !== "play") { if (!clickUI(e.clientX, e.clientY) && state === "story") storyNext(1); return; }
   const hb = hotbar.find(b => e.clientX >= b.x && e.clientX <= b.x + b.w && e.clientY >= b.y && e.clientY <= b.y + b.h);
   if (hb) { if (P.weapons.includes(hb.id)) selectSlot(ORDER.indexOf(hb.id)); return; }
@@ -1352,6 +1354,7 @@ function btns() {
 const inBtn = (b, x, y) => Math.hypot(x - b.x, y - b.y) < b.r + 10;
 cv.addEventListener("touchstart", e => {
   e.preventDefault(); audio(); touch.on = true;
+  if (homeHit(e.changedTouches[0].clientX, e.changedTouches[0].clientY)) return;
   if (state === "custom" && picker.open) { const t = e.changedTouches[0]; picker.drag = { x: t.clientX, y: t.clientY, s0: picker.scroll, moved: false }; return; }
   if (state !== "play") { const t = e.changedTouches[0]; if (state === "custom") nameInput.blur(); if (!clickUI(t.clientX, t.clientY) && state === "story") storyNext(1); return; }
   const B = btns();
@@ -2340,7 +2343,7 @@ function finishLevel() {
 
 // ---------- Dibujo ----------
 let camX = 0, camY = 0;
-function draw() { drawMain(); drawAchPop(); }
+function draw() { drawMain(); drawHomeBtn(); drawAchPop(); }
 function drawMain() {
   ui = [];
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -4682,6 +4685,58 @@ function drawPicker() {
 if (!look.country || !COUNTRIES.some(c => c.iso === look.country)) look.country = defaultCountry();
 setLang(countryOf(look.country).lang);
 
+// ---------- Botón para volver al inicio ----------
+let homeBtn = null, homeAsk = 0;
+function goHome() {
+  // en plena partida pide confirmar con un segundo toque; el progreso queda guardado al inicio del nivel
+  if ((state === "play" || state === "pause") && homeAsk <= 0) { homeAsk = 2.5; SFX.ui(); return; }
+  homeAsk = 0; SFX.uiGo();
+  if (state === "custom") { picker.open = false; saveLook(); }
+  for (const k in keys) keys[k] = false; mouse.down = false; touch.fire = false;
+  toMenu();
+}
+function homeHit(x, y) {
+  const b = homeBtn;
+  if (!b || x < b.x - 4 || x > b.x + b.w + 4 || y < b.y - 4 || y > b.y + b.h + 4) return false;
+  goHome(); return true;
+}
+function homeRect() {
+  if (state === "title" || (state === "device" && !settings.device)) return null;
+  const ask = homeAsk > 0, w = ask ? 158 : 44, h = 40;
+  if (state === "play" || state === "pause") {
+    // en partida: arriba al centro (junto al botón de pausa en pantallas táctiles)
+    const x = isTouch() ? Math.max(8, VW / 2 - 30 - w) : VW / 2 - w / 2;
+    return { x, y: 14, w, h, ask };
+  }
+  return { x: 16, y: 16, w: ask ? w : 104, h, ask, label: true };
+}
+function drawHomeBtn() {
+  homeAsk = Math.max(0, homeAsk - frameDt);
+  if (state !== "play" && state !== "pause") homeAsk = 0;
+  const b = homeBtn = homeRect();
+  if (!b) return;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const hov = mouse.x >= b.x && mouse.x <= b.x + b.w && mouse.y >= b.y && mouse.y <= b.y + b.h && time - mouse.last < 3;
+  ctx.save();
+  ctx.fillStyle = b.ask ? "rgba(150,40,30,0.9)" : hov ? "rgba(232,163,61,0.3)" : "rgba(20,16,24,0.78)";
+  ctx.strokeStyle = b.ask ? "#ff8a6a" : hov ? "#e8a33d" : "rgba(243,230,200,0.28)"; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, b.h / 2); ctx.fill(); ctx.stroke();
+  // casita
+  const cx = b.x + 22, cy = b.y + b.h / 2 + 1;
+  ctx.strokeStyle = ctx.fillStyle = "#fff3dc"; ctx.lineWidth = 2; ctx.lineJoin = "round";
+  ctx.beginPath(); ctx.moveTo(cx - 9, cy - 1); ctx.lineTo(cx, cy - 9); ctx.lineTo(cx + 9, cy - 1); ctx.stroke();
+  ctx.beginPath(); ctx.rect(cx - 6, cy - 2, 12, 10); ctx.stroke();
+  ctx.fillRect(cx - 2, cy + 3, 4, 5);
+  ctx.font = "bold 14px system-ui"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  if (b.ask) ctx.fillText("¿Salir? Pulsa otra vez", b.x + 38, b.y + b.h / 2, b.w - 44);
+  else if (b.label) ctx.fillText("Inicio", b.x + 40, b.y + b.h / 2, b.w - 46);
+  ctx.restore(); ctx.textBaseline = "alphabetic";
+}
+TR_ROWS.push(
+["Inicio", "Home", "Início", "Accueil", "Start", "Inizio"],
+["¿Salir? Pulsa otra vez", "Leave? Press again", "Sair? Aperte de novo", "Quitter ? Appuie encore", "Beenden? Nochmal drücken", "Uscire? Premi ancora"],
+);
+
 // ---------- ¿Dónde vas a jugar? ----------
 const DEVICES = [
   { id: "pc", name: "Computador", desc: "Teclado y ratón" },
@@ -4773,6 +4828,7 @@ TR_ROWS.push(
 ["Dispositivo: {0}", "Device: {0}", "Dispositivo: {0}", "Appareil : {0}", "Gerät: {0}", "Dispositivo: {0}"],
 );
 if (!settings.device) openDevice(); else touch.on = settings.device !== "pc";
+setLang(LANG); // vuelve a cargar la tabla con las traducciones añadidas arriba
 
 // ---------- Bucle ----------
 let last = performance.now(), slowT = 0, fxAuto = true;
