@@ -300,6 +300,73 @@ const LEVELS = [
 ];
 /*LEVELS_END*/
 
+// ---------- Tutorial ----------
+const TUTORIAL = { name: "Campo de entrenamiento", map: [
+    "#####T########T#########T#########",
+    "#.......#.........#.......#......#",
+    "#..u....#..d...d..#.......#......#",
+    "#.......#.........#..S....#...s..#",
+    "#.......#....c....#.......#......#",
+    "#..P...................+..R....E.#",
+    "#.......#...d.....#.......#......#",
+    "#.......#.........#..r....#......#",
+    "#.......#......c..#.......#......#",
+    "#..u....#.........#.......#.~....#",
+    "#####T########T#########T#########",
+] };
+let inTutorial = false, tutStep = 0, tutDone = 0, tut = {};
+const TUT_STEPS = [
+  { t: "Muévete con WASD o las flechas", m: "Desliza el dedo a la izquierda para moverte", ok: () => tut.moved },
+  { t: "Dispara a los 3 muñecos con F o clic", m: "Mantén DISPARA para derribar los 3 muñecos", ok: () => tut.dummies >= 3 },
+  { t: "Rompe una caja disparándole", ok: () => tut.crate },
+  { t: "Recoge la escopeta y cambia de arma con 1-9, Q o la rueda", m: "Recoge la escopeta y tócala en la barra de armas", ok: () => tut.switched },
+  { t: "Recarga el arma con R", m: "Recarga con el botón R", ok: () => tut.reloaded },
+  { t: "Esquiva con SHIFT", m: "Pulsa ESQUIVA", ok: () => tut.dashed },
+  { t: "Usa la habilidad de tu sombrero con ESPACIO", m: "Pulsa HABILIDAD", ok: () => tut.ability },
+  { t: "Coge la llave roja y abre la puerta roja", ok: () => tut.door },
+  { t: "Derrota a la babosa", ok: () => tut.slime },
+  { t: "Baja por la escalera para empezar la aventura", ok: () => false },
+];
+const curDef = () => inTutorial ? TUTORIAL : LEVELS[levelIdx];
+function startTutorial() {
+  freshRun(); inTutorial = true; tutStep = 0; tutDone = 0;
+  tut = { moved: false, dummies: 0, crate: false, switched: false, reloaded: false, dashed: false, ability: false, door: false, slime: false, sx: 0, sy: 0 };
+  loadLevel(0);
+  tut.sx = P.x; tut.sy = P.y;
+}
+function endTutorial() {
+  inTutorial = false; store.set("tutorialDone", true);
+  newGame();
+  showToast("¡Tutorial completado! Comienza la aventura", 3.5);
+}
+function updateTutorial(dt) {
+  if (!inTutorial) return;
+  if (!tut.moved && Math.hypot(P.x - tut.sx, P.y - tut.sy) > 90) tut.moved = true;
+  tutDone = Math.max(0, tutDone - dt);
+  while (tutStep < TUT_STEPS.length - 1 && TUT_STEPS[tutStep].ok()) {
+    tutStep++; tutDone = 1;
+    jingle([76, 81], 0.08, "triangle", 0.05);
+    rings.push({ x: P.x, y: P.y, r: 6, max: 40, life: 0.4, c: "#9be15d" });
+  }
+}
+function drawTutorialPanel() {
+  if (!inTutorial) return;
+  const st = TUT_STEPS[tutStep], txt = isTouch() && st.m ? st.m : st.t, s = VW < 560, w = s ? Math.min(240, VW * 0.62) : 330, x = 10, y = 76;
+  ctx.font = `bold ${s ? 12 : 14}px system-ui`;
+  const lines = wrapText(txt, w - 46), h = 34 + lines.length * (s ? 15 : 18);
+  const pop = 1 + tutDone * 0.08;
+  ctx.save(); ctx.translate(x, y); ctx.scale(pop, pop);
+  panel(0, 0, w, h, 10);
+  ctx.strokeStyle = tutDone > 0 ? "#9be15d" : "rgba(155,225,93,0.5)"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(0, 0, w, h, 10); ctx.stroke();
+  ctx.fillStyle = "#9be15d"; ctx.font = `bold ${s ? 10 : 11}px system-ui`; ctx.textAlign = "left";
+  ctx.fillText(`TUTORIAL · ${tutStep + 1}/${TUT_STEPS.length}`, 12, 16);
+  ctx.fillStyle = "rgba(155,225,93,0.25)"; ctx.fillRect(12, 22, w - 24, 3); ctx.fillStyle = "#9be15d"; ctx.fillRect(12, 22, (w - 24) * tutStep / (TUT_STEPS.length - 1), 3);
+  ctx.fillStyle = "#fff3dc"; ctx.font = `bold ${s ? 12 : 14}px system-ui`;
+  lines.forEach((l, i) => ctx.fillText(l, 34, 42 + i * (s ? 15 : 18)));
+  ctx.strokeStyle = "#9be15d"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(20, 37, 6, 0, 7); ctx.stroke();
+  ctx.restore();
+}
+
 // ---------- Datos del juego ----------
 // clip: balas del cargador · res: reserva al encontrar el arma · max: reserva máxima · unit: cuánto rinde un paquete de balas
 const WEAPONS = {
@@ -328,6 +395,7 @@ const MON = {
   k: { name: "Esqueleto",  hp: 5,  speed: 60,  r: 11, dmg: 1, sight: 330, color: "#e8e2cf", pts: 20 },
   x: { name: "Araña",      hp: 3,  speed: 72,  r: 10, dmg: 1, sight: 290, color: "#9b2f45", pts: 15 },
   q: { name: "Gólem",      hp: 14, speed: 36,  r: 15, dmg: 2, sight: 260, color: "#7d8794", pts: 40, heavy: true },
+  d: { name: "Muñeco de práctica", hp: 3, speed: 0, r: 12, dmg: 0, sight: 0, color: "#c9a26a", pts: 5, rooted: true, heavy: true },
   f: { name: "Fantasma",   hp: 4,  speed: 52,  r: 11, dmg: 1, sight: 300, color: "#bfe3ff", pts: 25, fly: true, ghost: true },
   e: { name: "Escarabajo explosivo", hp: 2, speed: 98, r: 9, dmg: 0, sight: 260, color: "#e0662a", pts: 15 },
   o: { name: "Ojo vigía",  hp: 6,  speed: 28,  r: 12, dmg: 1, sight: 360, color: "#d9d2ff", pts: 30, fly: true },
@@ -577,7 +645,7 @@ function loadLevel(i, retry) {
   levelIdx = i;
   if (!retry) {
     snapshot = { weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
-    saved = { level: i, diff: settings.diff, weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
+    if (!inTutorial) saved = { level: i, diff: settings.diff, weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
     store.set("save", saved);
   } else {
     P.weapons = snapshot.weapons.slice(); P.maxHp = snapshot.maxHp; P.hp = Math.max(Math.ceil(P.maxHp * 0.67), snapshot.hp);
@@ -588,7 +656,7 @@ function loadLevel(i, retry) {
   }
   P.cur = Math.min(P.cur, P.weapons.length - 1);
   Object.assign(P, { reloading: 0, keys: noKeys(), inv: 1.2, cd: 0.3, kx: 0, ky: 0, dash: 0, dashCd: 0, muzzle: 0, abilCd: 0, turbo: 0, shield: 0 });
-  const map = LEVELS[i].map; H = map.length; W = map[0].length;
+  const map = (inTutorial ? TUTORIAL : LEVELS[i]).map; H = map.length; W = map[0].length;
   tiles = new Array(W * H).fill(FLOOR); thp = new Array(W * H).fill(0); seen = new Array(W * H).fill(false);
   doorCol = {}; torches = []; decor = []; exits = [];
   monsters = []; items = []; projs = []; parts = []; texts = []; decals = []; rings = []; ghosts = []; flashes = []; doorAnims = []; glints = [];
@@ -630,7 +698,7 @@ function loadLevel(i, retry) {
   if (AC) JINGLES.start(); fade = 1; shake = 0; hitstop = 0; hurtFlash = 0; gameT = 0;
   toast.t = 0;
   state = "play";
-  if (i === 0 && !retry) {
+  if (i === 0 && !retry && !inTutorial) {
     hint("start", isTouch() ? "Desliza a la izquierda para moverte y mantén DISPARA a la derecha" : `¡Adelante, ${look.name}! Muévete con WASD, dispara con F o clic y usa tu habilidad con ESPACIO`, 4.5);
   }
 }
@@ -1237,7 +1305,7 @@ addEventListener("keydown", e => {
   if (n !== undefined) selectSlot(n);
   if (e.code === "KeyQ") cycleWeapon(1);
   if (e.code === "Space") useAbility();
-  if (e.code === "KeyR") startReload();
+  if (e.code === "KeyR") { startReload(); if (inTutorial) tut.reloaded = true; }
   if (e.code === "ShiftLeft" || e.code === "ShiftRight" || e.code === "KeyK") wantDash = true;
   if (e.code === "Tab") { settings.minimap = (settings.minimap + 1) % 3; store.set("minimap", settings.minimap); SFX.ui(); }
   if (e.code === "KeyM") setSound(!settings.sound);
@@ -1285,7 +1353,7 @@ cv.addEventListener("touchstart", e => {
     if (hb) { selectSlot(ORDER.indexOf(hb.id)); continue; }
     if (inBtn(B.pause, x, y)) { pause(); continue; }
     if (inBtn(B.swap, x, y)) { cycleWeapon(1); continue; }
-    if (inBtn(B.reload, x, y)) { startReload(); continue; }
+    if (inBtn(B.reload, x, y)) { startReload(); if (inTutorial) tut.reloaded = true; continue; }
     if (inBtn(B.abil, x, y)) { useAbility(); continue; }
     if (inBtn(B.dash, x, y)) { wantDash = true; continue; }
     if (x > VW * 0.5) { touch.fire = true; touch.fireId = t.identifier; touch.fs = { x, y }; touch.aim = null; continue; }
@@ -1316,16 +1384,16 @@ function pause() { if (state === "play") { state = "pause"; uiSel = 0; mouse.dow
 function resume() { state = "play"; for (const k in keys) keys[k] = false; }
 function selectSlot(n) {
   const i = P.weapons.indexOf(ORDER[n]);
-  if (i >= 0 && i !== P.cur) { P.cur = i; swapT = 1; P.reloading = 0; P.cd = Math.max(P.cd, 0.15); SFX.reload(); }
+  if (i >= 0 && i !== P.cur) { P.cur = i; swapT = 1; if (inTutorial) tut.switched = true; P.reloading = 0; P.cd = Math.max(P.cd, 0.15); SFX.reload(); }
 }
-function cycleWeapon(d) { if (P.weapons.length < 2) return; swapT = 1; P.cur = (P.cur + d + P.weapons.length) % P.weapons.length; P.reloading = 0; P.cd = Math.max(P.cd, 0.15); SFX.reload(); }
+function cycleWeapon(d) { if (P.weapons.length < 2) return; swapT = 1; if (inTutorial) tut.switched = true; P.cur = (P.cur + d + P.weapons.length) % P.weapons.length; P.reloading = 0; P.cd = Math.max(P.cd, 0.15); SFX.reload(); }
 const curId = () => P.weapons[P.cur];
 const curW = () => WEAPONS[curId()];
 function useAbility() {
   if (state !== "play" || P.exiting > 0) return;
   if (P.abilCd > 0) { SFX.empty(); return; }
   const a = ABILITIES[look.hat] || ABILITIES[0];
-  P.abilCd = a.cd; abilPop = 1;
+  P.abilCd = a.cd; abilPop = 1; if (inTutorial) tut.ability = true;
   floatText(P.x, P.y - 26, a.name, a.color, 13);
   hint("abil", `¡${a.name}! Se recarga en ${a.cd} segundos`, 3);
   if (look.hat === 0) {
@@ -1438,7 +1506,7 @@ function tryDoor(h) {
   if (tiles[idx] !== DOOR) return;
   const c = doorCol[idx];
   if (P.keys[c] > 0) {
-    P.keys[c]--; tiles[idx] = FLOOR; SFX.door(); shake = 7; flowDirty = true;
+    P.keys[c]--; tiles[idx] = FLOOR; SFX.door(); shake = 7; flowDirty = true; if (inTutorial) tut.door = true;
     const cx = h.tx * TS + TS / 2, cy = h.ty * TS + TS / 2;
     doorAnims.push({ x: h.tx * TS, y: h.ty * TS, c: KEYS[c].c, t: 0 });
     for (let i = 0; i < 30; i++) parts.push({ x: cx + rand(-14, 14), y: cy + rand(-14, 14), vx: rand(-110, 110), vy: rand(-110, 110), life: rand(0.4, 0.9), max: 0.9, c: i % 2 ? KEYS[c].c : "#6b5a4a", s: rand(2, 4), glow: i % 2 === 0 });
@@ -1535,6 +1603,7 @@ function killMon(m) {
   dying.push({ m: Object.assign({}, m, { hp: 1, exclaim: 0, stun: 0, sq: 0.5 }), t: 0, dur: m.def.boss ? 1.1 : 0.38, spin: Math.random() < 0.5 ? -1 : 1 });
   if (m.def.boss) zoomPunch = Math.max(zoomPunch, 0.14);
   run.kills++; lv.kills++; SFX.squish(m);
+  if (inTutorial) { if (m.type === "d") tut.dummies++; if (m.type === "s") tut.slime = true; }
   unlock("first"); addCombo();
   if (m.type === "Q") unlock("queen");
   if (m.type === "O") unlock("ogre");
@@ -1574,7 +1643,7 @@ function damageTile(tx, ty, d) {
   tiles[idx] = FLOOR; flowDirty = true;
   for (let i = 0; i < 22; i++) parts.push({ x: cx + rand(-12, 12), y: cy + rand(-12, 12), vx: rand(-140, 140), vy: rand(-140, 140), life: rand(0.4, 0.9), max: 0.9, c: t === CRATE ? (i % 2 ? "#a07040" : "#5e3e1e") : (i % 2 ? "#6b5a4b" : "#3a2f28"), s: rand(2, 5) });
   if (t === CRATE) {
-    SFX.crate(cx, cy);
+    SFX.crate(cx, cy); if (inTutorial) tut.crate = true;
     const r = Math.random(), D = DIFF();
     if (r < 0.2 * D.drop) items.push({ kind: "heart", x: cx, y: cy, t: 0 });
     else if (r < 0.45) items.push({ kind: "bullets", n: 5 + Math.floor(Math.random() * 6), x: cx, y: cy, t: 0 });
@@ -1668,7 +1737,7 @@ function update(rdt) {
   updateFx(dt);
 
   updateAmbient(dt);
-  comboT -= dt; updateBark(dt);
+  comboT -= dt; updateBark(dt); updateTutorial(dt);
   const ptx = Math.floor(P.x / TS), pty = Math.floor(P.y / TS);
   if (P.exiting > 0) {
     P.exiting -= rdt; P.inv = 1;
@@ -1705,7 +1774,7 @@ function updatePlayer(dt) {
 
   if (wantDash && P.dashCd <= 0) {
     const a = ml > 0.1 ? Math.atan2(my, mx) : P.aim;
-    P.dash = 0.17; P.dashCd = 0.8; P.dvx = Math.cos(a) * 500; P.dvy = Math.sin(a) * 500; SFX.dash();
+    P.dash = 0.17; P.dashCd = 0.8; if (inTutorial) tut.dashed = true; P.dvx = Math.cos(a) * 500; P.dvy = Math.sin(a) * 500; SFX.dash();
     for (let i = 0; i < 8; i++) parts.push({ x: P.x, y: P.y + 8, vx: -P.dvx * 0.2 + rand(-40, 40), vy: -P.dvy * 0.2 + rand(-40, 40), life: 0.3, max: 0.3, c: "#8a7a6a", s: 3 });
   }
   wantDash = false;
@@ -2244,6 +2313,7 @@ function updateFx(dt) {
 }
 
 function finishLevel() {
+  if (inTutorial) { JINGLES.clear(); endTutorial(); return; }
   const bonus = Math.max(0, Math.round((240 - lv.time) * 2));
   lv.bonus = bonus; run.score += bonus;
   lv.stars = 1 + (lv.monTotal === 0 || lv.kills >= lv.monTotal * 0.8 ? 1 : 0) + (lv.goldTotal === 0 || lv.goldGot >= lv.goldTotal * 0.8 ? 1 : 0)
@@ -2501,7 +2571,7 @@ function drawMain() {
     drawMiniMap(VW / 2 - mw / 2, VH / 2 - mh / 2 - 20, mw, mh, sc, false);
   }
   if (touch.on && state === "play") drawTouch();
-  if (state === "play") drawCombo();
+  if (state === "play") { drawCombo(); drawTutorialPanel(); }
   if (fade > 0) { ctx.fillStyle = `rgba(5,4,7,${fade})`; ctx.fillRect(0, 0, VW, VH); }
   if (state === "pause") drawPause();
   if (state === "dead") drawDead();
@@ -3039,6 +3109,18 @@ function drawMonster(m) {
     eyes(0, -5, 7, 4, "#ffef9a", m.enraged ? "#f00" : "#c00");
     ctx.fillStyle = "#2a0d05"; ctx.beginPath(); ctx.ellipse(m.x, m.y + 7, 9, 4 + (m.charging > 0 || m.wind > 0 ? 3 : 0), 0, 0, 7); ctx.fill();
     ctx.fillStyle = "#fff"; ctx.fillRect(m.x - 6, m.y + 4, 3, 3); ctx.fillRect(m.x + 3, m.y + 4, 3, 3);
+  } else if (m.type === "d") {
+    const wob = Math.sin(m.t * 3) * 0.04 + (m.sq || 0) * 0.3;
+    ctx.save(); ctx.translate(m.x, m.y + 10); ctx.rotate(wob);
+    ctx.fillStyle = "#6b4a2a"; ctx.fillRect(-2, -6, 4, 10);
+    const bg = ctx.createRadialGradient(-3, -16, 1, 0, -13, 12); bg.addColorStop(0, fl ? "#fff" : "#e8c48a"); bg.addColorStop(1, fl ? "#fff" : "#9a7440");
+    ctx.fillStyle = bg; ctx.beginPath(); ctx.ellipse(0, -14, 10, 11, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = "#e5484d"; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(0, -13, 6, 0, 7); ctx.stroke(); ctx.beginPath(); ctx.arc(0, -13, 2.5, 0, 7); ctx.stroke();
+    ctx.fillStyle = "#e5484d"; ctx.beginPath(); ctx.arc(0, -13, 1, 0, 7); ctx.fill();
+    ctx.strokeStyle = "rgba(80,50,20,0.6)"; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(-9, -8); ctx.lineTo(9, -8); ctx.moveTo(-8, -20); ctx.lineTo(8, -20); ctx.stroke();
+    ctx.fillStyle = "#e8c48a"; ctx.beginPath(); ctx.arc(0, -28, 5, 0, 7); ctx.fill();
+    ctx.fillStyle = "#3a2a1a"; ctx.fillRect(-2.5, -29, 1.4, 1.4); ctx.fillRect(1.2, -29, 1.4, 1.4); ctx.fillRect(-1.5, -26, 3, 0.8);
+    ctx.restore();
   } else if (m.type === "f") {
     const fy = Math.sin(m.t * 3) * 2;
     ctx.save(); ctx.globalAlpha *= 0.12 + 0.78 * (m.vis ?? 1);
@@ -3224,7 +3306,7 @@ function drawHUD() {
   }
   // nivel, oro y puntos
   ctx.textAlign = "right"; ctx.font = `bold ${small ? 12 : 14}px system-ui, sans-serif`;
-  const l1 = `Nivel ${levelIdx + 1}/${LEVELS.length} · ${DIFF().name}`, l2 = `Oro ${run.gold}  ·  Puntos ${run.score}`;
+  const l1 = inTutorial ? "Tutorial" : `Nivel ${levelIdx + 1}/${LEVELS.length} · ${DIFF().name}`, l2 = `Oro ${run.gold}  ·  Puntos ${run.score}`;
   const pw = Math.max(ctx.measureText(l1).width, ctx.measureText(l2).width + 10) + 24;
   panel(VW - pw - 10, 10, pw, 50);
   ctx.fillStyle = "#f3e6c8"; ctx.fillText(l1, VW - 22, 30);
@@ -3286,10 +3368,10 @@ function drawHUD() {
     const a = Math.min(1, banner, (3.2 - banner) * 3);
     ctx.globalAlpha = a; ctx.textAlign = "center";
     ctx.fillStyle = "#e8a33d"; ctx.font = `bold ${small ? 13 : 16}px system-ui`;
-    ctx.fillText(`— NIVEL ${levelIdx + 1} —`, VW / 2, VH * 0.36);
+    ctx.fillText(inTutorial ? "— TUTORIAL —" : `— NIVEL ${levelIdx + 1} —`, VW / 2, VH * 0.36);
     ctx.fillStyle = "#f3e6c8"; ctx.font = `900 ${small ? 26 : 40}px ${TITLE_FONT}`;
     ctx.shadowColor = "rgba(232,163,61,0.6)"; ctx.shadowBlur = 18;
-    ctx.fillText(LEVELS[levelIdx].name, VW / 2, VH * 0.36 + (small ? 36 : 50), VW - 32);
+    ctx.fillText(curDef().name, VW / 2, VH * 0.36 + (small ? 36 : 50), VW - 32);
     ctx.shadowBlur = 0; ctx.globalAlpha = 1;
   }
 }
@@ -3452,7 +3534,7 @@ function dim(a = 0.75) { ctx.fillStyle = `rgba(5,4,7,${a * ease(stateT * 3)})`; 
 const sm = () => VW < 560 || VH < 560;
 const toggleDiff = (d = 1) => { settings.diff = (settings.diff + d + DIFFS.length) % DIFFS.length; store.set("diff", settings.diff); };
 const toggleFx = () => { settings.fx = !settings.fx; store.set("fx", settings.fx); slowT = 0; fxAuto = false; };
-const toMenu = () => { state = "title"; uiSel = 0; saved = store.get("save", null); };
+const toMenu = () => { inTutorial = false; state = "title"; uiSel = 0; saved = store.get("save", null); };
 
 function drawPause() {
   dim(0.72);
@@ -3461,6 +3543,7 @@ function drawPause() {
   menuList([
     { label: "Continuar", fn: resume },
     { label: "Reiniciar nivel", fn: () => loadLevel(levelIdx, true) },
+    ...(inTutorial ? [{ label: "Saltar tutorial", fn: endTutorial }] : []),
     { label: `Minimapa: ${["No", "Pequeño", "Grande"][settings.minimap]}`, fn: () => { settings.minimap = (settings.minimap + 1) % 3; store.set("minimap", settings.minimap); } },
     { label: `Sonido: ${settings.sound ? "Sí" : "No"}`, fn: () => setSound(!settings.sound) },
     { label: `Efectos: ${settings.fx ? "Altos" : "Bajos"}`, fn: toggleFx },
@@ -3583,6 +3666,7 @@ function drawTitle() {
   const items = [];
   if (saved && saved.level > 0) items.push({ label: `Continuar · Nivel ${saved.level + 1} (${DIFFS[saved.diff].name})`, fn: continueGame });
   items.push({ label: "Nueva partida", fn: startNewGameFlow });
+  items.push({ label: "Tutorial", fn: startTutorial });
   items.push({ label: `Personaje: ${look.name}`, fn: () => openCustom("menu") });
   items.push({ label: `Logros (${ACH.filter(a => achieved[a.id]).length}/${ACH.length})`, fn: () => { state = "ach"; uiSel = 0; } });
   items.push({ label: `Dificultad: ${DIFF().name}`, fn: () => toggleDiff(1), lr: toggleDiff });
@@ -3856,7 +3940,7 @@ function openCustom(from) { customFrom = from; state = "custom"; uiSel = -1; cus
 function customDone() {
   if (!look.name.trim()) look.name = "Alex";
   saveLook(); nameInput.blur(); nameInput.style.display = "none";
-  if (customFrom === "new") newGame(); else { state = "title"; uiSel = 0; }
+  if (customFrom === "new") { if (!store.get("tutorialDone", false)) startTutorial(); else newGame(); } else { state = "title"; uiSel = 0; }
 }
 function randomLook() {
   const r = n => Math.floor(Math.random() * n);
@@ -4508,7 +4592,31 @@ function tr(s) {
   trCache.set(s, r);
   return r;
 }
-TR_ROWS.push(["Tu nombre", "Your name", "Seu nome", "Ton nom", "Dein Name", "Il tuo nome"]);
+TR_ROWS.push(
+["Campo de entrenamiento", "Training ground", "Campo de treino", "Terrain d'entraînement", "Trainingsgelände", "Campo di addestramento"],
+["Muñeco de práctica", "Training dummy", "Boneco de treino", "Mannequin d'entraînement", "Übungspuppe", "Manichino"],
+["Saltar tutorial", "Skip tutorial", "Pular tutorial", "Passer le tutoriel", "Tutorial überspringen", "Salta tutorial"],
+["— TUTORIAL —", "— TUTORIAL —", "— TUTORIAL —", "— TUTORIEL —", "— TUTORIAL —", "— TUTORIAL —"],
+["Tutorial", "Tutorial", "Tutorial", "Tutoriel", "Tutorial", "Tutorial"],
+["TUTORIAL · {0}/{1}", "TUTORIAL · {0}/{1}", "TUTORIAL · {0}/{1}", "TUTORIEL · {0}/{1}", "TUTORIAL · {0}/{1}", "TUTORIAL · {0}/{1}"],
+["¡Tutorial completado! Comienza la aventura", "Tutorial complete! The adventure begins", "Tutorial concluído! A aventura começa", "Tutoriel terminé ! L'aventure commence", "Tutorial geschafft! Das Abenteuer beginnt", "Tutorial completato! L'avventura comincia"],
+["Muévete con WASD o las flechas", "Move with WASD or the arrow keys", "Mova-se com WASD ou as setas", "Bouge avec ZQSD ou les flèches", "Beweg dich mit WASD oder den Pfeiltasten", "Muoviti con WASD o le frecce"],
+["Desliza el dedo a la izquierda para moverte", "Swipe on the left to move", "Deslize à esquerda para mover", "Glisse à gauche pour bouger", "Links wischen zum Bewegen", "Scorri a sinistra per muoverti"],
+["Dispara a los 3 muñecos con F o clic", "Shoot the 3 dummies with F or click", "Atire nos 3 bonecos com F ou clique", "Tire sur les 3 mannequins avec F ou clic", "Schieß mit F oder Klick auf die 3 Puppen", "Spara ai 3 manichini con F o clic"],
+["Mantén DISPARA para derribar los 3 muñecos", "Hold SHOOT to knock down the 3 dummies", "Segure ATIRAR para derrubar os 3 bonecos", "Maintiens TIRER pour abattre les 3 mannequins", "Halte FEUER, um die 3 Puppen umzuwerfen", "Tieni premuto SPARA per abbattere i 3 manichini"],
+["Rompe una caja disparándole", "Break a crate by shooting it", "Quebre uma caixa atirando nela", "Casse une caisse en tirant dessus", "Zerschieß eine Kiste", "Rompi una cassa sparandole"],
+["Recoge la escopeta y cambia de arma con 1-9, Q o la rueda", "Pick up the shotgun and switch weapons with 1-9, Q or the wheel", "Pegue a espingarda e troque de arma com 1-9, Q ou a roda", "Ramasse le fusil à pompe et change d'arme avec 1-9, Q ou la molette", "Nimm die Schrotflinte und wechsle mit 1-9, Q oder dem Mausrad", "Raccogli il fucile a pompa e cambia arma con 1-9, Q o la rotella"],
+["Recoge la escopeta y tócala en la barra de armas", "Pick up the shotgun and tap it on the weapon bar", "Pegue a espingarda e toque nela na barra", "Ramasse le fusil à pompe et touche-le sur la barre", "Nimm die Schrotflinte und tippe sie in der Leiste an", "Raccogli il fucile a pompa e toccalo nella barra"],
+["Recarga el arma con R", "Reload with R", "Recarregue com R", "Recharge avec R", "Lade mit R nach", "Ricarica con R"],
+["Recarga con el botón R", "Reload with the R button", "Recarregue com o botão R", "Recharge avec le bouton R", "Lade mit dem R-Knopf nach", "Ricarica con il pulsante R"],
+["Esquiva con SHIFT", "Dodge with SHIFT", "Esquive com SHIFT", "Esquive avec MAJ", "Weich mit SHIFT aus", "Schiva con SHIFT"],
+["Pulsa ESQUIVA", "Tap DODGE", "Toque ESQUIVAR", "Touche ESQUIVE", "Tippe AUSWEICHEN", "Tocca SCHIVA"],
+["Usa la habilidad de tu sombrero con ESPACIO", "Use your hat ability with SPACE", "Use a habilidade do chapéu com ESPAÇO", "Utilise le pouvoir de ton chapeau avec ESPACE", "Nutze die Hut-Fähigkeit mit LEERTASTE", "Usa l'abilità del cappello con SPAZIO"],
+["Pulsa HABILIDAD", "Tap ABILITY", "Toque HABILIDADE", "Touche POUVOIR", "Tippe FÄHIGKEIT", "Tocca ABILITÀ"],
+["Coge la llave roja y abre la puerta roja", "Grab the red key and open the red door", "Pegue a chave vermelha e abra a porta vermelha", "Prends la clé rouge et ouvre la porte rouge", "Nimm den roten Schlüssel und öffne die rote Tür", "Prendi la chiave rossa e apri la porta rossa"],
+["Derrota a la babosa", "Defeat the slime", "Derrote a lesma", "Vaincs la limace", "Besiege den Schleim", "Sconfiggi la lumaca"],
+["Baja por la escalera para empezar la aventura", "Go down the stairs to start the adventure", "Desça a escada para começar a aventura", "Descends l'escalier pour commencer l'aventure", "Geh die Treppe hinunter, um das Abenteuer zu beginnen", "Scendi le scale per iniziare l'avventura"],
+["Tu nombre", "Your name", "Seu nome", "Ton nom", "Dein Name", "Il tuo nome"]);
 // todo el texto del lienzo pasa por el traductor
 {
   const P2 = CanvasRenderingContext2D.prototype, _f = P2.fillText, _s = P2.strokeText, _m = P2.measureText;
