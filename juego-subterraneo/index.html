@@ -448,8 +448,9 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem("abismoNerf." + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem("abismoNerf." + k, JSON.stringify(v)); } catch (e) {} },
 };
-const settings = { diff: store.get("diff", 1), sound: store.get("sound", true), minimap: +store.get("minimap", 1), fx: store.get("fx", true) };
+const settings = { device: null, diff: store.get("diff", 1), sound: store.get("sound", true), minimap: +store.get("minimap", 1), fx: store.get("fx", true) };
 if (!(settings.minimap >= 0 && settings.minimap <= 2)) settings.minimap = 1;
+settings.device = ["pc", "tablet", "phone"].includes(store.get("device", null)) ? store.get("device", null) : null;
 let best = store.get("best", 0);
 let saved = store.get("save", null);
 const DIFF = () => DIFFS[settings.diff];
@@ -703,7 +704,7 @@ function loadLevel(i, retry) {
   }
 }
 function hint(id, txt, t = 3.5) { if (hintsShown.has(id)) return; hintsShown.add(id); showToast(txt, t); }
-const isTouch = () => touch.on || ("ontouchstart" in window && !matchMedia("(pointer:fine)").matches);
+const isTouch = () => settings.device ? settings.device !== "pc" : (touch.on || ("ontouchstart" in window && !matchMedia("(pointer:fine)").matches));
 
 // ---------- Texturas procedurales ----------
 // Paleta de cada nivel: suelo [tono, saturación, luz], muro, color del musgo y umbral del musgo
@@ -1291,6 +1292,13 @@ addEventListener("keydown", e => {
     else if (e.code === "Escape" && customFrom === "menu") { saveLook(); state = "title"; uiSel = 0; }
     keys.Space = false; return;
   }
+  if (state === "device") {
+    if (["ArrowLeft", "ArrowUp", "KeyA", "KeyW"].includes(e.code)) { deviceSel = (deviceSel + 2) % 3; SFX.ui(); }
+    else if (["ArrowRight", "ArrowDown", "KeyD", "KeyS"].includes(e.code)) { deviceSel = (deviceSel + 1) % 3; SFX.ui(); }
+    else if (["Enter", "Space"].includes(e.code)) chooseDevice(DEVICES[deviceSel].id);
+    else if (e.code === "Escape" && settings.device) { state = "title"; uiSel = 0; }
+    keys.Space = false; return;
+  }
   if (state !== "play") {
     if (["ArrowUp", "KeyW"].includes(e.code)) { uiSel = (uiSel - 1 + ui.length) % Math.max(1, ui.length); SFX.ui(); }
     else if (["ArrowDown", "KeyS"].includes(e.code)) { uiSel = (uiSel + 1) % Math.max(1, ui.length); SFX.ui(); }
@@ -1331,7 +1339,7 @@ const hitBox = (b, x, y) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y +
 function clickUI(x, y) { const b = ui.find(b => hitBox(b, x, y)); if (b) { SFX.uiGo(); b.fn(); return true; } return false; }
 
 function btns() {
-  const s = clamp(Math.min(VW, VH) / 420, 0.75, 1.15);
+  const s = clamp(Math.min(VW, VH) / 420, 0.75, 1.15) * (settings.device === "tablet" ? 1.25 : 1);
   return {
     fire:   { x: VW - 82 * s - 12, y: VH - 96 * s - 12, r: 50 * s },
     dash:   { x: VW - 196 * s - 12, y: VH - 58 * s - 12, r: 33 * s },
@@ -2342,6 +2350,7 @@ function drawMain() {
   if (state === "story") { drawStory(); return; }
   if (state === "custom") { drawCustom(); return; }
   if (state === "ach") { drawAchScreen(); return; }
+  if (state === "device") { drawDeviceScreen(); return; }
   CZ = ZOOM * (1 + zoomPunch);
   const vw = VW / CZ, vh = VH / CZ;
   // cámara adelantada hacia donde apuntas
@@ -3672,6 +3681,7 @@ function drawTitle() {
   items.push({ label: `Dificultad: ${DIFF().name}`, fn: () => toggleDiff(1), lr: toggleDiff });
   items.push({ label: `Sonido: ${settings.sound ? "Sí" : "No"}`, fn: () => setSound(!settings.sound) });
   items.push({ label: `Efectos: ${settings.fx ? "Altos" : "Bajos"}`, fn: toggleFx });
+  items.push({ label: `Dispositivo: ${{ pc: "Computador", tablet: "Tableta o iPad", phone: "Celular" }[settings.device] || "?"}`, fn: () => openDevice() });
   const bh = s ? 40 : 46;
   menuList(items, VW / 2, ty + (s ? 140 : 205), Math.min(340, VW - 40), bh, 8);
 
@@ -4671,6 +4681,98 @@ function drawPicker() {
 
 if (!look.country || !COUNTRIES.some(c => c.iso === look.country)) look.country = defaultCountry();
 setLang(countryOf(look.country).lang);
+
+// ---------- ¿Dónde vas a jugar? ----------
+const DEVICES = [
+  { id: "pc", name: "Computador", desc: "Teclado y ratón" },
+  { id: "tablet", name: "Tableta o iPad", desc: "Pantalla táctil grande" },
+  { id: "phone", name: "Celular", desc: "Pantalla táctil" },
+];
+function guessDevice() {
+  const coarse = matchMedia("(pointer:coarse)").matches || ("ontouchstart" in window && !matchMedia("(pointer:fine)").matches);
+  if (!coarse) return "pc";
+  return Math.min(screen.width, screen.height) >= 600 ? "tablet" : "phone";
+}
+let deviceSel = 0;
+function openDevice() { state = "device"; deviceSel = Math.max(0, DEVICES.findIndex(d => d.id === (settings.device || guessDevice()))); uiSel = -1; }
+function chooseDevice(id) {
+  settings.device = id; store.set("device", id);
+  touch.on = id !== "pc";
+  SFX.uiGo(); state = "title"; uiSel = 0;
+}
+function drawDeviceIcon(id, x, y, k, on) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
+  const fg = on ? "#ffe2a8" : "#f3e6c8", sc = on ? "#2a4a6a" : "#1c2a3a";
+  ctx.lineWidth = 3; ctx.strokeStyle = fg; ctx.fillStyle = sc;
+  if (id === "pc") {
+    ctx.beginPath(); ctx.roundRect(-34, -30, 68, 44, 5); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = fg; ctx.fillRect(-5, 15, 10, 9); ctx.fillRect(-18, 24, 36, 4);
+    ctx.beginPath(); ctx.roundRect(-30, 32, 44, 9, 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(26, 36, 5, 7, 0, 0, 7); ctx.stroke();
+  } else if (id === "tablet") {
+    ctx.beginPath(); ctx.roundRect(-30, -38, 60, 78, 8); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(0, 33, 2.5, 0, 7); ctx.fill();
+  } else {
+    ctx.beginPath(); ctx.roundRect(-18, -36, 36, 72, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = fg; ctx.fillRect(-6, -31, 12, 2.5); ctx.beginPath(); ctx.arc(0, 30, 2.2, 0, 7); ctx.fill();
+  }
+  // mini partida en la pantalla
+  ctx.fillStyle = "#ff8a1f"; ctx.beginPath(); ctx.arc(id === "pc" ? -6 : -4, id === "pc" ? -8 : -4, 4, 0, 7); ctx.fill();
+  ctx.fillStyle = "#59c94a"; ctx.beginPath(); ctx.arc(id === "pc" ? 14 : 7, id === "pc" ? -12 : -12, 3.5, 0, 7); ctx.fill();
+  ctx.restore();
+}
+function drawDeviceScreen() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const g = ctx.createRadialGradient(VW / 2, VH * 0.45, 0, VW / 2, VH * 0.45, Math.max(VW, VH) * 0.7);
+  g.addColorStop(0, "#2e1c10"); g.addColorStop(1, "#050407"); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+  ui = [];
+  const s = VW < 720, guess = guessDevice();
+  titleText("ABISMO NERF", s ? 70 : 110, s ? 34 : 56);
+  ctx.textAlign = "center"; ctx.fillStyle = "#fff3dc"; ctx.font = `bold ${s ? 18 : 24}px system-ui`;
+  ctx.fillText("¿Dónde vas a jugar?", VW / 2, s ? 116 : 170);
+  ctx.fillStyle = "rgba(243,230,200,0.6)"; ctx.font = `${s ? 12 : 14}px system-ui`;
+  ctx.fillText("Así ajustamos los controles a tu pantalla", VW / 2, s ? 138 : 196);
+  const cw = s ? Math.min(VW - 40, 300) : 220, ch = s ? 118 : 230, gap = 18;
+  DEVICES.forEach((d, i) => {
+    const x = s ? VW / 2 - cw / 2 : VW / 2 - (3 * cw + 2 * gap) / 2 + i * (cw + gap), y = s ? 158 + i * (ch + 12) : 230;
+    const on = deviceSel === i, k = ease((stateT - i * 0.1) * 3.5), bob = on ? Math.sin(time * 4) * 3 : 0;
+    ctx.save(); ctx.globalAlpha = k; ctx.translate(0, (1 - k) * 20);
+    if (on) { ctx.shadowColor = "rgba(232,163,61,0.6)"; ctx.shadowBlur = 22; }
+    ctx.fillStyle = on ? "rgba(232,163,61,0.2)" : "rgba(20,16,24,0.85)"; ctx.strokeStyle = on ? "#e8a33d" : "rgba(243,230,200,0.2)"; ctx.lineWidth = on ? 2 : 1;
+    ctx.beginPath(); ctx.roundRect(x, y, cw, ch, 14); ctx.fill(); ctx.stroke(); ctx.shadowBlur = 0;
+    if (s) {
+      drawDeviceIcon(d.id, x + 52, y + ch / 2 + bob, 0.85, on);
+      ctx.textAlign = "left"; ctx.fillStyle = on ? "#ffe2a8" : "#fff3dc"; ctx.font = "bold 18px system-ui"; ctx.fillText(d.name, x + 104, y + ch / 2 - 4, cw - 114);
+      ctx.fillStyle = "rgba(243,230,200,0.6)"; ctx.font = "13px system-ui"; ctx.fillText(d.desc, x + 104, y + ch / 2 + 18, cw - 114);
+    } else {
+      drawDeviceIcon(d.id, x + cw / 2, y + 88 + bob, 1.2, on);
+      ctx.textAlign = "center"; ctx.fillStyle = on ? "#ffe2a8" : "#fff3dc"; ctx.font = "bold 20px system-ui"; ctx.fillText(d.name, x + cw / 2, y + 178, cw - 20);
+      ctx.fillStyle = "rgba(243,230,200,0.6)"; ctx.font = "14px system-ui"; ctx.fillText(d.desc, x + cw / 2, y + 202, cw - 20);
+    }
+    if (d.id === guess) {
+      ctx.fillStyle = "#9be15d"; ctx.font = "bold 11px system-ui"; ctx.textAlign = "center";
+      const bx = s ? x + cw - 56 : x + cw / 2, by = s ? y + 18 : y + 22;
+      ctx.fillText("✓ Recomendado", bx, by);
+    }
+    ctx.restore();
+    ui.push({ x, y, w: cw, h: ch, fn: () => { deviceSel = i; chooseDevice(d.id); } });
+  });
+  if (!s) { ctx.fillStyle = "rgba(243,230,200,0.5)"; ctx.font = "13px system-ui"; ctx.textAlign = "center"; ctx.fillText("←→ elegir  ·  ENTER confirmar", VW / 2, 500); }
+}
+TR_ROWS.push(
+["¿Dónde vas a jugar?", "Where are you going to play?", "Onde você vai jogar?", "Où vas-tu jouer ?", "Wo spielst du?", "Dove giocherai?"],
+["Así ajustamos los controles a tu pantalla", "We'll adapt the controls to your screen", "Assim ajustamos os controles à sua tela", "On adapte les commandes à ton écran", "So passen wir die Steuerung an deinen Bildschirm an", "Così adattiamo i controlli al tuo schermo"],
+["Computador", "Computer", "Computador", "Ordinateur", "Computer", "Computer"],
+["Teclado y ratón", "Keyboard and mouse", "Teclado e mouse", "Clavier et souris", "Tastatur und Maus", "Tastiera e mouse"],
+["Tableta o iPad", "Tablet or iPad", "Tablet ou iPad", "Tablette ou iPad", "Tablet oder iPad", "Tablet o iPad"],
+["Pantalla táctil grande", "Large touch screen", "Tela de toque grande", "Grand écran tactile", "Großer Touchscreen", "Schermo touch grande"],
+["Celular", "Phone", "Celular", "Téléphone", "Handy", "Cellulare"],
+["Pantalla táctil", "Touch screen", "Tela de toque", "Écran tactile", "Touchscreen", "Schermo touch"],
+["✓ Recomendado", "✓ Recommended", "✓ Recomendado", "✓ Recommandé", "✓ Empfohlen", "✓ Consigliato"],
+["←→ elegir  ·  ENTER confirmar", "←→ choose  ·  ENTER confirm", "←→ escolher  ·  ENTER confirmar", "←→ choisir  ·  ENTRÉE valider", "←→ wählen  ·  ENTER bestätigen", "←→ scegli  ·  INVIO conferma"],
+["Dispositivo: {0}", "Device: {0}", "Dispositivo: {0}", "Appareil : {0}", "Gerät: {0}", "Dispositivo: {0}"],
+);
+if (!settings.device) openDevice(); else touch.on = settings.device !== "pc";
 
 // ---------- Bucle ----------
 let last = performance.now(), slowT = 0, fxAuto = true;
