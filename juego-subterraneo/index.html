@@ -447,8 +447,8 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
     this.arcTo(x, y + h, x, y, r); this.arcTo(x, y, x + w, y, r); this.closePath();
   };
 }
-// estas claves viven solo en memoria: al cerrar y volver a abrir el juego, todo empieza otra vez
-const SESSION_KEYS = new Set(["save", "device", "tutorialDone"]), sessionMem = {};
+// el dispositivo vive solo en memoria: al volver a entrar se pregunta otra vez (el progreso sí se guarda)
+const SESSION_KEYS = new Set(["device"]), sessionMem = {};
 try { for (const k of SESSION_KEYS) localStorage.removeItem("abismoNerf." + k); } catch (e) { /* sin almacenamiento */ }
 const store = {
   get(k, d) { if (SESSION_KEYS.has(k)) return k in sessionMem ? sessionMem[k] : d; try { const v = localStorage.getItem("abismoNerf." + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
@@ -460,7 +460,8 @@ settings.a11y = Object.assign({ text: 0, contrast: false, motion: matchMedia("(p
 const A11 = () => settings.a11y, UIK = () => [1, 1.2, 1.4][A11().text] || 1;
 settings.device = ["pc", "tablet", "phone"].includes(store.get("device", null)) ? store.get("device", null) : null;
 let best = store.get("best", 0);
-let saved = store.get("save", null);
+let saved = null; // partida del personaje actual (se carga al conocer el personaje)
+const saveKey = () => "save." + (typeof charId === "string" ? charId : "x");
 const DIFF = () => DIFFS[settings.diff];
 const TITLE_FONT = "Cinzel, Georgia, serif";
 
@@ -657,7 +658,7 @@ function loadLevel(i, retry) {
   if (!retry) {
     snapshot = { weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
     if (!inTutorial) saved = { level: i, diff: settings.diff, weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
-    store.set("save", saved);
+    store.set(saveKey(), saved);
     if (!inTutorial) { saveIcon = 1.8; ckT = 0; ckWant = false; }
   } else {
     P.weapons = snapshot.weapons.slice(); P.maxHp = snapshot.maxHp; P.hp = Math.max(Math.ceil(P.maxHp * 0.67), snapshot.hp);
@@ -1300,7 +1301,8 @@ addEventListener("keydown", e => {
     else if (["ArrowRight", "KeyD"].includes(e.code)) customChange(customRow, 1);
     else if (e.code === "Enter" || e.code === "Space") { if (customRow === 0) { e.preventDefault(); nameInput.focus(); } else if (customRow === 1) openPicker(); else customDone(); }
     else if (e.code === "KeyR") randomLook();
-    else if (e.code === "Escape" && customFrom === "menu") { saveLook(); state = "title"; uiSel = 0; }
+    else if (e.code === "Escape") goBack();
+    else if (e.code === "KeyG" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveCharacter(); }
     keys.Space = false; return;
   }
   if (state === "device") {
@@ -1317,6 +1319,7 @@ addEventListener("keydown", e => {
     else if (e.code === "Escape" && state === "pause") resume();
     else if (e.code === "Escape" && state === "ach") { state = "title"; uiSel = 0; }
     else if (e.code === "Escape" && (state === "options" || state === "access")) closeSub();
+    else if (e.code === "Escape" && state === "chars") { state = "title"; uiSel = 0; }
     else if (e.code === "Tab" && ui.length) { uiSel = (uiSel + (e.shiftKey ? ui.length - 1 : 1)) % ui.length; SFX.ui(); }
     else if (e.code === "Home" && ui.length) { uiSel = 0; SFX.ui(); }
     else if (e.code === "End" && ui.length) { uiSel = ui.length - 1; SFX.ui(); }
@@ -2356,7 +2359,7 @@ function finishLevel() {
     if (settings.diff === 2) unlock("legend");
     startEnding();
     if (run.score > best) { best = run.score; store.set("best", best); lv.record = true; }
-    saved = null; store.set("save", null);
+    saved = null; store.set(saveKey(), null);
   } else { state = "levelDone"; uiSel = 0; JINGLES.clear(); }
 }
 
@@ -2375,6 +2378,7 @@ function drawMain() {
   if (state === "device") { drawDeviceScreen(); return; }
   if (state === "options" || state === "access") { drawSubMenu(); return; }
   if (state === "bye") { drawBye(); return; }
+  if (state === "chars") { drawChars(); return; }
   CZ = ZOOM * (1 + zoomPunch);
   const vw = VW / CZ, vh = VH / CZ;
   // cámara adelantada hacia donde apuntas
@@ -3539,7 +3543,7 @@ function drawTouch() {
 function button(label, x, y, w, h, fn, opts = {}) {
   const idx = ui.length;
   ui.push({ x, y, w, h, fn, lr: opts.lr, label, hint: opts.hint });
-  const sel = uiSel === idx, A = A11(), hc = A.contrast, red = opts.danger && exitAsk > 0;
+  const sel = uiSel === idx, A = A11(), hc = A.contrast, red = opts.danger && (state === "chars" ? label === "¿Borrar?" : exitAsk > 0);
   uiAnim[idx] = A.motion ? (sel ? 1 : 0) : (uiAnim[idx] || 0) + ((sel ? 1 : 0) - (uiAnim[idx] || 0)) * Math.min(1, frameDt * 14);
   const an = uiAnim[idx], ap = A.motion ? 1 : ease((stateT - 0.08 - Math.min(idx, 8) * 0.06) * 4), zs = A.motion ? 0 : an * 0.04;
   ctx.save(); ctx.globalAlpha = ap; ctx.translate(x + w / 2, y + h / 2 + (1 - ap) * 22); ctx.scale(1 + zs, 1 + zs); ctx.translate(-x - w / 2, -y - h / 2);
@@ -3575,9 +3579,9 @@ const toMenu = () => {
   // si sales tras superar un nivel, «Continuar» empieza en el siguiente
   if (!inTutorial && state === "levelDone" && levelIdx < LEVELS.length - 1) {
     saved = { level: levelIdx + 1, diff: settings.diff, weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
-    store.set("save", saved); saveIcon = 1.8;
+    store.set(saveKey(), saved); saveIcon = 1.8;
   }
-  inTutorial = false; state = "title"; uiSel = 0; saved = store.get("save", null);
+  inTutorial = false; state = "title"; uiSel = 0; saved = store.get(saveKey(), null);
 };
 
 function drawPause() {
@@ -3712,7 +3716,7 @@ function drawTitle() {
   if (saved && saved.level > 0) items.push({ label: `Continuar · Nivel ${saved.level + 1} (${DIFFS[saved.diff].name})`, fn: continueGame });
   items.push({ label: "Nueva partida", fn: startNewGameFlow });
   items.push({ label: "Tutorial", fn: startTutorial });
-  items.push({ label: `Personaje: ${look.name}`, fn: () => openCustom("menu") });
+  items.push({ label: `Personajes: ${look.name} (${chars.length}/${MAX_CHARS})`, fn: openChars });
   items.push({ label: `Logros (${ACH.filter(a => achieved[a.id]).length}/${ACH.length})`, fn: () => { state = "ach"; uiSel = 0; } });
   items.push({ label: "Opciones", fn: () => openSub("options") });
   items.push({ label: "Accesibilidad", fn: () => openSub("access") });
@@ -3959,6 +3963,57 @@ const NAMES = ["Alex", "Sam", "Leo", "Mia", "Noa", "Iker", "Vega", "Teo", "Lía"
 const LOOK_DEFAULT = { name: "Alex", suit: 0, skin: 1, hat: 0, hatColor: 0, pack: 0, dart: 0 };
 const look = Object.assign({}, LOOK_DEFAULT, store.get("look", {}));
 const saveLook = () => store.set("look", look);
+// ---------- Personajes guardados (hasta 20, cada uno con su partida) ----------
+const MAX_CHARS = 20, LOOK_KEYS = ["name", "country", "suit", "skin", "hat", "hatColor", "pack", "dart"];
+const lookSnap = o => Object.fromEntries(LOOK_KEYS.map(k => [k, o[k]]));
+const newCharId = () => "c" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+let chars = (store.get("chars", null) || []).filter(c => c && c.id).slice(0, MAX_CHARS);
+if (!chars.length) chars = [{ ...lookSnap(look), id: newCharId() }];
+let charId = store.get("charId", chars[0].id);
+if (!chars.some(c => c.id === charId)) charId = chars[0].id;
+const curChar = () => chars.find(c => c.id === charId) || chars[0];
+const saveChars = () => { store.set("chars", chars); store.set("charId", charId); };
+Object.assign(look, lookSnap(curChar())); saveChars();
+saved = store.get(saveKey(), null);
+let editId = null, editBackup = null, discardAsk = 0, charPage = 0, delAsk = { id: null, t: 0 };
+const lookDirty = () => editBackup && JSON.stringify(lookSnap(look)) !== JSON.stringify(editBackup);
+function useChar(id, quiet) {
+  if (!chars.some(c => c.id === id)) return;
+  charId = id; Object.assign(look, lookSnap(curChar())); saveLook(); saveChars();
+  saved = store.get(saveKey(), null);
+  if (typeof setLang === "function") setLang(countryOf(look.country).lang);
+  if (!quiet) { SFX.uiGo(); showToast(`Ahora juegas con ${look.name}`, 2); }
+}
+function saveCharacter() {
+  if (!String(look.name || "").trim()) { look.name = "Alex"; nameInput.value = look.name; }
+  if (editId && chars.some(c => c.id === editId)) Object.assign(chars.find(c => c.id === editId), lookSnap(look));
+  else {
+    if (chars.length >= MAX_CHARS) { showToast(`Ya tienes ${MAX_CHARS} personajes: borra uno para crear otro`, 3); SFX.ui(); return false; }
+    const c = { ...lookSnap(look), id: newCharId() }; chars.push(c); editId = c.id;
+  }
+  charId = editId; saveChars(); saveLook(); editBackup = lookSnap(look);
+  saved = store.get(saveKey(), null);
+  SFX.secret(); showToast(`¡${look.name} guardado!`, 2.2); saveIcon = 1.8;
+  return true;
+}
+// vuelve al personaje guardado y descarta lo que no se guardó
+function discardEdits() { discardAsk = 0; editBackup = null; Object.assign(look, lookSnap(curChar())); saveLook(); setLang(countryOf(look.country).lang); nameInput.blur(); nameInput.style.display = "none"; }
+function leaveCustomOk() {
+  if (picker.open) { picker.open = false; return false; }
+  if (lookDirty() && discardAsk <= 0) { discardAsk = 3; SFX.ui(); showToast("Tienes cambios sin guardar: pulsa otra vez para salir sin guardar", 3); return false; }
+  discardEdits(); return true;
+}
+function deleteChar(id) {
+  if (chars.length <= 1) { showToast("Necesitas al menos un personaje", 2.5); return; }
+  if (delAsk.id !== id || delAsk.t <= 0) { delAsk = { id, t: 3 }; SFX.ui(); return; }
+  const c = chars.find(c => c.id === id);
+  chars = chars.filter(c => c.id !== id); store.set("save." + id, null);
+  if (charId === id) useChar(chars[0].id, true); else saveChars();
+  delAsk = { id: null, t: 0 }; SFX.hurt && SFX.hurt(); showToast(`${c.name} borrado`, 2);
+}
+function openChars() { state = "chars"; uiSel = 0; charPage = Math.floor(Math.max(0, chars.findIndex(c => c.id === charId)) / Math.max(1, charsPerPage())); }
+let charsLayout = { per: 6 };
+const charsPerPage = () => charsLayout.per;
 // partículas de estela según la piel de los dardos
 function dartTrail(p) {
   const tr = p.trail; if (!tr || Math.random() > 0.55) return null;
@@ -3982,11 +4037,27 @@ nameInput.addEventListener("input", () => { look.name = nameInput.value.slice(0,
 nameInput.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === "Escape") nameInput.blur(); e.stopPropagation(); });
 nameInput.addEventListener("focus", () => { customRow = 0; });
 nameInput.addEventListener("blur", () => { if (!look.name.trim()) { look.name = "Alex"; nameInput.value = look.name; saveLook(); } });
-function openCustom(from) { customFrom = from; state = "custom"; uiSel = -1; customRow = 2; nameInput.value = look.name; previewDarts = []; previewParts = []; SFX.uiGo(); }
+let customBack = "chars";
+const leaveCustomTo = () => { if (customBack === "title") { state = "title"; uiSel = 0; } else openChars(); };
+function openCustom(from, id) {
+  customFrom = from === "menu" ? "edit" : from;
+  customBack = state === "chars" ? "chars" : "title";
+  if (customFrom === "create") {
+    editId = null;
+    const r = n => Math.floor(Math.random() * n);
+    Object.assign(look, LOOK_DEFAULT, { name: NAMES[r(NAMES.length)], country: look.country, suit: r(SUIT_COLORS.length), hatColor: r(HAT_COLORS.length), pack: r(PACK_COLORS.length) });
+  } else {
+    editId = id || charId;
+    const c = chars.find(c => c.id === editId); if (c) Object.assign(look, lookSnap(c));
+  }
+  editBackup = customFrom === "create" ? null : lookSnap(look); discardAsk = 0;
+  if (typeof setLang === "function") setLang(countryOf(look.country).lang);
+  state = "custom"; uiSel = -1; customRow = 2; nameInput.value = look.name; previewDarts = []; previewParts = []; SFX.uiGo();
+}
 function customDone() {
-  if (!look.name.trim()) look.name = "Alex";
-  saveLook(); nameInput.blur(); nameInput.style.display = "none";
-  if (customFrom === "new") { if (!store.get("tutorialDone", false)) startTutorial(); else newGame(); } else { state = "title"; uiSel = 0; }
+  if (!saveCharacter()) return;
+  nameInput.blur(); nameInput.style.display = "none";
+  if (customFrom === "new") { if (!store.get("tutorialDone", false)) startTutorial(); else newGame(); } else leaveCustomTo();
 }
 function randomLook() {
   const r = n => Math.floor(Math.random() * n);
@@ -4030,7 +4101,7 @@ function drawCustom() {
   ui = [];
   const s = VW < 760, k = ease(stateT * 3);
   ctx.globalAlpha = k;
-  titleText("TU PERSONAJE", s ? 44 : 58, s ? 24 : 34);
+  titleText("TU PERSONAJE", s ? 42 : 58, VW < 500 ? 19 : s ? 24 : 34);
   // vista previa
   const pvW = s ? Math.min(VW - 24, 360) : 300, pvH = s ? 170 : 380, pvX = s ? VW / 2 - pvW / 2 : VW / 2 - 370, pvY = s ? 64 : 90;
   panel(pvX, pvY, pvW, pvH, 12);
@@ -4095,13 +4166,88 @@ function drawCustom() {
       } else ctx.fillText(name, x0 + cw / 2, mid + 5);
     }
   });
-  const by = rowY[rowY.length - 1] + rowHs[rowHs.length - 1] + 6, bw = (oW - 10) / 2;
-  button("Aleatorio", oX, by, bw, 44, randomLook, { size: 15 });
-  button(customFrom === "new" ? "¡A jugar! ›" : "Guardar ›", oX + bw + 10, by, bw, 44, customDone, { size: 16 });
-  if (customRow === CUSTOM_ROWS.length) { ctx.strokeStyle = "#e8a33d"; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(oX + bw + 8, by - 2, bw + 4, 48, 11); ctx.stroke(); }
-  if (!s) { ctx.fillStyle = "rgba(243,230,200,0.5)"; ctx.font = "13px system-ui"; ctx.textAlign = "center"; ctx.fillText("↑↓ elegir fila  ·  ←→ cambiar  ·  ENTER jugar", VW / 2, by + 74); }
+  const by = rowY[rowY.length - 1] + rowHs[rowHs.length - 1] + 6, isNew = customFrom === "new", nb = isNew ? 3 : 2, bw = (oW - 10 * (nb - 1)) / nb;
+  const dirty = editBackup ? lookDirty() : true;
+  button("Aleatorio", oX, by, bw, 44, randomLook, { size: s ? 13 : 15 });
+  // guardar el personaje (en verde cuando ya está guardado)
+  const gx = oX + bw + 10;
+  button(dirty ? "💾 Guardar personaje" : "✓ Guardado", gx, by, bw, 44, () => { if (saveCharacter() && !isNew) leaveCustomTo(); }, { size: s ? 12 : 15 });
+  if (!dirty) { ctx.strokeStyle = "rgba(155,225,93,0.8)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(gx, by, bw, 44, 10); ctx.stroke(); }
+  if (isNew) button("¡A jugar! ›", oX + 2 * (bw + 10), by, bw, 44, customDone, { size: s ? 13 : 16 });
+  if (customRow === CUSTOM_ROWS.length) { const hx = isNew ? oX + 2 * (bw + 10) : gx; ctx.strokeStyle = "#e8a33d"; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(hx - 2, by - 2, bw + 4, 48, 11); ctx.stroke(); }
+  ctx.fillStyle = "rgba(243,230,200,0.5)"; ctx.font = `${s ? 11 : 13}px system-ui`; ctx.textAlign = "center";
+  const cnt = `${editId ? chars.findIndex(c => c.id === editId) + 1 : chars.length + 1}/${MAX_CHARS}`;
+  ctx.fillText(s ? `Personaje ${cnt}` : `Personaje ${cnt}  ·  ↑↓ elegir fila  ·  ←→ cambiar  ·  ENTER ${isNew ? "jugar" : "guardar"}  ·  Ctrl+G guardar`, VW / 2, by + (s ? 62 : 74), VW - 24);
   ctx.globalAlpha = 1;
   if (picker.open) drawPicker();
+}
+
+// ---------- Pantalla de personajes ----------
+function drawChars() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const hc = A11().contrast;
+  const g = ctx.createRadialGradient(VW / 2, VH * 0.4, 0, VW / 2, VH * 0.4, Math.max(VW, VH) * 0.7);
+  g.addColorStop(0, hc ? "#000" : "#2a1c12"); g.addColorStop(1, "#060406"); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+  ui = []; delAsk.t -= frameDt;
+  const s = VW < 640;
+  titleText("PERSONAJES", s ? 88 : 70, s ? 26 : 38, hc ? "#fff" : undefined);
+  ctx.textAlign = "center"; ctx.fillStyle = hc ? "#fff" : "rgba(243,230,200,0.7)"; ctx.font = `${s ? 12 : 14}px system-ui`;
+  ctx.fillText(`${chars.length}/${MAX_CHARS} · Toca un personaje para jugar con él · ✏️ para editarlo`, VW / 2, s ? 114 : 104, VW - 24);
+  const gap = 12, cw = s ? (VW - 24 - gap) / 2 : 200, ch = s ? 156 : 176, top = s ? 130 : 128;
+  const cols = Math.max(1, Math.floor((VW - 24 + gap) / (cw + gap))), rows = Math.max(1, Math.floor((VH - top - 74 + gap) / (ch + gap)));
+  const per = charsLayout.per = cols * rows;
+  const entries = [...chars, ...(chars.length < MAX_CHARS ? [{ add: true }] : [])], pages = Math.ceil(entries.length / per);
+  charPage = clamp(charPage, 0, pages - 1);
+  const shown = entries.slice(charPage * per, charPage * per + per), x0 = VW / 2 - (cols * (cw + gap) - gap) / 2;
+  const keep = lookSnap(look);
+  shown.forEach((c, i) => {
+    const x = x0 + (i % cols) * (cw + gap), y = top + Math.floor(i / cols) * (ch + gap);
+    const idx = ui.length, focus = uiSel === idx;
+    if (c.add) {
+      ui.push({ x, y, w: cw, h: ch, fn: () => openCustom("create"), label: "Nuevo personaje" });
+      ctx.save(); ctx.setLineDash([7, 6]); ctx.strokeStyle = focus ? "#e8a33d" : hc ? "#fff" : "rgba(243,230,200,0.35)"; ctx.lineWidth = focus ? 2.5 : 1.5;
+      ctx.fillStyle = focus ? "rgba(232,163,61,0.14)" : "rgba(20,16,24,0.5)"; ctx.beginPath(); ctx.roundRect(x, y, cw, ch, 14); ctx.fill(); ctx.stroke(); ctx.restore();
+      ctx.fillStyle = focus ? "#ffe2a8" : "#f3e6c8"; ctx.font = "bold 44px system-ui"; ctx.fillText("+", x + cw / 2, y + ch / 2 + 4);
+      ctx.font = `bold ${s ? 13 : 15}px system-ui`; ctx.fillText("Nuevo personaje", x + cw / 2, y + ch / 2 + 34, cw - 12);
+      return;
+    }
+    const on = c.id === charId, sv = store.get("save." + c.id, null);
+    ui.push({ x, y, w: cw, h: ch - 44, fn: () => useChar(c.id), label: `${c.name}${on ? " (en uso)" : ""}` });
+    ctx.fillStyle = hc ? "#000" : on ? "rgba(232,163,61,0.18)" : "rgba(20,16,24,0.85)";
+    ctx.strokeStyle = on ? (hc ? "#ffd400" : "#e8a33d") : focus ? "#ffe2a8" : hc ? "#fff" : "rgba(243,230,200,0.2)"; ctx.lineWidth = on || focus ? 2.5 : 1;
+    ctx.beginPath(); ctx.roundRect(x, y, cw, ch, 14); ctx.fill(); ctx.stroke();
+    // retrato
+    Object.assign(look, lookSnap(c));
+    ctx.save(); ctx.beginPath(); ctx.roundRect(x, y, cw, ch, 14); ctx.clip();
+    ctx.translate(x + cw * 0.3, y + 50); ctx.scale(s ? 2.2 : 2.5, s ? 2.2 : 2.5);
+    drawHeroStatic(0, A11().motion || !on ? 0 : Math.sin(time * 2.6) * 0.4, 0.35, "pistola", 0); ctx.restore();
+    Object.assign(look, keep);
+    ctx.textAlign = "left"; ctx.fillStyle = hc ? "#fff" : "#fff3dc"; ctx.font = `bold ${s ? 14 : 16}px system-ui`;
+    ctx.fillText(c.name, x + cw * 0.56, y + 34, cw * 0.42);
+    ctx.font = `${s ? 10 : 12}px system-ui`; ctx.fillStyle = ABILITIES[c.hat] ? ABILITIES[c.hat].color : "#fff";
+    ctx.fillText(ABILITIES[c.hat] ? ABILITIES[c.hat].name : "", x + cw * 0.56, y + 52, cw * 0.42);
+    ctx.fillStyle = hc ? "#fff" : "rgba(243,230,200,0.7)";
+    ctx.fillText(sv ? `Nivel ${sv.level + 1}/10` : "Sin partida", x + cw * 0.56, y + 70, cw * 0.42);
+    ctx.font = "16px system-ui"; ctx.fillText(flagOf(c.country || "ES"), x + cw * 0.56, y + 92);
+    if (on) { ctx.fillStyle = "#9be15d"; ctx.font = `bold ${s ? 10 : 11}px system-ui`; ctx.textAlign = "right"; ctx.fillText("✓ En uso", x + cw - 10, y + 16); }
+    // editar y borrar
+    const bw = (cw - 24) * 0.62, dw = cw - 24 - bw - 8, byy = y + ch - 42;
+    button("✏️ Editar", x + 12, byy, bw, 32, () => openCustom("edit", c.id), { size: s ? 12 : 13 });
+    const asking = delAsk.id === c.id && delAsk.t > 0;
+    button(asking ? "¿Borrar?" : "🗑", x + 12 + bw + 8, byy, dw, 32, () => deleteChar(c.id), { size: asking ? 11 : 14, danger: true });
+    if (asking) { ctx.strokeStyle = "#ff8a6a"; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(x + 12 + bw + 8, byy, dw, 32, 10); ctx.stroke(); }
+  });
+  // páginas
+  const py = VH - 56;
+  if (pages > 1) {
+    button("‹", VW / 2 - 110, py, 44, 40, () => { charPage = Math.max(0, charPage - 1); }, { size: 20 });
+    button("›", VW / 2 + 66, py, 44, 40, () => { charPage = Math.min(pages - 1, charPage + 1); }, { size: 20 });
+    ctx.textAlign = "center"; ctx.fillStyle = hc ? "#fff" : "rgba(243,230,200,0.75)"; ctx.font = "bold 14px system-ui";
+    ctx.fillText(`Página ${charPage + 1}/${pages}`, VW / 2, py + 25);
+  } else if (!s) {
+    ctx.textAlign = "center"; ctx.fillStyle = hc ? "#fff" : "rgba(243,230,200,0.5)"; ctx.font = "13px system-ui";
+    ctx.fillText("↑↓ o TAB: elegir  ·  ENTER: usar  ·  ESC: volver", VW / 2, py + 25);
+  }
 }
 
 // ---------- Música, fanfarrias, combos, logros e historieta final ----------
@@ -4133,7 +4279,7 @@ const ARPS = { story: [[57, 60, 64, 69], [53, 57, 60, 65], [55, 59, 62, 67], [52
                ending: [[60, 64, 67, 72], [55, 59, 62, 67], [57, 60, 64, 69], [53, 57, 60, 65]] };
 const END_MELODY = [72, 0, 76, 79, 0, 77, 76, 74, 72, 0, 74, 76, 0, 79, 77, 76];
 function musicMode() {
-  if (state === "title" || state === "custom" || state === "ach" || state === "options" || state === "access") return "title";
+  if (state === "title" || state === "custom" || state === "ach" || state === "options" || state === "access" || state === "chars") return "title";
   if (state === "story") return story.pages === ENDING ? "ending" : "story";
   if (state === "win") return "ending";
   if (state === "play" && monsters.some(m => m.def.boss && m.alert > 0)) return "boss";
@@ -4768,7 +4914,7 @@ const VOICE_LANG = { es: "es-ES", en: "en-US", pt: "pt-BR", fr: "fr-FR", de: "de
 function announceUI() {
   if (state === "play") { lastSaid = ""; return; }
   const b = ui[uiSel];
-  const head = state !== lastState ? ({ title: "Menú principal", options: "Opciones", access: "Accesibilidad", device: "¿Dónde vas a jugar?", ach: "Logros", custom: "Tu personaje", pause: "Pausa" }[state] || "") : "";
+  const head = state !== lastState ? ({ chars: "Personajes", title: "Menú principal", options: "Opciones", access: "Accesibilidad", device: "¿Dónde vas a jugar?", ach: "Logros", custom: "Tu personaje", pause: "Pausa" }[state] || "") : "";
   const label = state === "device" ? DEVICES[deviceSel].name : b && b.label;
   if (!label) return;
   const msg = (head ? tr(head) + ". " : "") + tr(label) + (b && b.hint && state !== "device" ? ". " + tr(b.hint) : "");
@@ -4814,7 +4960,7 @@ function goHome() {
   // en plena partida pide confirmar con un segundo toque; antes de salir se guarda el progreso
   if ((state === "play" || state === "pause") && homeAsk <= 0) { homeAsk = 2.5; SFX.ui(); return; }
   homeAsk = 0; SFX.uiGo();
-  if (state === "custom") { picker.open = false; saveLook(); }
+  if (state === "custom") { picker.open = false; if (!leaveCustomOk()) return; }
   for (const k in keys) keys[k] = false; mouse.down = false; touch.fire = false;
   toMenu();
 }
@@ -4824,10 +4970,10 @@ function goBack() {
   for (const k in keys) keys[k] = false; mouse.down = false; touch.fire = false;
   if (state === "story") { if (story.i > 0) storyNext(-1); else { state = "title"; uiSel = 0; } }
   else if (state === "custom") {
-    if (picker.open) { picker.open = false; return; }
-    saveLook();
-    if (customFrom === "new") { startNewGameFlow(); story.i = STORY.length - 1; } else { state = "title"; uiSel = 0; }
+    if (!leaveCustomOk()) return;
+    if (customFrom === "new") { startNewGameFlow(); story.i = STORY.length - 1; } else leaveCustomTo();
   }
+  else if (state === "chars") { state = "title"; uiSel = 0; }
   else if (state === "options" || state === "access") closeSub();
   else if (state === "play") pause();
   else if (state === "pause") resume();
@@ -4846,7 +4992,7 @@ function toggleFull() {
 const NAV_ACT = {
   home: () => goHome(), back: () => goBack(),
   sound: () => { setSound(!settings.sound); SFX.uiGo(); },
-  lang: () => { openCustom("menu"); customRow = 1; openPicker(); },
+  lang: () => { openCustom("edit"); customRow = 1; openPicker(); },
   access: () => { SFX.uiGo(); openSub("access"); },
   full: () => { SFX.uiGo(); toggleFull(); },
 };
@@ -4861,7 +5007,7 @@ function navRects() {
   const ask = homeAsk > 0, h = 40, inGame = state === "play" || state === "pause";
   if (state === "title") {
     const kinds = ["sound", "lang", "access", ...(canFull() ? ["full"] : [])], bw = 44, gap = 8;
-    const out = [{ kind: "back", x: 16, y: 16, w: VW < 360 ? 44 : 104, h, label: VW >= 360 }];
+    const out = [{ kind: "back", x: 16, y: 16, w: VW < 360 ? 44 : 104, h, label: VW >= 360 }]; // en el título hay sitio para el texto
     kinds.forEach((k, i) => out.push({ kind: k, x: VW - 16 - (kinds.length - i) * (bw + gap) + gap, y: 16, w: bw, h }));
     return out;
   }
@@ -4872,11 +5018,11 @@ function navRects() {
     const bw = 44, x0 = VW / 2 - (bw + 8 + hw) / 2;
     return [{ kind: "back", x: x0, y: 14, w: bw, h }, { kind: "home", x: x0 + bw + 8, y: 14, w: hw, h, ask }];
   }
-  const nw = VW < 360 ? 44 : 104, lab = nw > 44;
+  const nw = VW < 500 ? 44 : 104, lab = nw > 44;
   return [{ kind: "back", x: 16, y: 16, w: nw, h, label: lab }, { kind: "home", x: 16 + nw + 8, y: 16, w: ask ? 158 : nw, h, ask, label: lab }];
 }
 function drawNavBtns() {
-  homeAsk = Math.max(0, homeAsk - frameDt); exitAsk = state === "title" ? Math.max(0, exitAsk - frameDt) : 0;
+  homeAsk = Math.max(0, homeAsk - frameDt); discardAsk = Math.max(0, discardAsk - frameDt); exitAsk = state === "title" ? Math.max(0, exitAsk - frameDt) : 0;
   if (state !== "play" && state !== "pause") homeAsk = 0;
   navBtns = navRects();
   if (!navBtns.length) return;
@@ -4936,7 +5082,8 @@ function askExit() {
   exitGame(true);
 }
 function exitGame(showBye) {
-  exitAsk = 0; homeAsk = 0; inTutorial = false; saved = null;
+  if (state === "play" || state === "pause") toMenu(); // guarda la partida antes de salir
+  exitAsk = 0; homeAsk = 0; inTutorial = false; saved = store.get(saveKey(), null);
   for (const k of SESSION_KEYS) delete sessionMem[k];
   settings.device = null; touch.on = false;
   for (const k in keys) keys[k] = false; mouse.down = false; touch.fire = false;
@@ -4952,17 +5099,19 @@ function drawBye() {
   ctx.save(); ctx.globalAlpha = Math.max(0, a); ctx.textAlign = "center";
   ctx.save(); ctx.translate(VW / 2, VH / 2 - 60); ctx.rotate(A11().motion ? 0 : byeT * 4); drawGun("pistola", 3); ctx.restore();
   ctx.fillStyle = "#ffe2a8"; ctx.font = `900 ${sm() ? 30 : 44}px ${TITLE_FONT}`; ctx.fillText(`¡Hasta pronto, ${look.name}!`, VW / 2, VH / 2 + 20, VW - 24);
-  ctx.fillStyle = "rgba(243,230,200,0.75)"; ctx.font = `${sm() ? 14 : 17}px system-ui`; ctx.fillText("Progreso borrado. Empezamos de nuevo…", VW / 2, VH / 2 + 56, VW - 24);
+  ctx.fillStyle = "rgba(243,230,200,0.75)"; ctx.font = `${sm() ? 14 : 17}px system-ui`; ctx.fillText("Tu progreso está guardado. ¡Vuelve pronto!", VW / 2, VH / 2 + 56, VW - 24);
   ctx.restore();
   if (byeT > 2.6) openDevice();
 }
 // si dejas el juego un rato (otra pestaña, otra app) y vuelves, empieza todo otra vez
 let hiddenAt = 0;
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) { hiddenAt = performance.now(); if (state === "play") pause(); }
+  if (document.hidden) { hiddenAt = performance.now(); if (state === "play") { checkpoint(); pause(); } }
   else if (hiddenAt && performance.now() - hiddenAt > 60000) exitGame(false);
 });
 addEventListener("pageshow", e => { if (e.persisted) exitGame(false); });
+// al cerrar la página también se guarda la partida
+addEventListener("pagehide", () => { if (state === "play" || state === "pause") { const s0 = state; state = "play"; checkpoint(); state = s0; } });
 
 // ---------- Guardado del progreso ----------
 let saveIcon = 0, ckT = 0, ckWant = false;
@@ -4977,7 +5126,7 @@ function checkpoint() {
     });
   } catch (e) { return; }
   Object.assign(saved, { hp: P.hp, maxHp: P.maxHp, weapons: P.weapons.slice(), run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } });
-  store.set("save", saved); saveIcon = 1.8;
+  store.set(saveKey(), saved); saveIcon = 1.8;
 }
 function restoreCheckpoint(ck) {
   tiles = ck.tiles.slice(); thp = ck.thp.slice(); seen = ck.seen.slice(); doorCol = { ...ck.doorCol };
@@ -4988,7 +5137,7 @@ function restoreCheckpoint(ck) {
   buildTileCache();
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (seen[y * W + x]) paintMini(x, y);
   flowDirty = true; flowFrom = -1; camX = P.x - VW / 2; camY = P.y - VH / 2;
-  saved.full = ck; store.set("save", saved);
+  saved.full = ck; store.set(saveKey(), saved);
   showToast("Partida cargada: sigues donde lo dejaste", 3);
 }
 function drawSaveIcon() {
@@ -5010,10 +5159,35 @@ function drawSaveIcon() {
 TR_ROWS.push(
 ["Inicio", "Home", "Início", "Accueil", "Start", "Inizio"],
 ["Volver", "Back", "Voltar", "Retour", "Zurück", "Indietro"],
+["PERSONAJES", "CHARACTERS", "PERSONAGENS", "PERSONNAGES", "FIGUREN", "PERSONAGGI"],
+["Personajes", "Characters", "Personagens", "Personnages", "Figuren", "Personaggi"],
+["Personajes: {0} ({1}/{2})", "Characters: {0} ({1}/{2})", "Personagens: {0} ({1}/{2})", "Personnages : {0} ({1}/{2})", "Figuren: {0} ({1}/{2})", "Personaggi: {0} ({1}/{2})"],
+["{0}/{1} · Toca un personaje para jugar con él · ✏️ para editarlo", "{0}/{1} · Tap a character to play as them · ✏️ to edit", "{0}/{1} · Toque num personagem para jogar com ele · ✏️ para editar", "{0}/{1} · Touche un personnage pour jouer avec · ✏️ pour le modifier", "{0}/{1} · Tippe auf eine Figur, um mit ihr zu spielen · ✏️ zum Bearbeiten", "{0}/{1} · Tocca un personaggio per giocare con lui · ✏️ per modificarlo"],
+["Nuevo personaje", "New character", "Novo personagem", "Nouveau personnage", "Neue Figur", "Nuovo personaggio"],
+["✏️ Editar", "✏️ Edit", "✏️ Editar", "✏️ Modifier", "✏️ Bearbeiten", "✏️ Modifica"],
+["¿Borrar?", "Delete?", "Apagar?", "Supprimer ?", "Löschen?", "Eliminare?"],
+["✓ En uso", "✓ In use", "✓ Em uso", "✓ Actif", "✓ Aktiv", "✓ In uso"],
+["Sin partida", "No game yet", "Sem partida", "Pas de partie", "Kein Spielstand", "Nessuna partita"],
+["Nivel {0}/10", "Level {0}/10", "Nível {0}/10", "Niveau {0}/10", "Level {0}/10", "Livello {0}/10"],
+["Página {0}/{1}", "Page {0}/{1}", "Página {0}/{1}", "Page {0}/{1}", "Seite {0}/{1}", "Pagina {0}/{1}"],
+["↑↓ o TAB: elegir  ·  ENTER: usar  ·  ESC: volver", "↑↓ or TAB: choose  ·  ENTER: use  ·  ESC: back", "↑↓ ou TAB: escolher  ·  ENTER: usar  ·  ESC: voltar", "↑↓ ou TAB : choisir  ·  ENTRÉE : utiliser  ·  ÉCHAP : retour", "↑↓ oder TAB: wählen  ·  ENTER: benutzen  ·  ESC: zurück", "↑↓ o TAB: scegli  ·  INVIO: usa  ·  ESC: indietro"],
+["💾 Guardar personaje", "💾 Save character", "💾 Salvar personagem", "💾 Sauver le personnage", "💾 Figur speichern", "💾 Salva personaggio"],
+["✓ Guardado", "✓ Saved", "✓ Salvo", "✓ Sauvegardé", "✓ Gespeichert", "✓ Salvato"],
+["Aleatorio", "Random", "Aleatório", "Aléatoire", "Zufällig", "Casuale"],
+["Personaje {0}", "Character {0}", "Personagem {0}", "Personnage {0}", "Figur {0}", "Personaggio {0}"],
+["Personaje {0}  ·  ↑↓ elegir fila  ·  ←→ cambiar  ·  ENTER {1}  ·  Ctrl+G guardar", "Character {0}  ·  ↑↓ pick row  ·  ←→ change  ·  ENTER {1}  ·  Ctrl+G save", "Personagem {0}  ·  ↑↓ escolher linha  ·  ←→ mudar  ·  ENTER {1}  ·  Ctrl+G salvar", "Personnage {0}  ·  ↑↓ choisir  ·  ←→ changer  ·  ENTRÉE {1}  ·  Ctrl+G sauver", "Figur {0}  ·  ↑↓ Zeile  ·  ←→ ändern  ·  ENTER {1}  ·  Strg+G speichern", "Personaggio {0}  ·  ↑↓ riga  ·  ←→ cambia  ·  INVIO {1}  ·  Ctrl+G salva"],
+["jugar", "play", "jogar", "jouer", "spielen", "gioca"],
+["guardar", "save", "salvar", "sauver", "speichern", "salva"],
+["¡{0} guardado!", "{0} saved!", "{0} salvo!", "{0} sauvegardé !", "{0} gespeichert!", "{0} salvato!"],
+["Ahora juegas con {0}", "Now playing as {0}", "Agora você joga com {0}", "Tu joues maintenant avec {0}", "Du spielst jetzt mit {0}", "Ora giochi con {0}"],
+["{0} borrado", "{0} deleted", "{0} apagado", "{0} supprimé", "{0} gelöscht", "{0} eliminato"],
+["Necesitas al menos un personaje", "You need at least one character", "Você precisa de pelo menos um personagem", "Il te faut au moins un personnage", "Du brauchst mindestens eine Figur", "Serve almeno un personaggio"],
+["Ya tienes {0} personajes: borra uno para crear otro", "You already have {0} characters: delete one to make another", "Você já tem {0} personagens: apague um para criar outro", "Tu as déjà {0} personnages : supprimes-en un pour en créer un autre", "Du hast schon {0} Figuren: lösche eine, um eine neue zu erstellen", "Hai già {0} personaggi: eliminane uno per crearne un altro"],
+["Tienes cambios sin guardar: pulsa otra vez para salir sin guardar", "You have unsaved changes: press again to leave without saving", "Há mudanças não salvas: aperte de novo para sair sem salvar", "Modifications non sauvegardées : appuie encore pour quitter sans sauver", "Ungespeicherte Änderungen: nochmal drücken, um ohne Speichern zu gehen", "Modifiche non salvate: premi ancora per uscire senza salvare"],
 ["Salir del juego", "Quit game", "Sair do jogo", "Quitter le jeu", "Spiel beenden", "Esci dal gioco"],
 ["¿Seguro? Pulsa otra vez para salir", "Sure? Press again to quit", "Certeza? Aperte de novo para sair", "Sûr ? Appuie encore pour quitter", "Sicher? Nochmal drücken zum Beenden", "Sicuro? Premi ancora per uscire"],
 ["¡Hasta pronto, {0}!", "See you soon, {0}!", "Até logo, {0}!", "À bientôt, {0} !", "Bis bald, {0}!", "A presto, {0}!"],
-["Progreso borrado. Empezamos de nuevo…", "Progress cleared. Starting over…", "Progresso apagado. Recomeçando…", "Progression effacée. On recommence…", "Fortschritt gelöscht. Wir fangen neu an…", "Progressi cancellati. Si ricomincia…"],
+["Tu progreso está guardado. ¡Vuelve pronto!", "Your progress is saved. Come back soon!", "Seu progresso está salvo. Volte logo!", "Ta progression est sauvegardée. Reviens vite !", "Dein Fortschritt ist gespeichert. Komm bald wieder!", "I tuoi progressi sono salvati. Torna presto!"],
 ["Idioma", "Language", "Idioma", "Langue", "Sprache", "Lingua"],
 ["Pantalla completa", "Full screen", "Tela cheia", "Plein écran", "Vollbild", "Schermo intero"],
 ["Tu navegador no deja usar pantalla completa aquí", "Your browser doesn't allow full screen here", "Seu navegador não permite tela cheia aqui", "Ton navigateur n'autorise pas le plein écran ici", "Dein Browser erlaubt hier kein Vollbild", "Il tuo browser non consente lo schermo intero qui"],
