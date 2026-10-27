@@ -659,7 +659,7 @@ function loadLevel(i, retry) {
     snapshot = { weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
     if (!inTutorial) saved = { level: i, diff: settings.diff, weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
     store.set(saveKey(), saved);
-    if (!inTutorial) { saveIcon = 1.8; ckT = 0; ckWant = false; }
+    if (!inTutorial) { saveIcon = 1.8; gameDirty = false; }
   } else {
     P.weapons = snapshot.weapons.slice(); P.maxHp = snapshot.maxHp; P.hp = Math.max(Math.ceil(P.maxHp * 0.67), snapshot.hp);
     run = { ...snapshot.run };
@@ -1256,7 +1256,7 @@ function paintMini(x, y) {
 function markSeen(tx, ty) {
   if (tx < 0 || ty < 0 || tx >= W || ty >= H) return;
   const i = ty * W + tx;
-  if (!seen[i]) { seen[i] = true; paintMini(tx, ty); }
+  if (!seen[i]) { seen[i] = true; paintMini(tx, ty); if (state === "play" && gameT > 1.5) gameDirty = true; }
 }
 
 // ---------- Entrada ----------
@@ -1268,6 +1268,16 @@ const MOVE_KEYS = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "
 addEventListener("keydown", e => {
   if (e.target === nameInput) return;
   audio();
+  if (exitDlg) {
+    e.preventDefault(); if (e.repeat) return;
+    const n = exitDlg.opts.length;
+    if (["ArrowUp", "ArrowLeft", "KeyW", "KeyA"].includes(e.code) || (e.code === "Tab" && e.shiftKey)) { exitDlg.sel = (exitDlg.sel + n - 1) % n; SFX.ui(); }
+    else if (["ArrowDown", "ArrowRight", "KeyS", "KeyD", "Tab"].includes(e.code)) { exitDlg.sel = (exitDlg.sel + 1) % n; SFX.ui(); }
+    else if (e.code === "Enter" || e.code === "Space") exitDlg.opts[exitDlg.sel].fn();
+    else if (e.code === "Escape") closeExitDlg();
+    lastSaid = "";
+    return;
+  }
   if (MOVE_KEYS.includes(e.code)) e.preventDefault();
   if (e.repeat) return;
   keys[e.code] = true;
@@ -1329,6 +1339,7 @@ addEventListener("keydown", e => {
     return;
   }
   if (e.code === "KeyP" || e.code === "Escape") { pause(); return; }
+  if (e.code === "KeyG") { saveGame(); return; }
   const n = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6, Digit8: 7, Digit9: 8, Digit0: 9, Minus: 10, Slash: 10 }[e.code];
   if (n !== undefined) selectSlot(n);
   if (e.code === "KeyQ") cycleWeapon(1);
@@ -1347,6 +1358,7 @@ cv.addEventListener("mousemove", e => {
 cv.addEventListener("mousedown", e => {
   audio(); mouse.x = e.clientX; mouse.y = e.clientY; mouse.last = time;
   if (homeHit(e.clientX, e.clientY)) return;
+  if (exitDlg) return;
   if (state !== "play") { if (!clickUI(e.clientX, e.clientY) && state === "story") storyNext(1); return; }
   const hb = hotbar.find(b => e.clientX >= b.x && e.clientX <= b.x + b.w && e.clientY >= b.y && e.clientY <= b.y + b.h);
   if (hb) { if (P.weapons.includes(hb.id)) selectSlot(ORDER.indexOf(hb.id)); return; }
@@ -1536,7 +1548,7 @@ function tryDoor(h) {
   if (tiles[idx] !== DOOR) return;
   const c = doorCol[idx];
   if (P.keys[c] > 0) {
-    P.keys[c]--; tiles[idx] = FLOOR; SFX.door(); shake = 7; flowDirty = true; ckWant = true; if (inTutorial) tut.door = true;
+    P.keys[c]--; tiles[idx] = FLOOR; SFX.door(); shake = 7; flowDirty = true; gameDirty = true; if (inTutorial) tut.door = true;
     const cx = h.tx * TS + TS / 2, cy = h.ty * TS + TS / 2;
     doorAnims.push({ x: h.tx * TS, y: h.ty * TS, c: KEYS[c].c, t: 0 });
     for (let i = 0; i < 30; i++) parts.push({ x: cx + rand(-14, 14), y: cy + rand(-14, 14), vx: rand(-110, 110), vy: rand(-110, 110), life: rand(0.4, 0.9), max: 0.9, c: i % 2 ? KEYS[c].c : "#6b5a4a", s: rand(2, 4), glow: i % 2 === 0 });
@@ -1629,6 +1641,7 @@ function damageMon(m, d, ang, silent, quiet, critC = 0.08) {
 }
 const fmt = d => (Math.round(d * 10) / 10).toString().replace(".", ",");
 function killMon(m) {
+  gameDirty = true;
   if (m.type === "e" && !m.boomed) beetleBoom(m);
   dying.push({ m: Object.assign({}, m, { hp: 1, exclaim: 0, stun: 0, sq: 0.5 }), t: 0, dur: m.def.boss ? 1.1 : 0.38, spin: Math.random() < 0.5 ? -1 : 1 });
   if (m.def.boss) zoomPunch = Math.max(zoomPunch, 0.14);
@@ -1711,7 +1724,7 @@ function hurtPlayer(d, sx, sy) {
     const a = Math.atan2(P.y - sy, P.x - sx) || 0; P.kx += Math.cos(a) * 120; P.ky += Math.sin(a) * 120;
     return;
   }
-  P.hp -= d; P.inv = 1; shake = 9; if (lv) lv.hurt = true; hitstop = 0.07; hurtFlash = 0.35; SFX.hurt(); heartPulse = 1; zoomPunch = Math.max(zoomPunch, 0.025);
+  P.hp -= d; P.inv = 1; gameDirty = true; shake = 9; if (lv) lv.hurt = true; hitstop = 0.07; hurtFlash = 0.35; SFX.hurt(); heartPulse = 1; zoomPunch = Math.max(zoomPunch, 0.025);
   const a = Math.atan2(P.y - sy, P.x - sx) || rand(0, 6);
   P.kx += Math.cos(a) * 260; P.ky += Math.sin(a) * 260;
   for (let i = 0; i < 12; i++) parts.push({ x: P.x, y: P.y, vx: rand(-110, 110), vy: rand(-110, 110), life: 0.5, max: 0.5, c: "#e5484d", s: 2.5 });
@@ -1769,7 +1782,6 @@ function update(rdt) {
 
   updateAmbient(dt);
   comboT -= dt; updateBark(dt); updateTutorial(dt);
-  ckT += dt; if ((ckWant || ckT > 30) && P.exiting <= 0 && P.hp > 0) checkpoint();
   const ptx = Math.floor(P.x / TS), pty = Math.floor(P.y / TS);
   if (P.exiting > 0) {
     P.exiting -= rdt; P.inv = 1;
@@ -2220,13 +2232,12 @@ function updateItems(dt) {
     if (Math.random() < dt * 1.5 && (it.kind === "gold" || it.kind === "key" || it.kind === "bullets")) glints.push({ x: it.x + rand(-6, 6), y: it.y + rand(-8, 4), life: 0.4 });
     if (d > P.r + 12 || !wants) continue;
     if (it.kind === "key") {
-      P.keys[it.c]++; SFX.key(); run.score += 50; ckWant = true;
+      P.keys[it.c]++; SFX.key(); run.score += 50;
       floatText(it.x, it.y - 6, `Llave ${KEYS[it.c].name}`, KEYS[it.c].c, 12);
       showToast(`Tienes la llave ${KEYS[it.c].name}. ¡Busca su puerta!`);
       rings.push({ x: it.x, y: it.y, r: 6, max: 40, life: 0.4, c: KEYS[it.c].c });
     } else if (it.kind === "weapon") {
       const isNew = !P.weapons.includes(it.w), wd = WEAPONS[it.w];
-      ckWant = true;
       if (isNew) { P.weapons.push(it.w); P.weapons.sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b)); P.ammo[it.w] = wd.clip; P.res[it.w] = wd.res; }
       else P.res[it.w] = Math.min(wd.max, (P.res[it.w] || 0) + wd.res);
       P.cur = P.weapons.indexOf(it.w); P.reloading = 0; swapT = 1; slotPulse[it.w] = 1;
@@ -2254,7 +2265,7 @@ function updateItems(dt) {
       const id = ammoTarget(), g = giveAmmo(id, it.n);
       SFX.reload(); floatText(it.x, it.y, `+${g} balas · ${WEAPONS[id].name}`, WEAPONS[id].color, 11);
     }
-    pops.push({ it: Object.assign({}, it), t: 0 });
+    pops.push({ it: Object.assign({}, it), t: 0 }); gameDirty = true;
     if (it.kind === "key") keyPop[it.c] = 1;
     if (it.kind === "heart" || it.kind === "ammo") heartPulse = 1;
     items.splice(i, 1);
@@ -2365,7 +2376,7 @@ function finishLevel() {
 
 // ---------- Dibujo ----------
 let camX = 0, camY = 0;
-function draw() { drawMain(); drawNavBtns(); drawSaveIcon(); drawAchPop(); announceUI(); }
+function draw() { drawMain(); drawNavBtns(); drawSaveIcon(); drawAchPop(); if (exitDlg) drawExitDlg(); else announceUI(); }
 function drawMain() {
   ui = [];
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -3575,12 +3586,12 @@ const sm = () => VW < 560 || VH < 560;
 const toggleDiff = (d = 1) => { settings.diff = (settings.diff + d + DIFFS.length) % DIFFS.length; store.set("diff", settings.diff); };
 const toggleFx = () => { settings.fx = !settings.fx; store.set("fx", settings.fx); slowT = 0; fxAuto = false; };
 const toMenu = () => {
-  if (!inTutorial && (state === "play" || state === "pause")) { state = "play"; checkpoint(); }
   // si sales tras superar un nivel, «Continuar» empieza en el siguiente
   if (!inTutorial && state === "levelDone" && levelIdx < LEVELS.length - 1) {
     saved = { level: levelIdx + 1, diff: settings.diff, weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
     store.set(saveKey(), saved); saveIcon = 1.8;
   }
+  gameDirty = false; exitDlg = null;
   inTutorial = false; state = "title"; uiSel = 0; saved = store.get(saveKey(), null);
 };
 
@@ -3590,16 +3601,17 @@ function drawPause() {
   titleText("PAUSA", VH * 0.2, s ? 34 : 50);
   menuList([
     { label: "Continuar", fn: resume },
+    ...(inTutorial ? [] : [{ label: gameDirty ? "💾 Guardar partida" : "✓ Partida guardada", fn: saveGame }]),
     { label: "Reiniciar nivel", fn: () => loadLevel(levelIdx, true) },
     ...(inTutorial ? [{ label: "Saltar tutorial", fn: endTutorial }] : []),
     { label: `Minimapa: ${["No", "Pequeño", "Grande"][settings.minimap]}`, fn: () => { settings.minimap = (settings.minimap + 1) % 3; store.set("minimap", settings.minimap); } },
     { label: `Sonido: ${settings.sound ? "Sí" : "No"}`, fn: () => setSound(!settings.sound) },
     { label: `Efectos: ${settings.fx ? "Altos" : "Bajos"}`, fn: toggleFx },
-    { label: "Salir al menú", fn: toMenu },
+    { label: "Salir al menú", fn: () => { if (!askLeave(toMenu)) toMenu(); } },
   ], VW / 2, VH * 0.2 + 30, Math.min(300, VW - 40), s ? 40 : 46, 8);
   if (!touch.on) {
     ctx.fillStyle = "rgba(243,230,200,0.55)"; ctx.font = "13px system-ui"; ctx.textAlign = "center";
-    const y = VH * 0.2 + 30 + 6 * 54 + 24;
+    const y = VH * 0.2 + 30 + 7 * 54 + 24;
     ["F, J o clic: disparar  ·  ESPACIO: habilidad del sombrero  ·  WASD/flechas: moverse  ·  SHIFT o clic derecho: esquivar",
      "1-9, 0, - / Q / rueda / clic en la barra: cambiar arma  ·  R: recargar  ·  TAB: minimapa  ·  M: sonido  ·  P/Esc: pausa"]
       .forEach((l, i) => ctx.fillText(l, VW / 2, y + i * 20, VW - 24));
@@ -4957,8 +4969,8 @@ TR_ROWS.push(
 // ---------- Botón para volver al inicio ----------
 let navBtns = [], homeAsk = 0;
 function goHome() {
-  // en plena partida pide confirmar con un segundo toque; antes de salir se guarda el progreso
-  if ((state === "play" || state === "pause") && homeAsk <= 0) { homeAsk = 2.5; SFX.ui(); return; }
+  // en plena partida avisa si hay progreso sin guardar
+  if ((state === "play" || state === "pause") && askLeave(() => goHome())) return;
   homeAsk = 0; SFX.uiGo();
   if (state === "custom") { picker.open = false; if (!leaveCustomOk()) return; }
   for (const k in keys) keys[k] = false; mouse.down = false; touch.fire = false;
@@ -4995,9 +5007,11 @@ const NAV_ACT = {
   lang: () => { openCustom("edit"); customRow = 1; openPicker(); },
   access: () => { SFX.uiGo(); openSub("access"); },
   full: () => { SFX.uiGo(); toggleFull(); },
+  save: () => saveGame(),
 };
-const NAV_TIP = { sound: () => settings.sound ? "Sonido: Sí" : "Sonido: No", lang: () => "Idioma", access: () => "Accesibilidad", full: () => "Pantalla completa", back: () => "Volver", home: () => "Inicio" };
+const NAV_TIP = { save: () => gameDirty ? "Guardar partida (G)" : "Partida guardada", sound: () => settings.sound ? "Sonido: Sí" : "Sonido: No", lang: () => "Idioma", access: () => "Accesibilidad", full: () => "Pantalla completa", back: () => "Volver", home: () => "Inicio" };
 function navHit(x, y) {
+  if (exitDlg) { const o = exitDlg.opts.find(o => o.r && x >= o.r.x && x <= o.r.x + o.r.w && y >= o.r.y && y <= o.r.y + o.r.h); if (o) o.fn(); return true; }
   for (const b of navBtns) if (x >= b.x - 4 && x <= b.x + b.w + 4 && y >= b.y - 4 && y <= b.y + b.h + 4) { NAV_ACT[b.kind](); return true; }
   return false;
 }
@@ -5013,10 +5027,16 @@ function navRects() {
   }
   if (inGame) {
     // en partida: arriba al centro; en pantallas táctiles el botón de pausa ya hace de «Volver»
-    const hw = ask ? 158 : 44;
-    if (isTouch()) return [{ kind: "home", x: Math.max(8, VW / 2 - 30 - hw), y: 14, w: hw, h, ask }];
-    const bw = 44, x0 = VW / 2 - (bw + 8 + hw) / 2;
-    return [{ kind: "back", x: x0, y: 14, w: bw, h }, { kind: "home", x: x0 + bw + 8, y: 14, w: hw, h, ask }];
+    const hw = ask ? 158 : 44, sv = inTutorial ? [] : ["save"];
+    if (isTouch()) {
+      const out = [{ kind: "home", x: Math.max(8, VW / 2 - 30 - hw), y: 14, w: hw, h, ask }];
+      if (sv.length) out.push({ kind: "save", x: VW / 2 - 30 - hw - 52, y: 14, w: 44, h });
+      return out.filter(b => b.x >= 6);
+    }
+    const bw = 44, n = 2 + sv.length, x0 = VW / 2 - (bw * (n - 1) + 8 * (n - 1) + hw) / 2;
+    const out = [{ kind: "back", x: x0, y: 14, w: bw, h }, { kind: "home", x: x0 + bw + 8, y: 14, w: hw, h, ask }];
+    if (sv.length) out.push({ kind: "save", x: x0 + bw + 8 + hw + 8, y: 14, w: bw, h });
+    return out;
   }
   const nw = VW < 500 ? 44 : 104, lab = nw > 44;
   return [{ kind: "back", x: 16, y: 16, w: nw, h, label: lab }, { kind: "home", x: 16 + nw + 8, y: 16, w: ask ? 158 : nw, h, ask, label: lab }];
@@ -5041,6 +5061,11 @@ function drawNavBtns() {
       ctx.beginPath(); ctx.moveTo(cx - 9, cy - 1); ctx.lineTo(cx, cy - 9); ctx.lineTo(cx + 9, cy - 1); ctx.stroke();
       ctx.beginPath(); ctx.rect(cx - 6, cy - 2, 12, 10); ctx.stroke();
       ctx.fillRect(cx - 2, cy + 3, 4, 5);
+    } else if (b.kind === "save") {
+      // disquete; un punto naranja avisa de que hay cambios sin guardar
+      ctx.beginPath(); ctx.moveTo(cx - 8, cy - 9); ctx.lineTo(cx + 5, cy - 9); ctx.lineTo(cx + 9, cy - 5); ctx.lineTo(cx + 9, cy + 8); ctx.lineTo(cx - 8, cy + 8); ctx.closePath(); ctx.stroke();
+      ctx.fillRect(cx - 4, cy - 9, 8, 5); ctx.strokeRect(cx - 5, cy + 1, 10, 7);
+      if (gameDirty) { ctx.fillStyle = "#ff8a1f"; ctx.beginPath(); ctx.arc(b.x + b.w - 8, b.y + 8, 4.5, 0, 7); ctx.fill(); }
     } else if (b.kind === "sound") {
       ctx.beginPath(); ctx.moveTo(cx - 9, cy - 4); ctx.lineTo(cx - 5, cy - 4); ctx.lineTo(cx + 1, cy - 9); ctx.lineTo(cx + 1, cy + 7); ctx.lineTo(cx - 5, cy + 2); ctx.lineTo(cx - 9, cy + 2); ctx.closePath(); ctx.fill();
       if (settings.sound) { ctx.beginPath(); ctx.arc(cx + 2, cy - 1, 5, -0.9, 0.9); ctx.stroke(); ctx.beginPath(); ctx.arc(cx + 2, cy - 1, 9, -0.9, 0.9); ctx.stroke(); }
@@ -5082,7 +5107,7 @@ function askExit() {
   exitGame(true);
 }
 function exitGame(showBye) {
-  if (state === "play" || state === "pause") toMenu(); // guarda la partida antes de salir
+  if (state === "play" || state === "pause") toMenu();
   exitAsk = 0; homeAsk = 0; inTutorial = false; saved = store.get(saveKey(), null);
   for (const k of SESSION_KEYS) delete sessionMem[k];
   settings.device = null; touch.on = false;
@@ -5106,27 +5131,81 @@ function drawBye() {
 // si dejas el juego un rato (otra pestaña, otra app) y vuelves, empieza todo otra vez
 let hiddenAt = 0;
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) { hiddenAt = performance.now(); if (state === "play") { checkpoint(); pause(); } }
-  else if (hiddenAt && performance.now() - hiddenAt > 60000) exitGame(false);
+  if (document.hidden) { hiddenAt = performance.now(); if (state === "play") pause(); }
+  else if (hiddenAt && performance.now() - hiddenAt > 60000) {
+    if (!askLeave(() => exitGame(false))) exitGame(false);
+  }
 });
 addEventListener("pageshow", e => { if (e.persisted) exitGame(false); });
-// al cerrar la página también se guarda la partida
-addEventListener("pagehide", () => { if (state === "play" || state === "pause") { const s0 = state; state = "play"; checkpoint(); state = s0; } });
+// al cerrar la página con progreso sin guardar, el navegador pregunta antes
+addEventListener("beforeunload", e => { if (gameDirty && !inTutorial && (state === "play" || state === "pause")) { e.preventDefault(); e.returnValue = ""; } });
 
 // ---------- Guardado del progreso ----------
-let saveIcon = 0, ckT = 0, ckWant = false;
+let saveIcon = 0, gameDirty = false, exitDlg = null;
+// guarda la partida en el punto exacto en que estás
+function saveGame() {
+  if (inTutorial) { showToast("En el tutorial no hace falta guardar", 2); return; }
+  if (state !== "play" && state !== "pause") return;
+  const s0 = state; state = "play"; const ok = checkpoint(); state = s0;
+  if (ok) { gameDirty = false; SFX.secret(); showToast("¡Partida guardada!", 1.8); }
+  else showToast("No se pudo guardar la partida", 2.5);
+}
+// si hay progreso sin guardar, pregunta antes de salir; devuelve true si ha abierto el aviso
+function askLeave(then) {
+  if (exitDlg) return true;
+  if (!gameDirty || inTutorial || (state !== "play" && state !== "pause")) return false;
+  if (state === "play") pause();
+  for (const k in keys) keys[k] = false; mouse.down = false; touch.fire = false;
+  SFX.hurt();
+  const go = () => { gameDirty = false; exitDlg = null; then(); };
+  exitDlg = { t: 0, sel: 0, opts: [
+    { label: "💾 Guardar y salir", fn: () => { saveGame(); go(); } },
+    { label: "Salir sin guardar", fn: go, danger: true },
+    { label: "Cancelar", fn: closeExitDlg },
+  ] };
+  return true;
+}
+function closeExitDlg() { exitDlg = null; SFX.ui(); }
+function drawExitDlg() {
+  if (!exitDlg) return;
+  const d = exitDlg; d.t += frameDt;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const k = A11().motion ? 1 : ease(d.t * 5), hc = A11().contrast;
+  ctx.fillStyle = `rgba(0,0,0,${0.6 * k})`; ctx.fillRect(0, 0, VW, VH);
+  const w = Math.min(420, VW - 32), bh = 46, h = 150 + d.opts.length * (bh + 10), x = VW / 2 - w / 2, y = VH / 2 - h / 2 + (1 - k) * 30;
+  ctx.save(); ctx.globalAlpha = k;
+  ctx.fillStyle = hc ? "#000" : "#17111a"; ctx.strokeStyle = "#ff8a6a"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 16); ctx.fill(); ctx.stroke();
+  // icono de aviso
+  ctx.fillStyle = "#ffb02e"; ctx.beginPath(); ctx.moveTo(VW / 2, y + 18); ctx.lineTo(VW / 2 + 20, y + 52); ctx.lineTo(VW / 2 - 20, y + 52); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#17111a"; ctx.font = "bold 22px system-ui"; ctx.textAlign = "center"; ctx.fillText("!", VW / 2, y + 49);
+  ctx.fillStyle = "#fff3dc"; ctx.font = "bold 19px system-ui"; ctx.fillText("¡No has guardado la partida!", VW / 2, y + 82, w - 24);
+  ctx.fillStyle = hc ? "#fff" : "rgba(243,230,200,0.75)"; ctx.font = "14px system-ui";
+  ctx.fillText("Si sales ahora perderás lo que has hecho desde la última vez que guardaste.", VW / 2, y + 106, w - 24);
+  d.opts.forEach((o, i) => {
+    const by = y + 128 + i * (bh + 10), bx = x + 20, bw = w - 40, sel = d.sel === i;
+    o.r = { x: bx, y: by, w: bw, h: bh };
+    ctx.fillStyle = o.danger ? (sel ? "rgba(170,45,35,0.95)" : "rgba(120,35,28,0.75)") : sel ? "rgba(232,163,61,0.3)" : "rgba(255,255,255,0.06)";
+    ctx.strokeStyle = sel ? (o.danger ? "#ff8a6a" : "#e8a33d") : "rgba(243,230,200,0.25)"; ctx.lineWidth = sel ? 2.5 : 1;
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 10); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = sel ? "#fff" : "#f3e6c8"; ctx.font = "bold 16px system-ui"; ctx.textBaseline = "middle";
+    ctx.fillText(o.label, VW / 2, by + bh / 2 + 1, bw - 16); ctx.textBaseline = "alphabetic";
+  });
+  ctx.restore();
+  if (srEl.textContent.indexOf(tr(d.opts[d.sel].label)) < 0) srEl.textContent = tr("¡No has guardado la partida!") + " " + tr(d.opts[d.sel].label);
+}
 function checkpoint() {
-  ckWant = false; ckT = 0;
-  if (inTutorial || state !== "play" || !saved) return;
+  if (inTutorial || state !== "play" || !saved) return false;
   try {
     saved.full = structuredClone({
       tiles, thp, seen, doorCol, items, lv, run, gameT,
       monsters: monsters.map(m => ({ ...m, def: null })),
       P: { x: P.x, y: P.y, hp: P.hp, maxHp: P.maxHp, weapons: P.weapons, cur: P.cur, ammo: P.ammo, res: P.res, keys: P.keys },
     });
-  } catch (e) { return; }
+  } catch (e) { return false; }
   Object.assign(saved, { hp: P.hp, maxHp: P.maxHp, weapons: P.weapons.slice(), run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } });
   store.set(saveKey(), saved); saveIcon = 1.8;
+  return true;
 }
 function restoreCheckpoint(ck) {
   tiles = ck.tiles.slice(); thp = ck.thp.slice(); seen = ck.seen.slice(); doorCol = { ...ck.doorCol };
@@ -5137,7 +5216,7 @@ function restoreCheckpoint(ck) {
   buildTileCache();
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (seen[y * W + x]) paintMini(x, y);
   flowDirty = true; flowFrom = -1; camX = P.x - VW / 2; camY = P.y - VH / 2;
-  saved.full = ck; store.set(saveKey(), saved);
+  saved.full = ck; store.set(saveKey(), saved); gameDirty = false;
   showToast("Partida cargada: sigues donde lo dejaste", 3);
 }
 function drawSaveIcon() {
@@ -5159,6 +5238,18 @@ function drawSaveIcon() {
 TR_ROWS.push(
 ["Inicio", "Home", "Início", "Accueil", "Start", "Inizio"],
 ["Volver", "Back", "Voltar", "Retour", "Zurück", "Indietro"],
+["💾 Guardar partida", "💾 Save game", "💾 Salvar jogo", "💾 Sauvegarder", "💾 Spiel speichern", "💾 Salva partita"],
+["✓ Partida guardada", "✓ Game saved", "✓ Jogo salvo", "✓ Partie sauvegardée", "✓ Spiel gespeichert", "✓ Partita salvata"],
+["Guardar partida (G)", "Save game (G)", "Salvar jogo (G)", "Sauvegarder (G)", "Spiel speichern (G)", "Salva partita (G)"],
+["Partida guardada", "Game saved", "Jogo salvo", "Partie sauvegardée", "Spiel gespeichert", "Partita salvata"],
+["¡Partida guardada!", "Game saved!", "Jogo salvo!", "Partie sauvegardée !", "Spiel gespeichert!", "Partita salvata!"],
+["No se pudo guardar la partida", "Couldn't save the game", "Não foi possível salvar", "Impossible de sauvegarder", "Speichern fehlgeschlagen", "Impossibile salvare"],
+["En el tutorial no hace falta guardar", "No need to save in the tutorial", "No tutorial não precisa salvar", "Pas besoin de sauvegarder dans le tutoriel", "Im Tutorial musst du nicht speichern", "Nel tutorial non serve salvare"],
+["¡No has guardado la partida!", "You haven't saved your game!", "Você não salvou o jogo!", "Tu n'as pas sauvegardé !", "Du hast nicht gespeichert!", "Non hai salvato la partita!"],
+["Si sales ahora perderás lo que has hecho desde la última vez que guardaste.", "If you leave now you'll lose everything since your last save.", "Se sair agora, perderá o que fez desde o último salvamento.", "Si tu pars maintenant, tu perdras tout depuis ta dernière sauvegarde.", "Wenn du jetzt gehst, verlierst du alles seit dem letzten Speichern.", "Se esci ora perderai tutto dall'ultimo salvataggio."],
+["💾 Guardar y salir", "💾 Save and leave", "💾 Salvar e sair", "💾 Sauvegarder et quitter", "💾 Speichern und gehen", "💾 Salva ed esci"],
+["Salir sin guardar", "Leave without saving", "Sair sem salvar", "Quitter sans sauvegarder", "Ohne Speichern gehen", "Esci senza salvare"],
+["Cancelar", "Cancel", "Cancelar", "Annuler", "Abbrechen", "Annulla"],
 ["PERSONAJES", "CHARACTERS", "PERSONAGENS", "PERSONNAGES", "FIGUREN", "PERSONAGGI"],
 ["Personajes", "Characters", "Personagens", "Personnages", "Figuren", "Personaggi"],
 ["Personajes: {0} ({1}/{2})", "Characters: {0} ({1}/{2})", "Personagens: {0} ({1}/{2})", "Personnages : {0} ({1}/{2})", "Figuren: {0} ({1}/{2})", "Personaggi: {0} ({1}/{2})"],
