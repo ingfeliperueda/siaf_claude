@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Abismo Nerf</title>
+<title>Abismo de Espuma</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Cinzel:wght@700;900&display=swap" rel="stylesheet">
@@ -18,12 +18,12 @@
 </style>
 </head>
 <body>
-<canvas id="c" tabindex="0" role="application" aria-label="Abismo Nerf. Usa las flechas para moverte por el menú y Enter para elegir." aria-describedby="sr"></canvas>
+<canvas id="c" tabindex="0" role="application" aria-label="Abismo de Espuma. Usa las flechas para moverte por el menú y Enter para elegir." aria-describedby="sr"></canvas>
 <div id="sr" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 <script>
 "use strict";
 // ============================================================
-//  ABISMO NERF — mazmorras subterráneas con lanzadores Nerf,
+//  ABISMO DE ESPUMA — mazmorras subterráneas con lanzadores de espuma,
 //  monstruos, llaves de colores, trampas y pasajes secretos.
 // ============================================================
 
@@ -37,7 +37,7 @@ const TS = 32;
 //  s babosa  t murciélago  k esqueleto  x araña  q gólem
 //  Q Reina Araña y O Rey Ogro (jefes: sueltan la llave dorada)      = agua profunda
 //  f fantasma  e escarabajo explosivo  o ojo vigía  n hongo venenoso  p topo excavador
-//  S escopeta  M semiautomática  I rifle  A ametralladora  L ballesta  D lanzadiscos  W Super Soaker
+//  S escopeta  M semiautomática  I rifle  A ametralladora  L ballesta  D lanzadiscos  W lanzaagua
 //  N lanzagranadas  C cañón lanza dardos  F lanzacohetes   + montón de balas
 //  h corazón  $ oro  m caja de dardos (+1 corazón máx.)
 //  c caja rompible   ^ pinchos   w telaraña (frena)   ~ charco   u seta luminosa   * cristal
@@ -555,7 +555,7 @@ function updateTutorial(dt) {
 }
 function drawTutorialPanel() {
   if (!inTutorial) return;
-  const st = TUT_STEPS[tutStep], txt = isTouch() && st.m ? st.m : st.t, s = VW < 560, w = s ? Math.min(240, VW * 0.62) : 330, x = 10, y = 76;
+  const st = TUT_STEPS[tutStep], txt = isTouch() && st.m ? st.m : st.t, s = VW < 560, w = s ? Math.min(240, VW * 0.62) : 330, x = 10, y = isTouch() && VW < 480 ? 128 : 76;
   ctx.font = `bold ${s ? 12 : 14}px system-ui`;
   const lines = wrapText(txt, w - 46), h = 34 + lines.length * (s ? 15 : 18);
   const pop = 1 + tutDone * 0.08;
@@ -575,16 +575,16 @@ function drawTutorialPanel() {
 // clip: balas del cargador · res: reserva al encontrar el arma · max: reserva máxima · unit: cuánto rinde un paquete de balas
 const WEAPONS = {
   pistola:  { name: "Pistola de mano",     clip: 6,  cd: 0.26,  reload: 0.85, dmg: 1,    speed: 480, darts: 1, spread: 0.04, color: "#ff8a1f", res: 30,  max: 120, unit: 1 },
-  escopeta: { name: "Escopeta Nerf",       clip: 4,  cd: 0.6,   reload: 1.35, dmg: 1,    speed: 440, darts: 6, spread: 0.55, color: "#9be15d", res: 12,  max: 48,  unit: 0.8 },
-  semi:     { name: "Semiautomática Nerf", clip: 12, cd: 0.16,  reload: 1.1,  dmg: 1.2,  speed: 560, darts: 1, spread: 0.03, color: "#ffb02e", res: 36,  max: 144, unit: 1.2 },
-  rifle:    { name: "Rifle Nerf",          clip: 5,  cd: 0.6,   reload: 1.5,  dmg: 3,    speed: 950, darts: 1, spread: 0,    color: "#7fe0a0", res: 10,  max: 40,  unit: 0.5, crit: 0.3 },
-  ametra:   { name: "Ametralladora Nerf",  clip: 30, cd: 0.085, reload: 1.6,  dmg: 0.7,  speed: 530, darts: 1, spread: 0.13, color: "#3fb7ff", res: 60,  max: 240, unit: 2.5 },
-  ballesta: { name: "Ballesta Nerf",       clip: 3,  cd: 0.7,   reload: 1.3,  dmg: 3,    speed: 820, darts: 1, spread: 0, pierce: 4, color: "#ffd23f", res: 9, max: 30, unit: 0.4 },
-  discos:   { name: "Lanzadiscos Nerf",    clip: 8,  cd: 0.3,   reload: 1.3,  dmg: 1.5,  speed: 390, darts: 1, spread: 0.03, disc: true, bounces: 3, color: "#c86bff", res: 16, max: 64, unit: 0.8 },
-  soaker:   { name: "Super Soaker",        clip: 60, cd: 0.04,  reload: 1.6,  dmg: 0.22, speed: 340, darts: 1, spread: 0.12, water: true, color: "#4fd2ff", res: 120, max: 480, unit: 6 },
-  granada:  { name: "Lanzagranadas Nerf",  clip: 3,  cd: 0.55,  reload: 1.5,  dmg: 3.5,  speed: 300, darts: 1, spread: 0, grenade: true, splash: 66, color: "#ff5a3a", res: 6, max: 24, unit: 0.3 },
+  escopeta: { name: "Escopeta",       clip: 4,  cd: 0.6,   reload: 1.35, dmg: 1,    speed: 440, darts: 6, spread: 0.55, color: "#9be15d", res: 12,  max: 48,  unit: 0.8 },
+  semi:     { name: "Semiautomática", clip: 12, cd: 0.16,  reload: 1.1,  dmg: 1.2,  speed: 560, darts: 1, spread: 0.03, color: "#ffb02e", res: 36,  max: 144, unit: 1.2 },
+  rifle:    { name: "Rifle",          clip: 5,  cd: 0.6,   reload: 1.5,  dmg: 3,    speed: 950, darts: 1, spread: 0,    color: "#7fe0a0", res: 10,  max: 40,  unit: 0.5, crit: 0.3 },
+  ametra:   { name: "Ametralladora",  clip: 30, cd: 0.085, reload: 1.6,  dmg: 0.7,  speed: 530, darts: 1, spread: 0.13, color: "#3fb7ff", res: 60,  max: 240, unit: 2.5 },
+  ballesta: { name: "Ballesta",       clip: 3,  cd: 0.7,   reload: 1.3,  dmg: 3,    speed: 820, darts: 1, spread: 0, pierce: 4, color: "#ffd23f", res: 9, max: 30, unit: 0.4 },
+  discos:   { name: "Lanzadiscos",    clip: 8,  cd: 0.3,   reload: 1.3,  dmg: 1.5,  speed: 390, darts: 1, spread: 0.03, disc: true, bounces: 3, color: "#c86bff", res: 16, max: 64, unit: 0.8 },
+  soaker:   { name: "Lanzaagua",        clip: 60, cd: 0.04,  reload: 1.6,  dmg: 0.22, speed: 340, darts: 1, spread: 0.12, water: true, color: "#4fd2ff", res: 120, max: 480, unit: 6 },
+  granada:  { name: "Lanzagranadas",  clip: 3,  cd: 0.55,  reload: 1.5,  dmg: 3.5,  speed: 300, darts: 1, spread: 0, grenade: true, splash: 66, color: "#ff5a3a", res: 6, max: 24, unit: 0.3 },
   canon:    { name: "Cañón lanza dardos",  clip: 2,  cd: 0.8,   reload: 1.8,  dmg: 2.5,  speed: 360, darts: 1, spread: 0, mega: true, color: "#ff3fd0", res: 4, max: 16, unit: 0.25 },
-  cohete:   { name: "Lanzacohetes Nerf",   clip: 1,  cd: 0.3,   reload: 1.2,  dmg: 4,    speed: 310, darts: 1, spread: 0, rocket: true, splash: 60, color: "#ff4fa3", res: 3, max: 12, unit: 0.2 },
+  cohete:   { name: "Lanzacohetes",   clip: 1,  cd: 0.3,   reload: 1.2,  dmg: 4,    speed: 310, darts: 1, spread: 0, rocket: true, splash: 60, color: "#ff4fa3", res: 3, max: 12, unit: 0.2 },
 };
 const ORDER = ["pistola", "escopeta", "semi", "rifle", "ametra", "ballesta", "discos", "soaker", "granada", "canon", "cohete"];
 const SLOT_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-"];
@@ -655,7 +655,7 @@ const TIPS = [
   "Cuando el ojo vigía traza una línea roja, apártate de ella.",
   "La ballesta atraviesa a varios enemigos en fila.",
   "Los discos rebotan en las paredes: úsalos para disparar detrás de esquinas.",
-  "El Super Soaker empuja y frena a los monstruos.",
+  "El Lanzaagua empuja y frena a los monstruos.",
 ];
 
 // Tipos de casilla
@@ -1718,7 +1718,8 @@ function btns() {
     swap:   { x: VW - 62 * s - 12, y: VH - 214 * s - 12, r: 28 * s },
     reload: { x: VW - 136 * s - 12, y: VH - 222 * s - 12, r: 24 * s },
     abil:   { x: VW - 196 * s - 12, y: VH - 150 * s - 12, r: 30 * s },
-    pause:  { x: VW / 2, y: 34, r: 22 },
+    // en pantallas estrechas la pausa baja bajo los corazones para no tapar nada
+    pause:  VW < 480 ? { x: 32, y: 100, r: 20 } : { x: VW / 2, y: 34, r: 22 },
   };
 }
 const inBtn = (b, x, y) => Math.hypot(x - b.x, y - b.y) < b.r + 10;
@@ -2241,7 +2242,7 @@ function drawPowerBadges() {
   if (inTutorial || state !== "play" && state !== "pause") return;
   const pws = POWERS.filter(p => hasPower(p.id)); if (!pws.length) return;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  const y = 82; ctx.font = "13px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const y = isTouch() && VW < 480 ? 140 : 82; ctx.font = "13px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
   pws.forEach((pw, i) => {
     const x = 24 + i * 26, cool = pw.id === "autoshield" && (P.ashT || 0) > 0;
     ctx.fillStyle = "rgba(14,10,18,0.8)"; ctx.strokeStyle = cool ? "rgba(120,120,130,0.5)" : pw.color; ctx.lineWidth = 1.5;
@@ -3699,12 +3700,12 @@ function blob(x, y, r, a) {
   for (let i = 0; i <= 10; i++) { const t = i / 10 * Math.PI * 2, rr = r * (0.7 + 0.3 * Math.sin(t * 3 + a)); ctx.lineTo(x + Math.cos(t) * rr, y + Math.sin(t) * rr); }
   ctx.fill();
 }
-const DART_SPR = new Map();
+const DART_SPR = new Map(); let DART_K = 8;
 function dartSprite(c, tip) {
   const key = c + "|" + tip; let cv2 = DART_SPR.get(key);
   if (cv2) return cv2;
   if (DART_SPR.size > 160) DART_SPR.clear();
-  const K = 8; cv2 = document.createElement("canvas"); cv2.width = 18 * K; cv2.height = 10 * K;
+  const K = DART_K; cv2 = document.createElement("canvas"); cv2.width = 18 * K; cv2.height = 10 * K;
   const g = cv2.getContext("2d"); g.setTransform(K, 0, 0, K, 10 * K, 5 * K);
   // aletas traseras
   g.fillStyle = "rgba(0,0,0,0.35)"; g.beginPath(); g.moveTo(-6.5, -1.6); g.lineTo(-9, -3.6); g.lineTo(-7.6, -1.6); g.moveTo(-6.5, 1.6); g.lineTo(-9, 3.6); g.lineTo(-7.6, 1.6); g.fill();
@@ -3844,7 +3845,7 @@ function drawItem(it) {
   } else if (it.kind === "ammo") {
     ctx.fillStyle = "#1f5fa8"; ctx.fillRect(-10, -7, 20, 14);
     ctx.fillStyle = "#ff8a1f"; ctx.fillRect(-10, -2, 20, 4);
-    ctx.fillStyle = "#fff"; ctx.font = "bold 7px system-ui"; ctx.textAlign = "center"; ctx.fillText("NERF", 0, -2.5);
+    ctx.fillStyle = "#fff"; ctx.font = "bold 7px system-ui"; ctx.textAlign = "center"; ctx.fillText("FOAM", 0, -2.5);
     heart(0, 5, 3, "#ff4d5e");
   }
   ctx.restore();
@@ -3856,9 +3857,9 @@ function heart(x, y, s, c) {
   ctx.bezierCurveTo(x + s * 0.7, y - s * 1.1, x + s * 1.4, y - s * 0.1, x, y + s * 0.9);
   ctx.fillStyle = c; ctx.fill();
 }
-// Lanzador Nerf apuntando hacia +x
-// ---------- Lanzadores Nerf: dibujo detallado (base en caché) + piezas móviles animadas ----------
-// colores tipo Nerf: cuerpo de color vivo, boquilla naranja, detalles amarillos y azules, piezas gris oscuro
+// Lanzador de espuma apuntando hacia +x
+// ---------- Lanzadores de espuma: dibujo detallado (base en caché) + piezas móviles animadas ----------
+// colores de juguete de espuma: cuerpo de color vivo, boquilla naranja, detalles amarillos y azules, piezas gris oscuro
 const hexTone = (hex, k) => mixHex(hex, k > 0 ? "#ffffff" : "#000000", Math.abs(k));
 const G_DARK = "#33343c", G_ORANGE = "#ff7a12", G_YELLOW = "#ffd23f", G_BLUE = "#3fb7ff";
 function gPart(c, x, y, w, h, r, col, gloss = true) {
@@ -3877,9 +3878,9 @@ function gPoly(c, pts, col) {
 function gScrew(c, x, y) { c.fillStyle = "#d8d8de"; c.beginPath(); c.arc(x, y, 0.55, 0, 7); c.fill(); c.strokeStyle = "rgba(0,0,0,0.6)"; c.lineWidth = 0.25; c.stroke(); }
 function gVents(c, x, y, n, step = 1.6) { c.fillStyle = "rgba(0,0,0,0.45)"; for (let i = 0; i < n; i++) c.fillRect(x + i * step, y, 0.8, 1.6); }
 function gRidges(c, x, y, h, n) { c.strokeStyle = "rgba(0,0,0,0.3)"; c.lineWidth = 0.35; for (let i = 0; i < n; i++) { c.beginPath(); c.moveTo(x + i * 1.1, y); c.lineTo(x + i * 1.1 - 0.6, y + h); c.stroke(); } }
-// boquilla naranja con el agujero del dardo: el toque característico Nerf
+// boquilla naranja con el agujero del dardo: el toque característico de los lanzadores de espuma
 function gTip(c, x, y, h) { gPart(c, x, y - h / 2, 2.4, h, 0.7, G_ORANGE); c.fillStyle = "#1a1210"; c.beginPath(); c.ellipse(x + 2.4, y, 0.55, h * 0.28, 0, 0, 7); c.fill(); }
-function gLogo(c, x, y) { c.fillStyle = G_BLUE; c.beginPath(); c.arc(x, y, 1.1, 0, 7); c.fill(); c.fillStyle = "#fff"; c.font = "bold 1.6px system-ui"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("N", x, y + 0.1); c.textBaseline = "alphabetic"; }
+function gLogo(c, x, y) { c.fillStyle = G_BLUE; c.beginPath(); c.arc(x, y, 1.1, 0, 7); c.fill(); c.fillStyle = "#fff"; c.beginPath(); for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 - Math.PI / 2, r = i % 2 ? 0.32 : 0.75; c.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); } c.closePath(); c.fill(); }
 function gGuard(c, x, y, r) { c.strokeStyle = G_DARK; c.lineWidth = 0.9; c.beginPath(); c.arc(x, y, r, 0.1, Math.PI - 0.1); c.stroke(); }
 
 const GUN_ART = {
@@ -4046,7 +4047,8 @@ const GUN_ART = {
     },
   },
 };
-const GUN_SPR = {}, GUN_K = 8, GUN_BX = -16, GUN_BY = -13, GUN_W = 38, GUN_H = 26;
+let GUN_K = 8; // píxeles por unidad del dibujo guardado (más para iconos grandes)
+const GUN_SPR = {}, GUN_BX = -16, GUN_BY = -13, GUN_W = 38, GUN_H = 26;
 function gunSprite(id) {
   if (GUN_SPR[id]) return GUN_SPR[id];
   const cv = document.createElement("canvas"); cv.width = GUN_W * GUN_K; cv.height = GUN_H * GUN_K;
@@ -4642,7 +4644,7 @@ function drawHUD() {
 
   // jefe
   const boss = monsters.find(m => m.def.boss && m.alert > 0);
-  const bossY = small ? 76 : 16;
+  const bossY = isTouch() && VW < 480 ? 176 : small ? 76 : 16;
   if (boss) {
     const bw = Math.min(420, VW - 40 - (settings.minimap === 1 && !small ? 210 : 0) - (small ? 0 : 140)), bx = VW / 2 - bw / 2;
     panel(bx - 6, bossY - 4, bw + 12, 36);
@@ -4970,12 +4972,12 @@ function drawTitle() {
   tg.addColorStop(0, "#fff1cf"); tg.addColorStop(1, "#e8a33d");
   ctx.font = `900 ${s ? 42 : 78}px ${TITLE_FONT}`; ctx.fillStyle = tg;
   ctx.shadowColor = "rgba(255,138,31,0.5)"; ctx.shadowBlur = 30;
-  ctx.fillText("ABISMO NERF", VW / 2, ty + (s ? 52 : 84), VW - 24); ctx.shadowBlur = 0;
+  ctx.fillText("ABISMO DE ESPUMA", VW / 2, ty + (s ? 52 : 84), VW - 24); ctx.shadowBlur = 0;
   if (!A11().motion) {
-    const tw = Math.min(VW - 24, ctx.measureText("ABISMO NERF").width), sx0 = VW / 2 - tw / 2, ph = (time * 0.35) % 1.6 - 0.3;
+    const tw = Math.min(VW - 24, ctx.measureText("ABISMO DE ESPUMA").width), sx0 = VW / 2 - tw / 2, ph = (time * 0.35) % 1.6 - 0.3;
     const sg = ctx.createLinearGradient(sx0 + tw * ph - 60, 0, sx0 + tw * ph + 60, 0);
     sg.addColorStop(0, "rgba(255,255,255,0)"); sg.addColorStop(0.5, "rgba(255,255,255,0.75)"); sg.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = sg; ctx.fillText("ABISMO NERF", VW / 2, ty + (s ? 52 : 84), VW - 24); ctx.restore();
+    ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = sg; ctx.fillText("ABISMO DE ESPUMA", VW / 2, ty + (s ? 52 : 84), VW - 24); ctx.restore();
   }
   ctx.fillStyle = A11().contrast ? "#fff" : "rgba(243,230,200,0.75)"; ctx.font = `${s ? 13 : 16}px system-ui`;
   ctx.fillText("4 mundos y 40 niveles: rescata a Chispa y descubre qué esconde el Corazón del Abismo.", VW / 2, ty + (s ? 80 : 120), VW - 24);
@@ -5023,7 +5025,7 @@ function drawTitle() {
 // ---------- Historieta del inicio y editor del personaje ----------
 const COMIC_FONT = "Bangers, Impact, 'Arial Black', sans-serif";
 const STORY = [
-  { cap: n => `En el tranquilo pueblo de Villaroca, ${n} jugaba con su lanzador Nerf y su perrita Chispa.` },
+  { cap: n => `En el tranquilo pueblo de Villaroca, ${n} jugaba con su lanzador de espuma y su perrita Chispa.` },
   { cap: () => "De repente, la tierra tembló... ¡y Chispa cayó por una grieta hacia el abismo!" },
   { cap: () => "Allí abajo reina el malvado Rey Ogro, que ha encerrado a Chispa junto a su trono." },
   { cap: n => `${n} se puso el casco de minero y cargó sus dardos de espuma.` },
@@ -6021,15 +6023,15 @@ const TR_ROWS = [
 ["El Laberinto de Espinas", "The Thorn Maze", "O Labirinto de Espinhos", "Le Labyrinthe d'Épines", "Das Dornenlabyrinth", "Il Labirinto di Spine"],
 ["El Trono del Rey Ogro", "The Ogre King's Throne", "O Trono do Rei Ogro", "Le Trône du Roi Ogre", "Der Thron des Oger-Königs", "Il Trono del Re Orco"],
 ["Pistola de mano", "Hand pistol", "Pistola de mão", "Pistolet", "Handpistole", "Pistola"],
-["Escopeta Nerf", "Nerf shotgun", "Espingarda Nerf", "Fusil à pompe Nerf", "Nerf-Schrotflinte", "Fucile a pompa Nerf"],
-["Semiautomática Nerf", "Nerf semi-auto", "Semiautomática Nerf", "Semi-automatique Nerf", "Nerf-Halbautomatik", "Semiautomatica Nerf"],
-["Rifle Nerf", "Nerf rifle", "Rifle Nerf", "Fusil Nerf", "Nerf-Gewehr", "Fucile Nerf"],
-["Ametralladora Nerf", "Nerf machine gun", "Metralhadora Nerf", "Mitrailleuse Nerf", "Nerf-Maschinengewehr", "Mitragliatrice Nerf"],
-["Ballesta Nerf", "Nerf crossbow", "Besta Nerf", "Arbalète Nerf", "Nerf-Armbrust", "Balestra Nerf"],
-["Lanzadiscos Nerf", "Nerf disc launcher", "Lança-discos Nerf", "Lance-disques Nerf", "Nerf-Scheibenwerfer", "Lanciadischi Nerf"],
-["Lanzagranadas Nerf", "Nerf grenade launcher", "Lança-granadas Nerf", "Lance-grenades Nerf", "Nerf-Granatwerfer", "Lanciagranate Nerf"],
+["Escopeta", "Shotgun", "Espingarda", "Fusil à pompe", "Schrotflinte", "Fucile a pompa"],
+["Semiautomática", "Semi-auto", "Semiautomática", "Semi-automatique", "Halbautomatik", "Semiautomatica"],
+["Rifle", "Rifle", "Rifle", "Fusil", "Gewehr", "Fucile"],
+["Ametralladora", "Machine gun", "Metralhadora", "Mitrailleuse", "Maschinengewehr", "Mitragliatrice"],
+["Ballesta", "Crossbow", "Besta", "Arbalète", "Armbrust", "Balestra"],
+["Lanzadiscos", "Disc launcher", "Lança-discos", "Lance-disques", "Scheibenwerfer", "Lanciadischi"],
+["Lanzagranadas", "Grenade launcher", "Lança-granadas", "Lance-grenades", "Granatwerfer", "Lanciagranate"],
 ["Cañón lanza dardos", "Dart cannon", "Canhão de dardos", "Canon à fléchettes", "Pfeilkanone", "Cannone lanciadardi"],
-["Lanzacohetes Nerf", "Nerf rocket launcher", "Lança-foguetes Nerf", "Lance-roquettes Nerf", "Nerf-Raketenwerfer", "Lanciarazzi Nerf"],
+["Lanzacohetes", "Rocket launcher", "Lança-foguetes", "Lance-roquettes", "Raketenwerfer", "Lanciarazzi"],
 ["roja", "red", "vermelha", "rouge", "rote", "rossa"], ["azul", "blue", "azul", "bleue", "blaue", "blu"], ["verde", "green", "verde", "verte", "grüne", "verde"], ["dorada", "golden", "dourada", "dorée", "goldene", "dorata"],
 ["Puerta cerrada: necesitas la llave {0}", "Locked door: you need the {0} key", "Porta trancada: você precisa da chave {0}", "Porte fermée : il te faut la clé {0}", "Verschlossen: Du brauchst den {0} Schlüssel", "Porta chiusa: ti serve la chiave {0}"],
 ["Tienes la llave {0}. ¡Busca su puerta!", "You have the {0} key. Find its door!", "Você tem a chave {0}. Ache a porta!", "Tu as la clé {0}. Trouve sa porte !", "Du hast den {0} Schlüssel. Finde die Tür!", "Hai la chiave {0}. Trova la sua porta!"],
@@ -6120,7 +6122,7 @@ const TR_ROWS = [
 ["Toca para crear tu personaje", "Tap to create your character", "Toque para criar seu personagem", "Touche pour créer ton personnage", "Tippen, um deine Figur zu erstellen", "Tocca per creare il tuo personaggio"],
 ["Pulsa ENTER para ver tus resultados", "Press ENTER to see your results", "Aperte ENTER para ver os resultados", "Appuie sur ENTRÉE pour voir tes résultats", "Drücke ENTER für deine Ergebnisse", "Premi INVIO per vedere i risultati"],
 ["Toca para ver tus resultados", "Tap to see your results", "Toque para ver os resultados", "Touche pour voir tes résultats", "Tippen für deine Ergebnisse", "Tocca per vedere i risultati"],
-["En el tranquilo pueblo de Villaroca, {0} jugaba con su lanzador Nerf y su perrita Chispa.", "In the quiet village of Rockville, {0} was playing with a Nerf blaster and a puppy named Sparky.", "Na tranquila vila de Vilarocha, {0} brincava com seu lançador Nerf e sua cachorrinha Faísca.", "Dans le paisible village de Rochebourg, {0} jouait avec son blaster Nerf et sa chienne Étincelle.", "Im ruhigen Dorf Felsheim spielte {0} mit dem Nerf-Blaster und Hündin Funke.", "Nel tranquillo paese di Roccavilla, {0} giocava con il suo blaster Nerf e la cagnolina Scintilla."],
+["En el tranquilo pueblo de Villaroca, {0} jugaba con su lanzador de espuma y su perrita Chispa.", "In the quiet village of Rockville, {0} was playing with a foam blaster and a puppy named Sparky.", "Na tranquila vila de Vilarocha, {0} brincava com seu lançador de espuma e sua cachorrinha Faísca.", "Dans le paisible village de Rochebourg, {0} jouait avec son blaster en mousse et sa chienne Étincelle.", "Im ruhigen Dorf Felsheim spielte {0} mit dem Schaumstoff-Blaster und Hündin Funke.", "Nel tranquillo paese di Roccavilla, {0} giocava con il suo blaster di gommapiuma e la cagnolina Scintilla."],
 ["De repente, la tierra tembló... ¡y Chispa cayó por una grieta hacia el abismo!", "Suddenly the ground shook... and Sparky fell through a crack into the abyss!", "De repente, a terra tremeu... e a Faísca caiu por uma fenda no abismo!", "Soudain, la terre trembla... et Étincelle tomba dans une faille vers l'abîme !", "Plötzlich bebte die Erde... und Funke fiel durch eine Spalte in den Abgrund!", "All'improvviso la terra tremò... e Scintilla cadde in una crepa verso l'abisso!"],
 ["Allí abajo reina el malvado Rey Ogro, que ha encerrado a Chispa junto a su trono.", "Down there rules the evil Ogre King, who has locked Sparky up next to his throne.", "Lá embaixo reina o malvado Rei Ogro, que prendeu a Faísca ao lado do trono.", "En bas règne le méchant Roi Ogre, qui a enfermé Étincelle près de son trône.", "Dort unten herrscht der böse Oger-König, der Funke neben seinem Thron eingesperrt hat.", "Laggiù regna il malvagio Re Orco, che ha rinchiuso Scintilla accanto al suo trono."],
 ["{0} se puso el casco de minero y cargó sus dardos de espuma.", "{0} put on the miner helmet and loaded the foam darts.", "{0} colocou o capacete de mineiro e carregou os dardos de espuma.", "{0} enfila le casque de mineur et chargea ses fléchettes en mousse.", "{0} setzte den Grubenhelm auf und lud die Schaumpfeile.", "{0} indossò il casco da minatore e caricò i dardi di gommapiuma."],
@@ -6148,7 +6150,7 @@ const TR_ROWS = [
 ["Cuando el ojo vigía traza una línea roja, apártate de ella.", "When the watcher eye draws a red line, step out of it.", "Quando o olho vigia traça uma linha vermelha, saia dela.", "Quand l'œil guetteur trace une ligne rouge, écarte-toi.", "Zeichnet das Wächterauge eine rote Linie, geh aus dem Weg.", "Quando l'occhio vigile traccia una linea rossa, spostati."],
 ["La ballesta atraviesa a varios enemigos en fila.", "The crossbow pierces several enemies in a row.", "A besta atravessa vários inimigos em fila.", "L'arbalète transperce plusieurs ennemis alignés.", "Die Armbrust durchbohrt mehrere Gegner in einer Reihe.", "La balestra trapassa più nemici in fila."],
 ["Los discos rebotan en las paredes: úsalos para disparar detrás de esquinas.", "Discs bounce off walls: use them to shoot around corners.", "Discos ricocheteiam nas paredes: atire atrás das esquinas.", "Les disques rebondissent : tire derrière les coins.", "Scheiben prallen ab: Schieß damit um Ecken.", "I dischi rimbalzano: usali per sparare dietro gli angoli."],
-["El Super Soaker empuja y frena a los monstruos.", "The Super Soaker pushes and slows monsters.", "O Super Soaker empurra e freia os monstros.", "Le Super Soaker repousse et ralentit les monstres.", "Der Super Soaker schiebt und bremst Monster.", "Il Super Soaker spinge e rallenta i mostri."],
+["El Lanzaagua empuja y frena a los monstruos.", "The Water Blaster pushes and slows monsters.", "O Lança-água empurra e freia os monstros.", "Le Lance-eau repousse et ralentit les monstres.", "Der Wasserwerfer schiebt und bremst Monster.", "Il Lanciacqua spinge e rallenta i mostri."],
 ];
 let LANG = "es", TR_EXACT = {}, TR_PATS = [], trCache = new Map();
 function setLang(l) {
@@ -6467,6 +6469,11 @@ function navRects() {
   if (inGame) {
     // en partida: arriba al centro; en pantallas táctiles el botón de pausa ya hace de «Volver»
     const hw = ask ? 158 : 44, sv = inTutorial ? [] : ["save"];
+    if (isTouch() && VW < 480) {
+      const out = [{ kind: "home", x: 62, y: 80, w: hw, h, ask }];
+      if (sv.length && !ask) out.push({ kind: "save", x: 62 + hw + 8, y: 80, w: 44, h });
+      return out;
+    }
     if (isTouch()) {
       const out = [{ kind: "home", x: Math.max(8, VW / 2 - 30 - hw), y: 14, w: hw, h, ask }];
       if (sv.length) out.push({ kind: "save", x: VW / 2 - 30 - hw - 52, y: 14, w: 44, h });
@@ -6671,7 +6678,7 @@ function drawSaveIcon() {
   ctx.save(); ctx.globalAlpha = a;
   ctx.fillStyle = "rgba(14,10,16,0.88)"; ctx.strokeStyle = done ? "rgba(155,225,93,0.7)" : "rgba(255,138,31,0.6)"; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.roundRect(x, y, w, h, 12); ctx.fill(); ctx.stroke();
-  // pistola Nerf girando
+  // pistola Girando
   ctx.save(); ctx.translate(x + 26, y + h / 2); ctx.rotate(done ? 0 : time * (A11().motion ? 3 : 9)); drawGun("pistola", 1.6); ctx.restore();
   ctx.fillStyle = done ? "#9be15d" : "#ffe2a8"; ctx.font = "bold 14px system-ui"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
   ctx.fillText(done ? "Progreso guardado ✓" : "Guardando…", x + 50, y + h / 2 + 1, w - 58);
@@ -6680,6 +6687,8 @@ function drawSaveIcon() {
 TR_ROWS.push(
 ["Inicio", "Home", "Início", "Accueil", "Start", "Inizio"],
 ["Volver", "Back", "Voltar", "Retour", "Zurück", "Indietro"],
+["Lanzaagua", "Water Blaster", "Lança-água", "Lance-eau", "Wasserwerfer", "Lanciacqua"],
+["ABISMO DE ESPUMA", "FOAM ABYSS", "ABISMO DE ESPUMA", "ABÎME DE MOUSSE", "SCHAUMABGRUND", "ABISSO DI SCHIUMA"],
 ["Mapa de los mundos", "World map", "Mapa dos mundos", "Carte des mondes", "Weltkarte", "Mappa dei mondi"],
 ["🗺️ Mapa de los mundos", "🗺️ World map", "🗺️ Mapa dos mundos", "🗺️ Carte des mondes", "🗺️ Weltkarte", "🗺️ Mappa dei mondi"],
 ["🗺️ Continuar · {0}", "🗺️ Continue · {0}", "🗺️ Continuar · {0}", "🗺️ Continuer · {0}", "🗺️ Weiter · {0}", "🗺️ Continua · {0}"],
@@ -6953,7 +6962,7 @@ function drawDeviceScreen() {
   g.addColorStop(0, "#2e1c10"); g.addColorStop(1, "#050407"); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
   ui = [];
   const s = VW < 720, guess = guessDevice();
-  titleText("ABISMO NERF", s ? 70 : 110, s ? 34 : 56);
+  titleText("ABISMO DE ESPUMA", s ? 70 : 110, s ? 34 : 56);
   ctx.textAlign = "center"; ctx.fillStyle = "#fff3dc"; ctx.font = `bold ${s ? 18 : 24}px system-ui`;
   ctx.fillText("¿Dónde vas a jugar?", VW / 2, s ? 116 : 170);
   ctx.fillStyle = "rgba(243,230,200,0.6)"; ctx.font = `${s ? 12 : 14}px system-ui`;
