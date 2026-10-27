@@ -456,6 +456,7 @@ const store = {
 };
 const settings = { device: null, diff: store.get("diff", 1), sound: store.get("sound", true), minimap: +store.get("minimap", 1), fx: store.get("fx", true) };
 if (!(settings.minimap >= 0 && settings.minimap <= 2)) settings.minimap = 1;
+settings.volume = clamp(+store.get("volume", 0.8) || 0, 0, 1);
 settings.a11y = Object.assign({ text: 0, contrast: false, motion: matchMedia("(prefers-reduced-motion: reduce)").matches, voice: false }, store.get("a11y", {}) || {});
 const A11 = () => settings.a11y, UIK = () => [1, 1.2, 1.4][A11().text] || 1;
 settings.device = ["pc", "tablet", "phone"].includes(store.get("device", null)) ? store.get("device", null) : null;
@@ -497,7 +498,7 @@ function audio() {
   if (!AC) {
     try {
       AC = new (window.AudioContext || window.webkitAudioContext)();
-      master = AC.createGain(); master.gain.value = settings.sound ? 1 : 0; master.connect(AC.destination);
+      master = AC.createGain(); master.gain.value = settings.sound ? settings.volume : 0; master.connect(AC.destination);
       sfxBus = AC.createGain(); sfxBus.gain.value = 0.9; sfxBus.connect(master);
       musBus = AC.createGain(); musBus.gain.value = 0.55; musBus.connect(master);
       startAmbience();
@@ -505,7 +506,14 @@ function audio() {
   }
   if (AC && AC.state === "suspended") AC.resume();
 }
-function setSound(on) { settings.sound = on; store.set("sound", on); if (master) master.gain.value = on ? 1 : 0; }
+function setSound(on) { settings.sound = on; store.set("sound", on); if (on && settings.volume < 0.05) settings.volume = 0.5; applyVolume(); }
+function applyVolume() { if (master) master.gain.setTargetAtTime(settings.sound ? settings.volume : 0, AC.currentTime, 0.03); }
+function setVolume(v) {
+  settings.volume = clamp(Math.round(v * 100) / 100, 0, 1); store.set("volume", settings.volume);
+  settings.sound = settings.volume > 0; store.set("sound", settings.sound); applyVolume();
+}
+const volLabel = () => settings.sound ? Math.round(settings.volume * 100) + "%" : "No";
+const volItem = () => ({ label: `Volumen: ${volLabel()}`, fn: () => setVolume(settings.volume >= 1 ? 0 : settings.volume + 0.1), lr: d => { setVolume(settings.volume + d * 0.1); beep(660, 0.05, "triangle", 0.05); } });
 function beep(f, dur, type = "square", vol = 0.06, slide = 0, bus) {
   if (!AC) return;
   const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain();
@@ -1287,14 +1295,20 @@ addEventListener("keydown", e => {
     else if (e.code === "Escape") story.done();
     keys.Space = false; return;
   }
-  if (state === "custom" && picker.open) {
+  if (volPop && state === "title" && !exitDlg) {
+    if (["ArrowRight", "ArrowUp"].includes(e.code)) { setVolume(settings.volume + 0.1); volTick(); return; }
+    if (["ArrowLeft", "ArrowDown"].includes(e.code)) { setVolume(settings.volume - 0.1); volTick(); return; }
+    if (e.code === "KeyM") { setSound(!settings.sound); return; }
+    if (["Escape", "Enter", "Space"].includes(e.code)) { volPop = null; keys.Space = false; return; }
+  }
+  if (picker.open && (state === "custom" || state === "title")) {
     const n = sortedCountries.length;
     if (e.code === "ArrowDown") picker.sel = Math.min(n - 1, picker.sel + 1);
     else if (e.code === "ArrowUp") picker.sel = Math.max(0, picker.sel - 1);
     else if (e.code === "PageDown") picker.sel = Math.min(n - 1, picker.sel + 10);
     else if (e.code === "PageUp") picker.sel = Math.max(0, picker.sel - 10);
     else if (e.code === "Enter" || e.code === "Space") chooseCountry(sortedCountries[picker.sel]);
-    else if (e.code === "Escape") picker.open = false;
+    else if (e.code === "Escape") { picker.open = false; if (state === "title") uiSel = 0; }
     else if (e.key && e.key.length === 1) {
       const k = e.key.toLocaleLowerCase(LANG), norm = t => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase(LANG);
       const j = sortedCountries.findIndex(c => norm(countryName(c)).startsWith(norm(k)));
@@ -1325,7 +1339,7 @@ addEventListener("keydown", e => {
   if (state !== "play") {
     if (["ArrowUp", "KeyW"].includes(e.code)) { uiSel = (uiSel - 1 + ui.length) % Math.max(1, ui.length); SFX.ui(); }
     else if (["ArrowDown", "KeyS"].includes(e.code)) { uiSel = (uiSel + 1) % Math.max(1, ui.length); SFX.ui(); }
-    else if (["Enter", "Space"].includes(e.code)) { const b = ui[uiSel]; if (b) { SFX.uiGo(); b.fn(); } keys.Space = false; }
+    else if (["Enter", "Space"].includes(e.code)) { const b = ui[uiSel]; if (b) { pressFx(b); SFX.uiGo(); b.fn(); } keys.Space = false; }
     else if (e.code === "Escape" && state === "pause") resume();
     else if (e.code === "Escape" && state === "ach") { state = "title"; uiSel = 0; }
     else if (e.code === "Escape" && (state === "options" || state === "access")) closeSub();
@@ -1352,6 +1366,7 @@ addEventListener("keydown", e => {
 addEventListener("keyup", e => { keys[e.code] = false; });
 addEventListener("blur", () => { for (const k in keys) keys[k] = false; mouse.down = false; if (state === "play") pause(); });
 cv.addEventListener("mousemove", e => {
+  if (volDrag) volSetFromX(e.clientX);
   mouse.x = e.clientX; mouse.y = e.clientY; mouse.last = time;
   if (state !== "play") { const i = ui.findIndex(b => hitBox(b, e.clientX, e.clientY)); if (i >= 0 && i !== uiSel) { uiSel = i; } }
 });
@@ -1365,11 +1380,26 @@ cv.addEventListener("mousedown", e => {
   if (e.button === 0) mouse.down = true;
   if (e.button === 2) wantDash = true;
 });
-addEventListener("mouseup", () => { mouse.down = false; });
-cv.addEventListener("wheel", e => { if (state === "play") cycleWeapon(e.deltaY > 0 ? 1 : -1); else if (state === "custom" && picker.open) picker.scroll += e.deltaY; e.preventDefault(); }, { passive: false });
+addEventListener("mouseup", () => { mouse.down = false; if (volDrag) { volDrag = false; volTick(); } });
+cv.addEventListener("wheel", e => { if (state === "play") cycleWeapon(e.deltaY > 0 ? 1 : -1); else if (picker.open) picker.scroll += e.deltaY; else if (volPop) setVolume(settings.volume - Math.sign(e.deltaY) * 0.05); e.preventDefault(); }, { passive: false });
 cv.addEventListener("contextmenu", e => e.preventDefault());
 const hitBox = (b, x, y) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
-function clickUI(x, y) { const b = ui.find(b => hitBox(b, x, y)); if (b) { SFX.uiGo(); b.fn(); return true; } return false; }
+function clickUI(x, y) { const b = ui.find(b => hitBox(b, x, y)); if (b) { pressFx(b, x, y); SFX.uiGo(); b.fn(); return true; } return false; }
+// efecto de pulsación: onda que se expande desde el dedo o el ratón
+let presses = [];
+function pressFx(b, x, y) { if (A11().motion || !b || b.w > VW * 0.9) return; presses.push({ x: b.x, y: b.y, w: b.w, h: b.h, px: x == null ? b.x + b.w / 2 : x, py: y == null ? b.y + b.h / 2 : y, t: 0 }); }
+function drawPresses() {
+  if (!presses.length) return;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  for (const p of presses) {
+    p.t += frameDt; const k = p.t / 0.45;
+    ctx.save(); ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 10); ctx.clip();
+    ctx.fillStyle = `rgba(255,226,168,${0.35 * (1 - k)})`; ctx.beginPath(); ctx.arc(p.px, p.py, ease(k) * Math.hypot(p.w, p.h), 0, 7); ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = `rgba(255,210,120,${0.7 * (1 - k)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(p.x - k * 6, p.y - k * 6, p.w + k * 12, p.h + k * 12, 12); ctx.stroke();
+  }
+  presses = presses.filter(p => p.t < 0.45);
+}
 
 function btns() {
   const s = clamp(Math.min(VW, VH) / 420, 0.75, 1.15) * (settings.device === "tablet" ? 1.25 : 1);
@@ -1386,7 +1416,7 @@ const inBtn = (b, x, y) => Math.hypot(x - b.x, y - b.y) < b.r + 10;
 cv.addEventListener("touchstart", e => {
   e.preventDefault(); audio(); touch.on = true;
   if (homeHit(e.changedTouches[0].clientX, e.changedTouches[0].clientY)) return;
-  if (state === "custom" && picker.open) { const t = e.changedTouches[0]; picker.drag = { x: t.clientX, y: t.clientY, s0: picker.scroll, moved: false }; return; }
+  if (picker.open) { const t = e.changedTouches[0]; picker.drag = { x: t.clientX, y: t.clientY, s0: picker.scroll, moved: false }; return; }
   if (state !== "play") { const t = e.changedTouches[0]; if (state === "custom") nameInput.blur(); if (!clickUI(t.clientX, t.clientY) && state === "story") storyNext(1); return; }
   const B = btns();
   for (const t of e.changedTouches) {
@@ -1404,6 +1434,7 @@ cv.addEventListener("touchstart", e => {
 }, { passive: false });
 cv.addEventListener("touchmove", e => {
   e.preventDefault();
+  if (volDrag) { volSetFromX(e.changedTouches[0].clientX); return; }
   if (picker.drag) { const t = e.changedTouches[0], dy = t.clientY - picker.drag.y; if (Math.abs(dy) > 8) picker.drag.moved = true; picker.scroll = picker.drag.s0 - dy; return; }
   for (const t of e.changedTouches) {
     if (touch.joy && t.identifier === touch.joy.id) { touch.joy.x = t.clientX; touch.joy.y = t.clientY; }
@@ -1414,6 +1445,7 @@ cv.addEventListener("touchmove", e => {
   }
 }, { passive: false });
 const tend = e => {
+  if (volDrag) { volDrag = false; volTick(); return; }
   if (picker.drag) { const d = picker.drag; picker.drag = null; if (!d.moved) clickUI(d.x, d.y); return; }
   for (const t of e.changedTouches) {
     if (touch.joy && t.identifier === touch.joy.id) touch.joy = null;
@@ -1607,6 +1639,7 @@ function fire() {
       splash: w.splash || 0, color: foam ? skin.body(w.color) : w.color, tip: foam ? skin.tip : "#ff6a00", trail: foam ? skin.trail : null,
       pierce: w.pierce || 0, bounces: w.bounces || 0, hits: new Set(), t: 0 });
   }
+  rings.push({ x: mx + Math.cos(a) * 4, y: my + Math.sin(a) * 4, r: 2, max: w.darts > 1 || w.mega || w.rocket ? 16 : 9, life: 0.2, c: w.water ? "#9fe2ff" : "#fff2c0" });
   for (let i = 0; i < 5; i++) parts.push({ x: mx, y: my, vx: Math.cos(a + rand(-0.5, 0.5)) * rand(60, 160), vy: Math.sin(a + rand(-0.5, 0.5)) * rand(60, 160), life: 0.15, max: 0.15, c: "#fff2c0", s: 2, glow: true });
   if (w.rocket) { SFX.rocket(); P.kx -= Math.cos(a) * 140; P.ky -= Math.sin(a) * 140; shake = Math.max(shake, 3); }
   else if (id === "escopeta") { SFX.pump(); P.kx -= Math.cos(a) * 60; P.ky -= Math.sin(a) * 60; shake = Math.max(shake, 2.5); }
@@ -1796,6 +1829,7 @@ function updatePlayer(dt) {
   P.abilCd = Math.max(0, P.abilCd - dt); P.turbo = Math.max(0, P.turbo - dt); P.shield = Math.max(0, P.shield - dt); abilPop = Math.max(0, abilPop - dt * 3);
   if (P.turbo > 0 && Math.random() < dt * 20) ghosts.push({ x: P.x, y: P.y, life: 0.18 });
   P.inv -= dt; P.cd -= dt; P.dashCd -= dt; P.muzzle -= dt; P.recoil = Math.max(0, P.recoil - dt * 8);
+  P.spinV = (P.spinV || 0) + ((P.recoil > 0.1 ? 34 : 1.5) - (P.spinV || 0)) * Math.min(1, dt * 4); P.spin = (P.spin || 0) + P.spinV * dt;
   if (P.reloading > 0) {
     P.reloading -= dt;
     if (P.reloading <= 0) { const id = curId(), take = Math.min(curW().clip - P.ammo[id], P.res[id] || 0); P.ammo[id] += take; P.res[id] -= take; SFX.reloaded(); }
@@ -2376,7 +2410,26 @@ function finishLevel() {
 
 // ---------- Dibujo ----------
 let camX = 0, camY = 0;
-function draw() { drawMain(); drawNavBtns(); drawSaveIcon(); drawAchPop(); if (exitDlg) drawExitDlg(); else announceUI(); }
+const transCv = document.createElement("canvas"); let transT = 0, transFrom = "";
+function captureTransition() {
+  const quiet = ["play", "pause", "dead", "levelDone", "win"];
+  if (A11().motion || (quiet.includes(transFrom) && quiet.includes(state))) return;
+  if (transCv.width !== cv.width || transCv.height !== cv.height) { transCv.width = cv.width; transCv.height = cv.height; }
+  const c = transCv.getContext("2d"); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, cv.width, cv.height); c.drawImage(cv, 0, 0); transT = 1;
+}
+function drawTransition() {
+  if (transT <= 0) return;
+  transT = Math.max(0, transT - frameDt / 0.32);
+  const k = ease(transT);
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = k;
+  const z = 1 + (1 - k) * 0.06; ctx.translate(cv.width / 2, cv.height / 2); ctx.scale(z, z); ctx.translate(-cv.width / 2, -cv.height / 2);
+  ctx.drawImage(transCv, 0, 0); ctx.restore();
+}
+function draw() {
+  if (state !== transFrom) { captureTransition(); transFrom = state; }
+  drawFrame();
+}
+function drawFrame() { drawMain(); drawTransition(); drawPresses(); drawNavBtns(); drawVolPop(); drawSaveIcon(); drawAchPop(); if (exitDlg) drawExitDlg(); else announceUI(); }
 function drawMain() {
   ui = [];
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -2856,64 +2909,213 @@ function heart(x, y, s, c) {
   ctx.fillStyle = c; ctx.fill();
 }
 // Lanzador Nerf apuntando hacia +x
-function drawGun(id, s = 1) {
-  const w = WEAPONS[id];
+// ---------- Lanzadores Nerf: dibujo detallado (base en caché) + piezas móviles animadas ----------
+// colores tipo Nerf: cuerpo de color vivo, boquilla naranja, detalles amarillos y azules, piezas gris oscuro
+const hexTone = (hex, k) => mixHex(hex, k > 0 ? "#ffffff" : "#000000", Math.abs(k));
+const G_DARK = "#33343c", G_ORANGE = "#ff7a12", G_YELLOW = "#ffd23f", G_BLUE = "#3fb7ff";
+function gPart(c, x, y, w, h, r, col, gloss = true) {
+  const g = c.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, hexTone(col, 0.38)); g.addColorStop(0.42, col); g.addColorStop(1, hexTone(col, -0.38));
+  c.fillStyle = g; c.beginPath(); c.roundRect(x, y, w, h, r); c.fill();
+  c.strokeStyle = hexTone(col, -0.68); c.lineWidth = 0.55; c.stroke();
+  if (gloss && w > 3) { c.fillStyle = "rgba(255,255,255,0.5)"; c.beginPath(); c.roundRect(x + Math.min(r, 1.5) + 0.4, y + 0.45, w - Math.min(r, 1.5) * 2 - 0.8, Math.min(1, h * 0.2), 0.4); c.fill(); }
+}
+function gPoly(c, pts, col) {
+  let y0 = Infinity, y1 = -Infinity; for (const p of pts) { y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+  const g = c.createLinearGradient(0, y0, 0, y1); g.addColorStop(0, hexTone(col, 0.3)); g.addColorStop(1, hexTone(col, -0.4));
+  c.fillStyle = g; c.beginPath(); pts.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])); c.closePath(); c.fill();
+  c.strokeStyle = hexTone(col, -0.68); c.lineWidth = 0.55; c.lineJoin = "round"; c.stroke();
+}
+function gScrew(c, x, y) { c.fillStyle = "#d8d8de"; c.beginPath(); c.arc(x, y, 0.55, 0, 7); c.fill(); c.strokeStyle = "rgba(0,0,0,0.6)"; c.lineWidth = 0.25; c.stroke(); }
+function gVents(c, x, y, n, step = 1.6) { c.fillStyle = "rgba(0,0,0,0.45)"; for (let i = 0; i < n; i++) c.fillRect(x + i * step, y, 0.8, 1.6); }
+function gRidges(c, x, y, h, n) { c.strokeStyle = "rgba(0,0,0,0.3)"; c.lineWidth = 0.35; for (let i = 0; i < n; i++) { c.beginPath(); c.moveTo(x + i * 1.1, y); c.lineTo(x + i * 1.1 - 0.6, y + h); c.stroke(); } }
+// boquilla naranja con el agujero del dardo: el toque característico Nerf
+function gTip(c, x, y, h) { gPart(c, x, y - h / 2, 2.4, h, 0.7, G_ORANGE); c.fillStyle = "#1a1210"; c.beginPath(); c.ellipse(x + 2.4, y, 0.55, h * 0.28, 0, 0, 7); c.fill(); }
+function gLogo(c, x, y) { c.fillStyle = G_BLUE; c.beginPath(); c.arc(x, y, 1.1, 0, 7); c.fill(); c.fillStyle = "#fff"; c.font = "bold 1.6px system-ui"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("N", x, y + 0.1); c.textBaseline = "alphabetic"; }
+function gGuard(c, x, y, r) { c.strokeStyle = G_DARK; c.lineWidth = 0.9; c.beginPath(); c.arc(x, y, r, 0.1, Math.PI - 0.1); c.stroke(); }
+
+const GUN_ART = {
+  pistola: {
+    base(c, col) {
+      gPoly(c, [[-3.8, 1.2], [0.8, 1.2], [1.6, 7.6], [-2.6, 7.6]], G_YELLOW); gRidges(c, -2.4, 3, 4, 3);
+      gGuard(c, 2.4, 1.6, 1.8);
+      gPart(c, -5, -3.6, 14, 5, 1.6, col); gVents(c, 1, -2.2, 3); gScrew(c, -3.2, -0.4); gScrew(c, 6.8, -0.4); gLogo(c, 3, -0.6);
+      gPart(c, 9, -2.6, 2.4, 3.2, 0.6, G_DARK, false); gTip(c, 11.2, -1, 3.4);
+    },
+    dyn(c, a) { gPart(c, -6.4 - a.recoil * 1.8, -3.1, 2.2, 3.4, 0.6, G_DARK, false); },
+  },
+  escopeta: {
+    base(c, col) {
+      gPoly(c, [[-13, -2.4], [-7, -2.8], [-7, 2.2], [-13, 4.2]], "#ff8a1f");
+      gPoly(c, [[-6.6, 1.8], [-2.6, 1.8], [-1.8, 7.2], [-5.8, 7.2]], "#ff8a1f"); gRidges(c, -5.4, 3, 3.6, 3);
+      gGuard(c, -0.6, 2.2, 1.7);
+      gPart(c, -7.5, -3.9, 20, 6.2, 1.8, col); gVents(c, -4, -2.4, 4); gScrew(c, -5.8, 0.6); gScrew(c, 9.8, 0.6); gLogo(c, 1, -0.6);
+      gPart(c, 12.5, -3, 2.6, 4.2, 0.6, G_DARK, false); gTip(c, 14.7, -0.9, 4.4);
+    },
+    // corredera de bombeo: se va hacia atrás con cada disparo
+    dyn(c, a) { const p = a.recoil * 3.2; gPart(c, 2.2 - p, 2.3, 7.5, 3.2, 1.2, G_ORANGE); gRidges(c, 3.6 - p, 2.6, 2.6, 4); },
+  },
+  semi: {
+    base(c, col) {
+      gPoly(c, [[-5.4, 1.4], [-1.4, 1.4], [-0.6, 7.6], [-4.6, 7.6]], G_BLUE); gRidges(c, -4.2, 3.4, 3.6, 3);
+      gPart(c, 1, 1.6, 3.4, 5, 0.6, G_YELLOW);
+      gGuard(c, -0.2, 1.8, 1.6);
+      gPart(c, -6.5, -3.4, 17, 5, 1.4, col); gScrew(c, -5, 0); gScrew(c, 8.6, 0); gLogo(c, 4.6, -0.8);
+      gPart(c, 10.2, -2.4, 3, 3, 0.5, G_DARK, false); gTip(c, 13, -0.9, 3.2);
+    },
+    // corredera superior que retrocede al disparar
+    dyn(c, a) { const p = a.recoil * 2.2; gPart(c, -5.6 - p, -5.2, 13, 2.2, 0.8, G_DARK); gVents(c, -2.6 - p, -4.8, 5, 1.7); },
+  },
+  rifle: {
+    base(c, col) {
+      gPoly(c, [[-14, -2], [-6, -2.4], [-6, 2.6], [-13.4, 4.4]], G_DARK);
+      gPoly(c, [[-3, 1.6], [0.4, 1.6], [1, 6.8], [-2.4, 6.8]], G_DARK); gGuard(c, 2.2, 2, 1.5);
+      gPart(c, -6.5, -2.8, 23, 4.6, 1.4, col); gVents(c, 6, -1.8, 5); gScrew(c, -4.8, 0); gLogo(c, 2.6, -0.4);
+      gPart(c, 16.2, -1.9, 2.4, 2.8, 0.5, G_DARK, false); gTip(c, 18.4, -0.5, 2.8);
+      // mira telescópica
+      gPart(c, -0.5, -7, 10.5, 3.4, 1.5, G_DARK); gPart(c, 2, -3.8, 1.2, 1.2, 0.3, G_DARK, false); gPart(c, 6.5, -3.8, 1.2, 1.2, 0.3, G_DARK, false);
+    },
+    // destello de la lente y cerrojo que se mueve al recargar
+    dyn(c, a) {
+      const gl = 0.5 + 0.5 * Math.sin(a.t * 3);
+      c.fillStyle = `rgba(160,235,255,${0.6 + gl * 0.4})`; c.beginPath(); c.ellipse(10, -5.3, 0.8, 1.4, 0, 0, 7); c.fill();
+      c.fillStyle = `rgba(255,255,255,${gl})`; c.beginPath(); c.arc(10.1, -5.9, 0.35, 0, 7); c.fill();
+      const b = Math.sin(a.reload * Math.PI) * 3; gPart(c, -2 - b, -4.2, 2.4, 1.6, 0.5, "#c9c9d2", false); c.fillStyle = "#c9c9d2"; c.beginPath(); c.arc(-2.4 - b, -2.6, 0.9, 0, 7); c.fill();
+    },
+  },
+  ametra: {
+    base(c, col) {
+      gPoly(c, [[-12, -2.6], [-8, -3], [-8, 3], [-12, 4]], G_ORANGE);
+      gPart(c, -3, 2.2, 7, 7.2, 2.6, G_YELLOW); c.fillStyle = "rgba(0,0,0,0.25)"; for (let i = 0; i < 4; i++) c.fillRect(-2 + i * 1.6, 3.4, 0.7, 5);
+      gPoly(c, [[-7.4, 1.8], [-4.4, 1.8], [-3.8, 7], [-6.8, 7]], G_DARK);
+      gPart(c, -8.5, -4, 21.5, 6.4, 1.8, col); gVents(c, 4, -2.6, 4); gScrew(c, -7, 0); gScrew(c, 11.6, 0); gLogo(c, -2.4, -0.8);
+      gPart(c, -4, -6, 9, 2, 0.8, G_DARK);
+    },
+    // cañones giratorios: rotan más rápido mientras disparas
+    dyn(c, a) {
+      gPart(c, 13, -3.6, 4.4, 5.4, 1, G_DARK, false);
+      for (let i = 0; i < 3; i++) { const ph = a.spin + i * 2.094, y = Math.sin(ph) * 1.7 - 0.9, z = Math.cos(ph); c.fillStyle = z > 0 ? "#6a6c78" : "#24252b"; c.fillRect(13.4, y - 0.5, 4, 1); }
+      gTip(c, 17.4, -0.9, 5);
+    },
+  },
+  ballesta: {
+    base(c, col) {
+      gPoly(c, [[-12, -1.6], [-7, -2.2], [-7, 2.4], [-12, 3.6]], "#7a5230");
+      gPart(c, -8, -2.2, 17, 4.4, 1.4, "#8b5e36"); c.strokeStyle = "rgba(60,35,15,0.5)"; c.lineWidth = 0.3;
+      for (let i = 0; i < 5; i++) { c.beginPath(); c.moveTo(-7 + i * 3, -1.4); c.quadraticCurveTo(-5.6 + i * 3, 0, -7 + i * 3, 1.6); c.stroke(); }
+      gPoly(c, [[-6, 1.8], [-3, 1.8], [-2.4, 6.6], [-5.4, 6.6]], G_DARK);
+      c.lineCap = "round"; c.strokeStyle = hexTone(col, -0.5); c.lineWidth = 2.6; c.beginPath(); c.arc(4, 0, 7.6, -1.22, 1.22); c.stroke();
+      c.strokeStyle = col; c.lineWidth = 1.8; c.beginPath(); c.arc(4, 0, 7.6, -1.22, 1.22); c.stroke();
+      c.strokeStyle = "rgba(255,255,255,0.6)"; c.lineWidth = 0.5; c.beginPath(); c.arc(4, 0, 8.1, -1.1, -0.2); c.stroke();
+    },
+    // la cuerda se tensa y el dardo sale disparado
+    dyn(c, a) {
+      const pull = 3 - a.recoil * 2.6, ex = 4 + Math.cos(1.22) * 7.6, ey = Math.sin(1.22) * 7.6;
+      c.strokeStyle = "#f2f2f2"; c.lineWidth = 0.55; c.beginPath(); c.moveTo(ex, -ey); c.lineTo(-1 - pull, 0); c.lineTo(ex, ey); c.stroke();
+      if (a.recoil < 0.5) { gPart(c, -1 - pull, -0.7, 13, 1.4, 0.5, G_YELLOW, false); gPart(c, 11.6 - pull, -1.2, 2.6, 2.4, 1, G_ORANGE, false); }
+    },
+  },
+  discos: {
+    base(c, col) {
+      gPoly(c, [[-6.4, 2.4], [-3, 2.4], [-2.4, 7.6], [-5.8, 7.6]], "#ff8a1f"); gRidges(c, -5.4, 3.8, 3.4, 3);
+      gPart(c, -7.5, -3.2, 19, 6.2, 1.8, col); gVents(c, 6, -1.6, 3); gScrew(c, -6, 0.6); gLogo(c, 8, 0.6);
+      gPart(c, 11.5, -2.6, 3, 5, 1, G_DARK, false); c.fillStyle = "#111"; c.fillRect(14, -1.8, 0.7, 3.6);
+    },
+    // cargador de discos girando
+    dyn(c, a) {
+      c.save(); c.translate(1, -4.4); c.rotate(a.spin * 0.5);
+      gPart(c, -5, -5, 10, 10, 5, G_YELLOW); c.fillStyle = "#8a3fd0"; c.beginPath(); c.arc(0, 0, 2.2, 0, 7); c.fill();
+      c.strokeStyle = "rgba(0,0,0,0.35)"; c.lineWidth = 0.4; for (let i = 0; i < 6; i++) { const q = i / 6 * Math.PI * 2; c.beginPath(); c.moveTo(Math.cos(q) * 2.6, Math.sin(q) * 2.6); c.lineTo(Math.cos(q) * 4.6, Math.sin(q) * 4.6); c.stroke(); }
+      c.restore();
+    },
+  },
+  soaker: {
+    base(c, col) {
+      gPoly(c, [[-12, -2], [-8, -2.6], [-8, 2.6], [-12, 3.4]], G_ORANGE);
+      gPoly(c, [[-1.6, 1.6], [1.8, 1.6], [2.6, 7.6], [-0.8, 7.6]], G_ORANGE); gRidges(c, -0.6, 3.4, 3.6, 3);
+      gPart(c, -8.5, -2.8, 21, 5.4, 1.8, G_YELLOW); gScrew(c, -7, 0); gLogo(c, 8, 0);
+      gPart(c, 4, 2, 7, 2.6, 1.2, G_BLUE); // bomba
+      gPart(c, 12.5, -1.6, 4.6, 3, 1, G_BLUE); c.fillStyle = "#123"; c.beginPath(); c.arc(17.1, -0.1, 0.6, 0, 7); c.fill();
+    },
+    // depósito con agua que se mueve
+    dyn(c, a) {
+      const x = -6.5, y = -9.6, w = 13, h = 7.2;
+      c.fillStyle = "rgba(220,245,255,0.35)"; c.beginPath(); c.roundRect(x, y, w, h, 2.6); c.fill();
+      c.save(); c.beginPath(); c.roundRect(x, y, w, h, 2.6); c.clip();
+      const lvl = y + h * 0.35, sl = Math.sin(a.t * 3) * 0.9 + a.recoil * 1.5;
+      c.fillStyle = "rgba(60,180,255,0.85)"; c.beginPath(); c.moveTo(x, lvl + sl);
+      for (let i = 0; i <= 6; i++) c.lineTo(x + i * w / 6, lvl + sl * (1 - i / 3) + Math.sin(a.t * 6 + i) * 0.35);
+      c.lineTo(x + w, y + h); c.lineTo(x, y + h); c.closePath(); c.fill();
+      c.fillStyle = "rgba(255,255,255,0.7)"; for (let i = 0; i < 3; i++) { const by = y + h - ((a.t * 3 + i * 0.7) % 1) * h * 0.6; c.beginPath(); c.arc(x + 3 + i * 3.5, by, 0.45, 0, 7); c.fill(); }
+      c.restore();
+      c.strokeStyle = "rgba(30,90,130,0.9)"; c.lineWidth = 0.55; c.beginPath(); c.roundRect(x, y, w, h, 2.6); c.stroke();
+      c.fillStyle = "rgba(255,255,255,0.6)"; c.fillRect(x + 1.6, y + 1, 5, 0.8);
+    },
+  },
+  granada: {
+    base(c, col) {
+      gPoly(c, [[-7, 3], [-3.6, 3], [-3, 8], [-6.4, 8]], G_DARK); gRidges(c, -6, 4.2, 3.4, 3);
+      gPart(c, -9, -4.2, 15, 8.4, 2, col); gScrew(c, -7.6, 2.8); gScrew(c, 4.6, 2.8);
+      gPart(c, 6, -2.8, 8.6, 5.6, 1.4, G_BLUE); gTip(c, 14.4, 0, 5.4);
+    },
+    // tambor giratorio con las granadas
+    dyn(c, a) {
+      c.save(); c.translate(-1, 0); c.rotate(a.spin * 0.35 + a.reload * Math.PI * 2);
+      gPart(c, -4.8, -4.8, 9.6, 9.6, 4.8, G_DARK); c.fillStyle = G_YELLOW;
+      for (let i = 0; i < 6; i++) { const q = i / 6 * Math.PI * 2; c.beginPath(); c.arc(Math.cos(q) * 2.9, Math.sin(q) * 2.9, 1.05, 0, 7); c.fill(); }
+      c.fillStyle = "#888"; c.beginPath(); c.arc(0, 0, 0.9, 0, 7); c.fill();
+      c.restore();
+    },
+  },
+  canon: {
+    base(c, col) {
+      c.fillStyle = "#2a2b31"; c.beginPath(); c.arc(-3, 5, 4.2, 0, 7); c.fill(); c.strokeStyle = "#555"; c.lineWidth = 0.6; c.stroke();
+      c.fillStyle = "#777"; c.beginPath(); c.arc(-3, 5, 1.2, 0, 7); c.fill();
+      gPart(c, -10, -5, 21, 10, 3, col); gVents(c, -7, -3.4, 4, 1.8); gScrew(c, -8.4, 3); gScrew(c, 9, 3); gLogo(c, 4, 1.2);
+      gPart(c, 10, -6.4, 4.8, 12.8, 1.5, G_YELLOW);
+      c.fillStyle = "rgba(255,255,255,0.3)"; c.fillRect(-8.5, -4.2, 17, 1.1);
+    },
+    // boca incandescente que late, más fuerte al disparar
+    dyn(c, a) {
+      const p = 0.55 + 0.25 * Math.sin(a.t * 5) + a.recoil * 0.6;
+      const g = c.createRadialGradient(15.4, 0, 0, 15.4, 0, 4.4); g.addColorStop(0, `rgba(255,240,170,${Math.min(1, p)})`); g.addColorStop(0.5, `rgba(255,120,20,${Math.min(1, p)})`); g.addColorStop(1, "rgba(255,80,0,0)");
+      c.fillStyle = g; c.beginPath(); c.arc(15.4, 0, 4.4, 0, 7); c.fill();
+      c.fillStyle = "#3a1608"; c.beginPath(); c.arc(15.6, 0, 1.6, 0, 7); c.fill();
+    },
+  },
+  cohete: {
+    base(c, col) {
+      gPoly(c, [[-1.6, 3.6], [1.8, 3.6], [2.4, 8.6], [-1, 8.6]], G_BLUE); gRidges(c, -0.6, 5, 3.4, 3);
+      gPart(c, -11, -4.8, 23, 8.6, 3.4, col); gVents(c, -8, -3.2, 3); gScrew(c, -9.4, 2); gLogo(c, 5, 1.4);
+      gPart(c, -12.6, -5.6, 3, 10.2, 1, G_DARK); gPart(c, 6, -7.6, 6, 2.6, 1, G_DARK);
+    },
+    // cohete asomando con el morro brillante
+    dyn(c, a) {
+      if (a.reload > 0 && a.reload < 1) c.globalAlpha *= a.reload;
+      gPart(c, 11, -3, 3.6, 5, 1, "#e8e8ee"); c.fillStyle = G_YELLOW; c.beginPath(); c.moveTo(14.4, -3); c.quadraticCurveTo(18.4, -0.5, 14.4, 2); c.closePath(); c.fill();
+      c.fillStyle = `rgba(255,255,255,${0.4 + 0.3 * Math.sin(a.t * 4)})`; c.beginPath(); c.arc(15.4, -1.4, 0.6, 0, 7); c.fill();
+      c.globalAlpha = 1;
+    },
+  },
+};
+const GUN_SPR = {}, GUN_K = 8, GUN_BX = -16, GUN_BY = -13, GUN_W = 38, GUN_H = 26;
+function gunSprite(id) {
+  if (GUN_SPR[id]) return GUN_SPR[id];
+  const cv = document.createElement("canvas"); cv.width = GUN_W * GUN_K; cv.height = GUN_H * GUN_K;
+  const c = cv.getContext("2d"); c.setTransform(GUN_K, 0, 0, GUN_K, -GUN_BX * GUN_K, -GUN_BY * GUN_K);
+  // sombra de contacto suave para dar volumen
+  c.shadowColor = "rgba(0,0,0,0.35)"; c.shadowBlur = 1.2 * GUN_K; c.shadowOffsetY = 0.6 * GUN_K;
+  GUN_ART[id].base(c, WEAPONS[id].color);
+  return (GUN_SPR[id] = cv);
+}
+const GUN_IDLE = { recoil: 0, spin: 0, reload: 0, t: 0 };
+function drawGun(id, s = 1, an) {
+  const art = GUN_ART[id]; if (!art) return;
+  const a = an || GUN_IDLE;
+  if (!an) { GUN_IDLE.t = A11().motion ? 0 : time; GUN_IDLE.spin = A11().motion ? 0 : time * 1.6; }
   ctx.save(); ctx.scale(s, s);
-  ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = 1;
-  if (id === "pistola") {
-    ctx.fillStyle = w.color; ctx.fillRect(-4, -3, 13, 5); ctx.strokeRect(-4, -3, 13, 5);
-    ctx.fillStyle = "#ffd23f"; ctx.fillRect(-3, 2, 4, 5); ctx.fillStyle = "#2c2c2c"; ctx.fillRect(9, -2, 3, 3);
-  } else if (id === "escopeta") {
-    ctx.fillStyle = w.color; ctx.fillRect(-7, -3.5, 19, 6); ctx.strokeRect(-7, -3.5, 19, 6);
-    ctx.fillStyle = "#ff8a1f"; ctx.fillRect(1, 2.5, 7, 3); ctx.fillRect(-7, 2, 4, 5);
-    ctx.fillStyle = "#2c2c2c"; ctx.fillRect(12, -3, 3, 5);
-  } else if (id === "ametra") {
-    ctx.fillStyle = w.color; ctx.fillRect(-8, -3.5, 21, 6); ctx.strokeRect(-8, -3.5, 21, 6);
-    ctx.fillStyle = "#ffd23f"; ctx.fillRect(-1, 2.5, 5, 7); ctx.fillStyle = "#ff8a1f"; ctx.fillRect(-8, -1, 4, 6);
-    ctx.fillStyle = "#2c2c2c"; ctx.fillRect(13, -2.5, 4, 4);
-  } else if (id === "cohete") {
-    ctx.fillStyle = w.color; ctx.fillRect(-10, -4.5, 22, 8); ctx.strokeRect(-10, -4.5, 22, 8);
-    ctx.fillStyle = "#ffd23f"; ctx.beginPath(); ctx.arc(13, -0.5, 4, 0, 7); ctx.fill();
-    ctx.fillStyle = "#3fb7ff"; ctx.fillRect(-2, 3.5, 4, 5);
-  } else if (id === "semi") {
-    ctx.fillStyle = w.color; ctx.fillRect(-6, -3, 16, 5); ctx.strokeRect(-6, -3, 16, 5);
-    ctx.fillStyle = "#2c2c2c"; ctx.fillRect(10, -2, 4, 3);
-    ctx.fillStyle = "#3fb7ff"; ctx.fillRect(-4, 2, 4, 6); ctx.fillStyle = "#ffd23f"; ctx.fillRect(2, 2, 3, 4);
-    ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.fillRect(-5, -2.5, 14, 1);
-  } else if (id === "rifle") {
-    ctx.fillStyle = "#2c2c2c"; ctx.fillRect(-12, -1.5, 7, 5);
-    ctx.fillStyle = w.color; ctx.fillRect(-6, -2.5, 22, 4.5); ctx.strokeRect(-6, -2.5, 22, 4.5);
-    ctx.fillStyle = "#2c2c2c"; ctx.fillRect(0, -6.5, 9, 3.2); ctx.fillStyle = "#9fe8ff"; ctx.fillRect(8, -6, 1.3, 2.2);
-    ctx.fillStyle = "#ff8a1f"; ctx.fillRect(16, -1.6, 3, 2.6); ctx.fillStyle = "#2c2c2c"; ctx.fillRect(-2, 2, 3, 5);
-  } else if (id === "canon") {
-    ctx.fillStyle = "#3a3a44"; ctx.beginPath(); ctx.arc(-3, 4, 4, 0, 7); ctx.fill();
-    ctx.fillStyle = w.color; ctx.fillRect(-9, -4.5, 20, 9); ctx.strokeRect(-9, -4.5, 20, 9);
-    ctx.fillStyle = "#ffd23f"; ctx.fillRect(10, -6, 4.5, 12); ctx.strokeRect(10, -6, 4.5, 12);
-    ctx.fillStyle = "#ff6a00"; ctx.beginPath(); ctx.arc(15, 0, 2.8, 0, 7); ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,0.3)"; ctx.fillRect(-8, -3.8, 18, 1.2);
-  } else if (id === "ballesta") {
-    ctx.fillStyle = "#6b4a2a"; ctx.fillRect(-8, -2, 16, 4); ctx.strokeRect(-8, -2, 16, 4);
-    ctx.strokeStyle = w.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(3, 0, 7, -1.25, 1.25); ctx.stroke();
-    ctx.strokeStyle = "#eeeeee"; ctx.lineWidth = 0.6; ctx.beginPath(); ctx.moveTo(3 + Math.cos(-1.25) * 7, Math.sin(-1.25) * 7); ctx.lineTo(-3, 0); ctx.lineTo(3 + Math.cos(1.25) * 7, Math.sin(1.25) * 7); ctx.stroke();
-    ctx.fillStyle = "#ffd23f"; ctx.fillRect(-3, -0.7, 14, 1.4); ctx.fillStyle = "#ff6a00"; ctx.fillRect(10, -1.2, 2.6, 2.4);
-    ctx.fillStyle = "#2c2c2c"; ctx.fillRect(-6, 2, 3, 4);
-  } else if (id === "discos") {
-    ctx.fillStyle = w.color; ctx.fillRect(-7, -3, 18, 6); ctx.strokeRect(-7, -3, 18, 6);
-    ctx.fillStyle = "#ffd23f"; ctx.beginPath(); ctx.arc(1, -4, 4.5, 0, 7); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = "#8a3fd0"; ctx.beginPath(); ctx.arc(1, -4, 2, 0, 7); ctx.fill();
-    ctx.fillStyle = "#2c2c2c"; ctx.fillRect(11, -2.5, 3, 5); ctx.fillStyle = "#ff8a1f"; ctx.fillRect(-6, 3, 4, 4);
-  } else if (id === "soaker") {
-    ctx.fillStyle = "#ffd23f"; ctx.fillRect(-8, -2.5, 20, 5); ctx.strokeRect(-8, -2.5, 20, 5);
-    ctx.fillStyle = "rgba(79,210,255,0.85)"; ctx.beginPath(); ctx.roundRect(-6, -8.5, 12, 6.5, 2.5); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = "rgba(255,255,255,0.55)"; ctx.fillRect(-4.5, -7.5, 6, 1.2);
-    ctx.fillStyle = "#3fb7ff"; ctx.fillRect(12, -1.5, 4, 3); ctx.fillStyle = "#ff8a1f"; ctx.fillRect(-1, 2.5, 4, 5);
-  } else if (id === "granada") {
-    ctx.fillStyle = w.color; ctx.fillRect(-8, -4, 14, 8); ctx.strokeRect(-8, -4, 14, 8);
-    ctx.fillStyle = "#2c2c2c"; ctx.beginPath(); ctx.arc(-1, 0, 4.5, 0, 7); ctx.fill();
-    ctx.fillStyle = "#ffd23f"; for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; ctx.beginPath(); ctx.arc(-1 + Math.cos(a) * 2.8, Math.sin(a) * 2.8, 0.9, 0, 7); ctx.fill(); }
-    ctx.fillStyle = "#3fb7ff"; ctx.fillRect(6, -2.5, 8, 5); ctx.strokeRect(6, -2.5, 8, 5);
-    ctx.fillStyle = "#2c2c2c"; ctx.fillRect(-6, 4, 3, 4);
-  }
+  ctx.drawImage(gunSprite(id), GUN_BX, GUN_BY, GUN_W, GUN_H);
+  art.dyn(ctx, a);
   ctx.restore();
 }
 function mixHex(a, b, k) {
@@ -3014,7 +3216,7 @@ function drawPlayer() {
   if (Math.abs(P.aim) > Math.PI / 2) ctx.scale(1, -1);
   if (P.reloading > 0) ctx.rotate(-ease(1 - P.reloading / curW().reload) * Math.PI * 2);
   ctx.translate(0, -swapT * 6); ctx.scale(1 + swapT * 0.3, 1 + swapT * 0.3);
-  drawGun(curId());
+  drawGun(curId(), 1, { recoil: P.recoil, spin: P.spin || 0, reload: P.reloading > 0 ? 1 - P.reloading / curW().reload : 0, t: time });
   ctx.fillStyle = SKIN_TONES[look.skin] || "#e9b98a"; ctx.beginPath(); ctx.arc(-1.5, 3, 2.1, 0, 7); ctx.arc(6, 1.5, 1.9, 0, 7); ctx.fill();
   ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.beginPath(); ctx.arc(-1.2, 3.6, 1.2, 0, 7); ctx.fill();
   ctx.restore();
@@ -3471,6 +3673,7 @@ function drawMiniMap(mx, my, mw, mh, sc, local) {
   ctx.strokeStyle = "rgba(232,163,61,0.5)"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, 8); ctx.stroke();
   ctx.fillStyle = "rgba(243,230,200,0.7)"; ctx.font = "bold 9px system-ui"; ctx.textAlign = "left"; ctx.fillText(local ? "MAPA · TAB" : "MAPA COMPLETO · TAB para cerrar", mx + 6, my + mh - 6);
 }
+const ammoSeen = {}, ammoPop = {};
 function drawSlot(id, x, y, sw, sh, key) {
   const have = P.weapons.includes(id), cur = curId() === id, wd = WEAPONS[id], pulse = slotPulse[id] || 0;
   if (cur) y -= 4 + swapT * 5;
@@ -3488,7 +3691,9 @@ function drawSlot(id, x, y, sw, sh, key) {
     ctx.fillStyle = "rgba(243,230,200,0.35)"; ctx.font = "bold 12px system-ui"; ctx.textAlign = "center"; ctx.fillText("?", x + sw / 2, y + sh - 8);
     return;
   }
-  ctx.save(); ctx.translate(x + sw / 2, y + sh * 0.37); ctx.scale(1 + pulse * 0.2, 1 + pulse * 0.2); drawGun(id, sc); ctx.restore();
+  ctx.save(); ctx.translate(x + sw / 2, y + sh * 0.37); ctx.scale(1 + pulse * 0.2, 1 + pulse * 0.2);
+  if (cur && !A11().motion) ctx.rotate(Math.sin(time * 2.2) * 0.08 - P.recoil * 0.25);
+  drawGun(id, sc); ctx.restore();
   const a = P.ammo[id] || 0, r = P.res[id] || 0, bx = x + 4, bw = sw - 8, by = y + sh - 21;
   // barra del cargador (o de recarga)
   ctx.fillStyle = "rgba(255,255,255,0.12)"; ctx.fillRect(bx, by, bw, 3);
@@ -3499,7 +3704,10 @@ function drawSlot(id, x, y, sw, sh, key) {
   ctx.font = f1; const w1 = ctx.measureText(t1).width; ctx.font = f2; const w2 = ctx.measureText(t2).width;
   const tx = x + sw / 2 - (w1 + w2) / 2;
   ctx.textAlign = "left";
-  ctx.font = f1; ctx.fillStyle = a === 0 ? "#ff6b6b" : "#fff3dc"; ctx.fillText(t1, tx, y + sh - 6);
+  if (ammoSeen[id] !== a) { if (ammoSeen[id] !== undefined) ammoPop[id] = 1; ammoSeen[id] = a; }
+  const ap = ammoPop[id] = Math.max(0, (ammoPop[id] || 0) - frameDt * 6);
+  ctx.save(); ctx.translate(tx + w1 / 2, y + sh - 10); ctx.scale(1 + ap * 0.45, 1 + ap * 0.45); ctx.translate(-tx - w1 / 2, -(y + sh - 10));
+  ctx.font = f1; ctx.fillStyle = a === 0 ? "#ff6b6b" : ap > 0.3 ? "#ffe27a" : "#fff3dc"; ctx.fillText(t1, tx, y + sh - 6); ctx.restore();
   ctx.font = f2; ctx.fillStyle = r === 0 ? "#e5484d" : "rgba(243,230,200,0.6)"; ctx.fillText(t2, tx + w1, y + sh - 6);
   if (a + r === 0) { ctx.fillStyle = "rgba(229,72,77,0.18)"; ctx.beginPath(); ctx.roundRect(x, y, sw, sh, 7); ctx.fill(); }
 }
@@ -3605,7 +3813,7 @@ function drawPause() {
     { label: "Reiniciar nivel", fn: () => loadLevel(levelIdx, true) },
     ...(inTutorial ? [{ label: "Saltar tutorial", fn: endTutorial }] : []),
     { label: `Minimapa: ${["No", "Pequeño", "Grande"][settings.minimap]}`, fn: () => { settings.minimap = (settings.minimap + 1) % 3; store.set("minimap", settings.minimap); } },
-    { label: `Sonido: ${settings.sound ? "Sí" : "No"}`, fn: () => setSound(!settings.sound) },
+    volItem(),
     { label: `Efectos: ${settings.fx ? "Altos" : "Bajos"}`, fn: toggleFx },
     { label: "Salir al menú", fn: () => { if (!askLeave(toMenu)) toMenu(); } },
   ], VW / 2, VH * 0.2 + 30, Math.min(300, VW - 40), s ? 40 : 46, 8);
@@ -3689,6 +3897,7 @@ function cave(yBase, amp, seed, color, top) {
   }
   ctx.lineTo(VW, top ? 0 : VH); ctx.closePath(); ctx.fill();
 }
+const gunHov = [];
 function drawTitle() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   const g = ctx.createRadialGradient(VW / 2, VH * 0.45, 0, VW / 2, VH * 0.45, Math.max(VW, VH) * 0.7);
@@ -3714,6 +3923,12 @@ function drawTitle() {
   ctx.font = `900 ${s ? 42 : 78}px ${TITLE_FONT}`; ctx.fillStyle = tg;
   ctx.shadowColor = "rgba(255,138,31,0.5)"; ctx.shadowBlur = 30;
   ctx.fillText("ABISMO NERF", VW / 2, ty + (s ? 52 : 84), VW - 24); ctx.shadowBlur = 0;
+  if (!A11().motion) {
+    const tw = Math.min(VW - 24, ctx.measureText("ABISMO NERF").width), sx0 = VW / 2 - tw / 2, ph = (time * 0.35) % 1.6 - 0.3;
+    const sg = ctx.createLinearGradient(sx0 + tw * ph - 60, 0, sx0 + tw * ph + 60, 0);
+    sg.addColorStop(0, "rgba(255,255,255,0)"); sg.addColorStop(0.5, "rgba(255,255,255,0.75)"); sg.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = sg; ctx.fillText("ABISMO NERF", VW / 2, ty + (s ? 52 : 84), VW - 24); ctx.restore();
+  }
   ctx.fillStyle = A11().contrast ? "#fff" : "rgba(243,230,200,0.75)"; ctx.font = `${s ? 13 : 16}px system-ui`;
   ctx.fillText("10 niveles: encuentra las llaves, abre las puertas y rescata a Chispa del Rey Ogro.", VW / 2, ty + (s ? 80 : 120), VW - 24);
 
@@ -3721,7 +3936,16 @@ function drawTitle() {
   const gsp = s ? Math.min(42, (VW - 40) / ORDER.length) : 62;
   ctx.save(); ctx.translate(VW / 2 - gsp * (ORDER.length - 1) / 2, ty + (s ? 112 : 168));
   const mt = A11().motion ? 0 : time;
-  ORDER.forEach((id, i) => { ctx.save(); ctx.translate(i * gsp, Math.sin(mt * 2.4 + i * 0.8) * 3); ctx.rotate(Math.sin(mt * 2 + i) * 0.15); drawGun(id, s ? 1.15 : 1.7); ctx.restore(); });
+  const gx0 = VW / 2 - gsp * (ORDER.length - 1) / 2, gy0 = ty + (s ? 112 : 168);
+  ORDER.forEach((id, i) => {
+    const hov = Math.abs(mouse.x - (gx0 + i * gsp)) < gsp / 2 && Math.abs(mouse.y - gy0) < 22 && time - mouse.last < 3;
+    gunHov[i] = (gunHov[i] || 0) + ((hov ? 1 : 0) - (gunHov[i] || 0)) * Math.min(1, frameDt * 10);
+    const h = gunHov[i], wave = Math.sin(mt * 2.4 + i * 0.8) * 3;
+    ctx.save(); ctx.translate(i * gsp, wave - h * 6); ctx.rotate(Math.sin(mt * 2 + i) * 0.15 * (1 - h) + Math.sin(time * 9) * 0.12 * h);
+    if (h > 0.05) { ctx.shadowColor = WEAPONS[id].color; ctx.shadowBlur = 16 * h; }
+    drawGun(id, (s ? 1.15 : 1.7) * (1 + h * 0.35)); ctx.restore();
+    if (h > 0.3) { ctx.save(); ctx.globalAlpha = h; ctx.fillStyle = "#ffe2a8"; ctx.font = "bold 11px system-ui"; ctx.textAlign = "center"; ctx.fillText(WEAPONS[id].name, i * gsp, 26); ctx.restore(); }
+  });
   ctx.restore();
 
   const items = [];
@@ -3745,6 +3969,7 @@ function drawTitle() {
        "Ratón: apuntar y disparar  ·  1-9, 0, -: cambiar arma  ·  R: recargar  ·  P: pausa"];
   lines.forEach((l, i) => ctx.fillText(l, VW / 2, yb + i * 20 * Math.min(UIK(), 1.2), VW - 24));
   if (best > 0) { ctx.fillStyle = "#f5c542"; ctx.font = `bold ${s ? 12 : 14}px system-ui`; ctx.fillText(`Récord: ${best} puntos`, VW / 2, yb + 50); }
+  if (picker.open) drawPicker();
 }
 
 // ---------- Historieta del inicio y editor del personaje ----------
@@ -4843,6 +5068,8 @@ function openPicker() {
 }
 function chooseCountry(c) {
   look.country = c.iso; saveLook(); setLang(c.lang); picker.open = false; SFX.uiGo();
+  // desde el menú principal el país se guarda directamente en el personaje actual
+  if (state !== "custom") { uiSel = 0; const ch = curChar(); if (ch) { ch.country = c.iso; saveChars(); } showToast(`${flagOf(c.iso)} ${countryName(c)} · ${LANG_NAMES[c.lang]}`, 2); }
 }
 function drawPicker() {
   const s = VW < 640, w = Math.min(VW - 24, 420), h = Math.min(VH - 80, 560), x = VW / 2 - w / 2, y = VH / 2 - h / 2, ih = 40, top = y + 58, lh = h - 92;
@@ -4894,7 +5121,7 @@ function a11yItems() {
 function optionItems() {
   return [
     { label: `Dificultad: ${DIFF().name}`, fn: () => toggleDiff(1), lr: toggleDiff },
-    { label: `Sonido: ${settings.sound ? "Sí" : "No"}`, fn: () => setSound(!settings.sound) },
+    volItem(),
     { label: `Efectos: ${settings.fx ? "Altos" : "Bajos"}`, hint: "Bajos va mejor en equipos lentos", fn: toggleFx },
     { label: `Dispositivo: ${{ pc: "Computador", tablet: "Tableta o iPad", phone: "Celular" }[settings.device] || "?"}`, fn: () => openDevice() },
     { label: "‹ Volver", fn: closeSub },
@@ -5003,14 +5230,71 @@ function toggleFull() {
 }
 const NAV_ACT = {
   home: () => goHome(), back: () => goBack(),
-  sound: () => { setSound(!settings.sound); SFX.uiGo(); },
-  lang: () => { openCustom("edit"); customRow = 1; openPicker(); },
+  sound: () => { volPop = volPop ? null : { t: 0 }; SFX.ui(); },
+  lang: () => { volPop = null; openPicker(); },
   access: () => { SFX.uiGo(); openSub("access"); },
   full: () => { SFX.uiGo(); toggleFull(); },
   save: () => saveGame(),
 };
-const NAV_TIP = { save: () => gameDirty ? "Guardar partida (G)" : "Partida guardada", sound: () => settings.sound ? "Sonido: Sí" : "Sonido: No", lang: () => "Idioma", access: () => "Accesibilidad", full: () => "Pantalla completa", back: () => "Volver", home: () => "Inicio" };
+let volPop = null, volDrag = false;
+// geometría del control de volumen (debajo del botón de sonido)
+function volRect() {
+  const b = navBtns.find(b => b.kind === "sound"); if (!b) return null;
+  const w = 250, h = 96, x = clamp(b.x + b.w / 2 - w / 2, 8, VW - w - 8), y = b.y + b.h + 10;
+  return { x, y, w, h, bx: b.x + b.w / 2, sx: x + 52, sw: w - 104, sy: y + 40, minus: { x: x + 10, y: y + 24, w: 34, h: 32 }, plus: { x: x + w - 44, y: y + 24, w: 34, h: 32 }, mute: { x: x + 10, y: y + 62, w: w - 20, h: 26 } };
+}
+const inR = (r, x, y) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+function volSetFromX(x) { const r = volRect(); if (r) setVolume((x - r.sx) / r.sw); }
+// devuelve true si el clic era del control de volumen
+function volHit(x, y) {
+  if (!volPop) return false;
+  const r = volRect(); if (!r) { volPop = null; return false; }
+  const sb = navBtns.find(b => b.kind === "sound");
+  if (sb && inR(sb, x, y)) { volPop = null; SFX.ui(); return true; }
+  if (!inR(r, x, y)) { volPop = null; return true; }
+  if (inR(r.minus, x, y)) { setVolume(settings.volume - 0.1); volTick(); }
+  else if (inR(r.plus, x, y)) { setVolume(settings.volume + 0.1); volTick(); }
+  else if (inR(r.mute, x, y)) { setSound(!settings.sound); SFX.uiGo(); }
+  else if (y > r.sy - 16 && y < r.sy + 16) { volDrag = true; volSetFromX(x); }
+  return true;
+}
+function volTick() { beep(520 + settings.volume * 500, 0.06, "triangle", 0.06); }
+function drawVolPop() {
+  if (!volPop || state !== "title") { volPop = null; return; }
+  const r = volRect(); if (!r) return;
+  volPop.t += frameDt;
+  const k = A11().motion ? 1 : easeBack(volPop.t * 5), hc = A11().contrast, v = settings.sound ? settings.volume : 0;
+  ctx.save(); ctx.globalAlpha = Math.min(1, volPop.t * 8);
+  ctx.translate(r.bx, r.y); ctx.scale(k, k); ctx.translate(-r.bx, -r.y);
+  ctx.fillStyle = hc ? "#000" : "rgba(18,13,20,0.96)"; ctx.strokeStyle = hc ? "#fff" : "rgba(232,163,61,0.6)"; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 14); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(r.bx - 7, r.y + 1); ctx.lineTo(r.bx, r.y - 7); ctx.lineTo(r.bx + 7, r.y + 1); ctx.fill();
+  ctx.fillStyle = "#fff3dc"; ctx.font = "bold 12px system-ui"; ctx.textAlign = "left"; ctx.fillText("Volumen", r.x + 14, r.y + 17);
+  ctx.textAlign = "right"; ctx.fillStyle = v > 0 ? "#ffe2a8" : "#ff8a8a"; ctx.fillText(volLabel(), r.x + r.w - 14, r.y + 17);
+  // botones − y +
+  for (const [b, t] of [[r.minus, "−"], [r.plus, "+"]]) {
+    const hov = inR(b, mouse.x, mouse.y);
+    ctx.fillStyle = hov ? "rgba(232,163,61,0.3)" : "rgba(255,255,255,0.07)"; ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 8); ctx.fill();
+    ctx.fillStyle = "#fff3dc"; ctx.font = "bold 20px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(t, b.x + b.w / 2, b.y + b.h / 2 + 1); ctx.textBaseline = "alphabetic";
+  }
+  // barra con ondas que se animan según el volumen
+  ctx.fillStyle = "rgba(255,255,255,0.12)"; ctx.beginPath(); ctx.roundRect(r.sx, r.sy - 4, r.sw, 8, 4); ctx.fill();
+  const g = ctx.createLinearGradient(r.sx, 0, r.sx + r.sw, 0); g.addColorStop(0, "#3fb7ff"); g.addColorStop(0.6, "#ffd23f"); g.addColorStop(1, "#ff7a12");
+  ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(r.sx, r.sy - 4, Math.max(8, r.sw * v), 8, 4); ctx.fill();
+  if (!A11().motion && v > 0) for (let i = 0; i < 9; i++) { const bx = r.sx + 4 + i * (r.sw * v - 8) / 8, bh = 2 + Math.abs(Math.sin(time * 9 + i * 1.3)) * 5 * v; ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.fillRect(bx - 0.6, r.sy - bh / 2, 1.2, bh); }
+  const kx = r.sx + r.sw * v; ctx.fillStyle = "#fff"; ctx.shadowColor = "rgba(255,170,60,0.8)"; ctx.shadowBlur = volDrag ? 14 : 6;
+  ctx.beginPath(); ctx.arc(kx, r.sy, volDrag ? 9 : 7.5, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+  // silenciar
+  const m = r.mute, mh = inR(m, mouse.x, mouse.y);
+  ctx.fillStyle = mh ? "rgba(232,163,61,0.25)" : "rgba(255,255,255,0.06)"; ctx.beginPath(); ctx.roundRect(m.x, m.y, m.w, m.h, 8); ctx.fill();
+  ctx.fillStyle = "#fff3dc"; ctx.font = "bold 12px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(settings.sound ? "🔇 Silenciar" : "🔊 Activar sonido", m.x + m.w / 2, m.y + m.h / 2 + 1); ctx.textBaseline = "alphabetic";
+  ctx.restore();
+}
+const NAV_TIP = { save: () => gameDirty ? "Guardar partida (G)" : "Partida guardada", sound: () => `Volumen: ${volLabel()}`, lang: () => "Idioma", access: () => "Accesibilidad", full: () => "Pantalla completa", back: () => "Volver", home: () => "Inicio" };
 function navHit(x, y) {
+  if (volHit(x, y)) return true;
+  if (picker.open) return false;
   if (exitDlg) { const o = exitDlg.opts.find(o => o.r && x >= o.r.x && x <= o.r.x + o.r.w && y >= o.r.y && y <= o.r.y + o.r.h); if (o) o.fn(); return true; }
   for (const b of navBtns) if (x >= b.x - 4 && x <= b.x + b.w + 4 && y >= b.y - 4 && y <= b.y + b.h + 4) { NAV_ACT[b.kind](); return true; }
   return false;
@@ -5042,6 +5326,7 @@ function navRects() {
   return [{ kind: "back", x: 16, y: 16, w: nw, h, label: lab }, { kind: "home", x: 16 + nw + 8, y: 16, w: ask ? 158 : nw, h, ask, label: lab }];
 }
 function drawNavBtns() {
+  if (picker.open && state === "title") { navBtns = []; return; }
   homeAsk = Math.max(0, homeAsk - frameDt); discardAsk = Math.max(0, discardAsk - frameDt); exitAsk = state === "title" ? Math.max(0, exitAsk - frameDt) : 0;
   if (state !== "play" && state !== "pause") homeAsk = 0;
   navBtns = navRects();
@@ -5068,7 +5353,8 @@ function drawNavBtns() {
       if (gameDirty) { ctx.fillStyle = "#ff8a1f"; ctx.beginPath(); ctx.arc(b.x + b.w - 8, b.y + 8, 4.5, 0, 7); ctx.fill(); }
     } else if (b.kind === "sound") {
       ctx.beginPath(); ctx.moveTo(cx - 9, cy - 4); ctx.lineTo(cx - 5, cy - 4); ctx.lineTo(cx + 1, cy - 9); ctx.lineTo(cx + 1, cy + 7); ctx.lineTo(cx - 5, cy + 2); ctx.lineTo(cx - 9, cy + 2); ctx.closePath(); ctx.fill();
-      if (settings.sound) { ctx.beginPath(); ctx.arc(cx + 2, cy - 1, 5, -0.9, 0.9); ctx.stroke(); ctx.beginPath(); ctx.arc(cx + 2, cy - 1, 9, -0.9, 0.9); ctx.stroke(); }
+      if (settings.sound && settings.volume > 0) { const waves = settings.volume > 0.66 ? 3 : settings.volume > 0.33 ? 2 : 1, pul = A11().motion ? 0 : Math.sin(time * 6) * 0.6;
+        for (let i = 0; i < waves; i++) { ctx.globalAlpha = 1 - i * 0.2; ctx.beginPath(); ctx.arc(cx + 2, cy - 1, 4 + i * 3.4 + pul * (i === waves - 1 ? 1 : 0), -0.9, 0.9); ctx.stroke(); } ctx.globalAlpha = 1; }
       else { ctx.strokeStyle = "#ff6b6b"; ctx.beginPath(); ctx.moveTo(cx + 4, cy - 5); ctx.lineTo(cx + 10, cy + 3); ctx.moveTo(cx + 10, cy - 5); ctx.lineTo(cx + 4, cy + 3); ctx.stroke(); }
     } else if (b.kind === "lang") {
       ctx.font = "20px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -5238,6 +5524,10 @@ function drawSaveIcon() {
 TR_ROWS.push(
 ["Inicio", "Home", "Início", "Accueil", "Start", "Inizio"],
 ["Volver", "Back", "Voltar", "Retour", "Zurück", "Indietro"],
+["Volumen", "Volume", "Volume", "Volume", "Lautstärke", "Volume"],
+["Volumen: {0}", "Volume: {0}", "Volume: {0}", "Volume : {0}", "Lautstärke: {0}", "Volume: {0}"],
+["🔇 Silenciar", "🔇 Mute", "🔇 Silenciar", "🔇 Couper le son", "🔇 Stumm", "🔇 Silenzia"],
+["🔊 Activar sonido", "🔊 Sound on", "🔊 Ativar som", "🔊 Activer le son", "🔊 Ton an", "🔊 Attiva audio"],
 ["💾 Guardar partida", "💾 Save game", "💾 Salvar jogo", "💾 Sauvegarder", "💾 Spiel speichern", "💾 Salva partita"],
 ["✓ Partida guardada", "✓ Game saved", "✓ Jogo salvo", "✓ Partie sauvegardée", "✓ Spiel gespeichert", "✓ Partita salvata"],
 ["Guardar partida (G)", "Save game (G)", "Salvar jogo (G)", "Sauvegarder (G)", "Spiel speichern (G)", "Salva partita (G)"],
