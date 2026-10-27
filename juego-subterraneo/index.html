@@ -102,7 +102,7 @@ const LEVELS = [
       "####.#######################B#########",
       "#...........^^....#.........*........#",
       "#..t....###.^^..c.#..##..........##..#",
-      "#.......#$#.^^....#..##....q.....##..#",
+      "#.......#@#.^^....#..##....q.....##..#",
       "#.......#%#.......#..............k...#",
       "#..s..............#+..*......c.......#",
       "#......c....t.....#......^^^^^^......#",
@@ -196,7 +196,7 @@ const LEVELS = [
       "#...........R..c......c..#...h...$...#",
       "#..u......f.#....~~......#...........#",
       "#........####...k....k...#....*.*....#",
-      "#........%$h#............#...........#",
+      "#........%$@#............#...........#",
       "#........####......v.....#....E......#",
       "#...s.......#.........t..#...........#",
       "#...........#..c.........#..$.....$..#",
@@ -419,6 +419,18 @@ function genWorldLevel(w, n) {
     if (boss) { const A = rooms[exitC]; for (let k = 0; k < 3; k++) { const t = freeTile(A, true); if (t) m[t[1]][t[0]] = k ? "+" : "h"; } }
     // antorchas en los muros que dan a las salas (pocas en el mundo oscuro)
     for (const r of rooms) if (rnd() < (w === 1 ? 0.25 : 0.8)) { const x = ri(r.x, r.x + r.w - 1); if (m[r.y - 1][x] === "#") m[r.y - 1][x] = "T"; }
+    if (n === 2 || n === 6) {
+      // pasaje secreto: grieta en el muro de una sala y, detrás, el portal
+      let done = false;
+      for (const r of rooms.filter(r => r.c !== start && r.c !== exitC)) {
+        for (let y = r.y + 1; y < r.y + r.h - 1 && !done; y++) for (const [cx2, dx] of [[r.x - 1, -1], [r.x + r.w, 1]]) {
+          const px = cx2 + dx; if (done || px < 1 || px >= W - 1) continue;
+          const around = [[px, y - 1], [px, y + 1], [px + dx, y], [cx2, y - 1], [cx2, y + 1]];
+          if (m[y][cx2] === "#" && m[y][px] === "#" && around.every(([ax, ay]) => m[ay] && m[ay][ax] === "#")) { m[y][cx2] = "%"; m[y][px] = "@"; done = true; }
+        }
+        if (done) break;
+      }
+    }
     const map = m.map(r => r.join(""));
     if (!genSolvable(map)) continue;
     return { name: WORLD_LEVEL_NAMES[w][n], map, world: w + 1 };
@@ -448,6 +460,31 @@ function genSolvable(m) {
   return false;
 }
 for (let w = 0; w < 3; w++) for (let n = 0; n < 10; n++) LEVELS.push(genWorldLevel(w, n));
+// ---------- Niveles secretos: 2 por mundo ----------
+//  1 objeto del reto   !  puerta del reto (se abre al resolverlo)   &  aquí aparece la salida al vencer al minijefe
+//  a Guardián Rúnico · i Espíritu de Hielo · j Sombra Menor · y Salamandra de Fuego (minijefes)
+const SECRET_DEFS = [
+  { name: "La Cámara de las Runas", puzzle: "runes", len: 4 }, { name: "La Sala de los Braseros", puzzle: "braziers", dur: 6 },
+  { name: "La Cripta de Hielo", puzzle: "plates" }, { name: "El Eco Helado", puzzle: "runes", len: 6 },
+  { name: "El Jardín Sin Luz", puzzle: "plates" }, { name: "El Asedio de las Sombras", puzzle: "survive", time: 30 },
+  { name: "La Forja Apagada", puzzle: "braziers", dur: 4 }, { name: "El Horno Eterno", puzzle: "survive", time: 40 },
+];
+const SECRETS = SECRET_DEFS.map((d, si) => {
+  const w = Math.floor(si / 2), W = 29, H = 17, m = Array.from({ length: H }, (_, y) => Array.from({ length: W }, (_, x) => x === 0 || y === 0 || x === W - 1 || y === H - 1 || x === 13 ? "#" : "."));
+  for (const x of [3, 9, 17, 24]) m[0][x] = "T";
+  m[8][13] = "!"; m[8][3] = "P"; m[8][21] = "aijy"[w]; m[8][26] = "&";
+  const objs = d.puzzle === "runes" ? [[3, 3], [9, 3], [3, 13], [9, 13], [6, 5], [6, 11]].slice(0, 4)
+    : d.puzzle === "braziers" ? [[2, 2], [10, 2], [10, 14], [2, 14], [7, 8]] : d.puzzle === "plates" ? [[1, 1], [11, 1], [11, 15], [1, 15]] : [];
+  for (const [x, y] of objs) m[y][x] = "1";
+  m[14][6] = "h"; m[2][6] = "+"; m[3][24] = "+"; m[13][24] = "h";
+  // el peligro del mundo también en la arena
+  for (let y = 1; y < H - 1; y++) for (let x = 14; x < W - 1; x++) {
+    const edge = y < 3 || y > 13 || x < 16 || x > 26;
+    if (w === 1 && (x + y) % 3 === 0 && m[y][x] === ".") m[y][x] = ":";
+    if (w === 3 && edge && (x * 7 + y * 3) % 5 === 0 && m[y][x] === ".") m[y][x] = "l";
+  }
+  return { name: d.name, map: m.map(r => r.join("")), secret: si, puzzle: d.puzzle, len: d.len, dur: d.dur, time: d.time };
+});
 /*LEVELS_END*/
 
 // ---------- Tutorial ----------
@@ -477,7 +514,7 @@ const TUT_STEPS = [
   { t: "Derrota a la babosa", ok: () => tut.slime },
   { t: "Baja por la escalera para empezar la aventura", ok: () => false },
 ];
-const curDef = () => inTutorial ? TUTORIAL : LEVELS[levelIdx];
+const curDef = () => inTutorial ? TUTORIAL : secretIdx !== null ? SECRETS[secretIdx] : LEVELS[levelIdx];
 // cada mundo tiene 10 niveles y algo que lo hace distinto
 const WORLDS = [
   { name: "Las Profundidades", twist: "Busca las llaves de colores para abrir las puertas", color: "#e8a33d" },
@@ -562,6 +599,14 @@ const MON = {
   p: { name: "Topo excavador", hp: 5, speed: 90, r: 11, dmg: 1, sight: 280, color: "#8a6a4a", pts: 25 },
   Q: { name: "Reina Araña", hp: 45, speed: 78, r: 18, dmg: 2, sight: 420, color: "#7a1f3d", pts: 300, heavy: true, boss: true, fem: true,
        title: "REINA ARAÑA · MADRE DEL NIDO", intro: "¡La Reina Araña defiende su nido!", defeat: "¡Has derrotado a la Reina Araña! Ha soltado la llave dorada." },
+  a: { name: "Guardián Rúnico", hp: 45, speed: 70, r: 18, dmg: 2, sight: 420, color: "#8a9bb0", pts: 400, heavy: true, boss: true, base: "O", minion: "k", noKey: true,
+       title: "GUARDIÁN RÚNICO · MINIJEFE", intro: "¡El Guardián Rúnico protege el poder!", rage: "¡El Guardián Rúnico se enfurece!", defeat: "¡Has vencido al Guardián Rúnico!" },
+  i: { name: "Espíritu de Hielo", hp: 45, speed: 92, r: 16, dmg: 2, sight: 420, color: "#bfefff", pts: 450, heavy: true, boss: true, base: "Q", minion: "t", noKey: true,
+       title: "ESPÍRITU DE HIELO · MINIJEFE", intro: "¡Un Espíritu de Hielo cobra vida!", rage: "¡El Espíritu de Hielo se enfurece!", defeat: "¡Has vencido al Espíritu de Hielo!" },
+  j: { name: "Sombra Menor", hp: 50, speed: 96, r: 16, dmg: 2, sight: 420, color: "#4a3a6a", pts: 500, heavy: true, boss: true, base: "Q", minion: "f", noKey: true,
+       title: "SOMBRA MENOR · MINIJEFE", intro: "¡La Sombra Menor sale de la oscuridad!", rage: "¡La Sombra Menor se enfurece!", defeat: "¡Has vencido a la Sombra Menor!" },
+  y: { name: "Salamandra de Fuego", hp: 60, speed: 74, r: 18, dmg: 2, sight: 420, color: "#ff6a2a", pts: 550, heavy: true, boss: true, base: "O", minion: "e", noKey: true,
+       title: "SALAMANDRA DE FUEGO · MINIJEFE", intro: "¡La Salamandra de Fuego despierta!", rage: "¡La Salamandra arde de furia!", defeat: "¡Has vencido a la Salamandra de Fuego!" },
   Y: { name: "Yeti Gigante", hp: 80, speed: 66, r: 22, dmg: 2, sight: 460, color: "#dfeefc", pts: 600, heavy: true, boss: true, base: "O", minion: "t", noKey: true,
        title: "YETI GIGANTE · TERROR DE LAS NIEVES", intro: "¡Un rugido helado sacude la cueva!", rage: "¡El Yeti está furioso!", defeat: "¡Has derrotado al Yeti Gigante!" },
   K: { name: "Reina de Escarcha", hp: 70, speed: 84, r: 18, dmg: 2, sight: 440, color: "#5fc8ff", pts: 700, heavy: true, boss: true, fem: true, base: "Q", minion: "x", noKey: true,
@@ -600,7 +645,7 @@ const TIPS = [
 ];
 
 // Tipos de casilla
-const FLOOR = 0, WALL = 1, DOOR = 2, EXIT = 3, CRACK = 4, SPIKE = 5, WEB = 6, CRATE = 7, WATER = 8, ICE = 9, LAVA = 10, GATE = 11;
+const FLOOR = 0, WALL = 1, DOOR = 2, EXIT = 3, CRACK = 4, SPIKE = 5, WEB = 6, CRATE = 7, WATER = 8, ICE = 9, LAVA = 10, GATE = 11, PORTAL = 12;
 
 // ---------- Utilidades ----------
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -631,7 +676,7 @@ settings.device = ["pc", "tablet", "phone"].includes(store.get("device", null)) 
 let best = store.get("best", 0);
 let saved = null; // partida del personaje actual (se carga al conocer el personaje)
 const saveKey = () => "save." + (typeof charId === "string" ? charId : "x");
-const DIFF = () => DIFFS[settings.diff];
+const DIFF = () => DIFFS[typeof secretIdx !== "undefined" && secretIdx !== null ? 2 : settings.diff];
 const TITLE_FONT = "Cinzel, Georgia, serif";
 
 // ---------- Canvas ----------
@@ -783,7 +828,8 @@ function updateAudio(dt) {
 // ---------- Estado ----------
 let state = "title"; // title | play | pause | dead | levelDone | win
 let levelIdx = 0, W = 0, H = 0;
-let gateMarks = [], arena = null, quakeT = 0, rocks = [];
+let suppressSave = false;
+let gateMarks = [], arena = null, quakeT = 0, rocks = [], puzzleDoor = [], puzzleObjs = [], exitMark = -1, puzzle = null, secretIdx = null, secretRet = null;
 let tiles = [], thp = [], doorCol = {}, seen = [], flow = null, flowFrom = -1, flowDirty = true;
 let torches = [], decor = [], exits = [], tileCache = null, mini = null, miniCtx = null;
 let monsters = [], items = [], projs = [], parts = [], texts = [], decals = [], rings = [], ghosts = [], flashes = [], doorAnims = [], glints = [];
@@ -801,7 +847,7 @@ const P = {
 };
 
 const T = (tx, ty) => (tx < 0 || ty < 0 || tx >= W || ty >= H) ? WALL : tiles[ty * W + tx];
-const walkable = t => t === FLOOR || t === EXIT || t === SPIKE || t === WEB || t === ICE || t === LAVA;
+const walkable = t => t === FLOOR || t === EXIT || t === SPIKE || t === WEB || t === ICE || t === LAVA || t === PORTAL;
 const solid = (tx, ty) => !walkable(T(tx, ty));
 // el agua frena a los que caminan, pero los dardos y la luz pasan por encima
 const projSolid = (tx, ty) => { const t = T(tx, ty); return !walkable(t) && t !== WATER; };
@@ -810,6 +856,14 @@ function drawLava(px, py, x, y) {
   ctx.fillStyle = `rgba(255,230,120,${0.5 * Math.sin(k * Math.PI)})`; ctx.beginPath(); ctx.arc(px + 6 + hash(x * 3, y) * 20, py + 6 + hash(x, y * 3) * 20, 1.5 + k * 3, 0, 7); ctx.fill();
   ctx.fillStyle = `rgba(255,160,40,${0.2 + 0.12 * Math.sin(gameT * 3 + x + y)})`; ctx.fillRect(px + 2, py + 2, TS - 4, TS - 4);
   if (Math.random() < 0.01) parts.push({ x: px + 16 + rand(-10, 10), y: py + 16, vx: rand(-10, 10), vy: rand(-60, -30), life: 0.6, max: 0.6, c: "#ffb040", s: 2, glow: true });
+}
+function drawPortal(px, py) {
+  const cx = px + 16, cy = py + 16;
+  const g = ctx.createRadialGradient(cx, cy, 1, cx, cy, 18); g.addColorStop(0, "rgba(255,255,255,0.95)"); g.addColorStop(0.4, "rgba(190,110,255,0.85)"); g.addColorStop(1, "rgba(90,30,160,0)");
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 18, 0, 7); ctx.fill();
+  ctx.strokeStyle = "rgba(230,200,255,0.9)"; ctx.lineWidth = 1.6;
+  for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(cx, cy, 6 + i * 4, gameT * (3 + i) + i * 2, gameT * (3 + i) + i * 2 + 3.6); ctx.stroke(); }
+  if (Math.random() < 0.15) parts.push({ x: cx + rand(-12, 12), y: cy + rand(-12, 12), vx: rand(-10, 10), vy: rand(-30, -10), life: 0.6, max: 0.6, c: "#e0b0ff", s: 2, glow: true });
 }
 function drawGate(px, py, x, y) {
   const k = arena && arena.sealT !== undefined ? Math.min(1, arena.sealT * 4) : 1;
@@ -823,7 +877,7 @@ function drawGate(px, py, x, y) {
   }
   ctx.fillStyle = `rgba(229,72,77,${0.35 + 0.25 * Math.sin(gameT * 6)})`; ctx.beginPath(); ctx.arc(px + 16, py + 16, 4, 0, 7); ctx.fill();
 }
-const blocksLight = (tx, ty) => { const t = T(tx, ty); return t === WALL || t === DOOR || t === CRACK; };
+const blocksLight = (tx, ty) => { const t = T(tx, ty); return t === WALL || t === DOOR || t === CRACK || t === GATE; };
 const wallLike = t => t === WALL || t === CRACK;
 const isWallChar = c => c === "#" || c === "T";
 const spikePhase = (tx, ty) => (gameT + tx * 0.37 + ty * 0.23) % 2.6;
@@ -831,7 +885,7 @@ const spikeUp = (tx, ty) => spikePhase(tx, ty) < 0.75;
 
 function freshRun() {
   run = { score: 0, kills: 0, gold: 0, secrets: 0, time: 0, stars: 0 };
-  Object.assign(P, { hp: DIFF().hp, maxHp: DIFF().hp, weapons: ["pistola"], cur: 0, ammo: { pistola: WEAPONS.pistola.clip }, res: { pistola: WEAPONS.pistola.res } });
+  Object.assign(P, { hp: DIFF().hp + (hasPower("heart") ? 2 : 0), maxHp: DIFF().hp + (hasPower("heart") ? 2 : 0), weapons: ["pistola"], cur: 0, ammo: { pistola: WEAPONS.pistola.clip }, res: { pistola: WEAPONS.pistola.res } });
   hintsShown.clear();
 }
 function newGame() { freshRun(); store.set("diff", settings.diff); loadLevel(0); }
@@ -850,11 +904,13 @@ function continueGame() {
 
 function loadLevel(i, retry) {
   levelIdx = i;
-  if (!retry) {
+  if (secretIdx !== null) {
+    // en el nivel secreto no se guarda; al reintentar vuelves con lo que tenías al entrar
+    if (retry && secretRet) Object.assign(P, structuredClone(secretRet.pStart));
+  } else if (!retry) {
     snapshot = { weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
-    if (!inTutorial) saved = { level: i, diff: settings.diff, weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
-    store.set(saveKey(), saved);
-    if (!inTutorial) { saveIcon = 1.8; gameDirty = false; }
+    if (!inTutorial && !suppressSave) saved = { level: i, diff: settings.diff, weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
+    if (!suppressSave) { store.set(saveKey(), saved); if (!inTutorial) { saveIcon = 1.8; gameDirty = false; } }
   } else {
     P.weapons = snapshot.weapons.slice(); P.maxHp = snapshot.maxHp; P.hp = Math.max(Math.ceil(P.maxHp * 0.67), snapshot.hp);
     run = { ...snapshot.run };
@@ -864,9 +920,9 @@ function loadLevel(i, retry) {
   }
   P.cur = Math.min(P.cur, P.weapons.length - 1);
   Object.assign(P, { reloading: 0, keys: noKeys(), inv: 1.2, cd: 0.3, kx: 0, ky: 0, dash: 0, dashCd: 0, muzzle: 0, abilCd: 0, turbo: 0, shield: 0 });
-  const map = (inTutorial ? TUTORIAL : LEVELS[i]).map; H = map.length; W = map[0].length;
+  const map = curDef().map; H = map.length; W = map[0].length;
   tiles = new Array(W * H).fill(FLOOR); thp = new Array(W * H).fill(0); seen = new Array(W * H).fill(false);
-  doorCol = {}; torches = []; decor = []; exits = []; gateMarks = []; arena = null; quakeT = rand(10, 16); rocks = [];
+  doorCol = {}; torches = []; decor = []; exits = []; gateMarks = []; arena = null; puzzleDoor = []; puzzleObjs = []; exitMark = -1; puzzle = null; quakeT = rand(10, 16); rocks = [];
   monsters = []; items = []; projs = []; parts = []; texts = []; decals = []; rings = []; ghosts = []; flashes = []; doorAnims = []; glints = [];
   dying = []; pops = []; bouncers = []; drops = []; motes = []; clouds = []; P.exiting = 0; zoomPunch = 0;
   lv = { kills: 0, monTotal: 0, goldGot: 0, goldTotal: 0, secrets: 0, secretTotal: 0, time: 0 };
@@ -883,6 +939,10 @@ function loadLevel(i, retry) {
     if (c === ":") { tiles[idx] = ICE; continue; }
     if (c === "l") { tiles[idx] = LAVA; continue; }
     if (c === "|") { gateMarks.push(idx); continue; }
+    if (c === "@") { if (secretFor(i) !== null && !secretDone(secretFor(i)) && secretIdx === null) tiles[idx] = PORTAL; continue; }
+    if (c === "!") { tiles[idx] = GATE; puzzleDoor.push(idx); continue; }
+    if (c === "&") { exitMark = idx; continue; }
+    if (c === "1") { puzzleObjs.push({ x: cx, y: cy, on: false, t: 0, flash: 0 }); continue; }
     if (c === "c") { tiles[idx] = CRATE; thp[idx] = 2; continue; }
     if (c === "~") { decor.push({ kind: "puddle", x: cx, y: cy, ph: Math.random() * 6 }); continue; }
     if (c === "u") { decor.push({ kind: "mush", x: cx, y: cy, ph: Math.random() * 6 }); continue; }
@@ -910,8 +970,9 @@ function loadLevel(i, retry) {
   if (AC) JINGLES.start(); fade = 1; shake = 0; hitstop = 0; hurtFlash = 0; gameT = 0;
   toast.t = 0;
   state = "play";
-  if (i % 10 === 0 && !retry && !inTutorial) worldCard = 4.5;
-  if (i === 0 && !retry && !inTutorial) {
+  if (i % 10 === 0 && !retry && !inTutorial && secretIdx === null && !suppressSave) worldCard = 4.5;
+  if (secretIdx !== null) { worldCard = 5; banner = 0; setupPuzzle(); }
+  if (i === 0 && !retry && !inTutorial && secretIdx === null) {
     hint("start", isTouch() ? "Desliza a la izquierda para moverte y mantén DISPARA a la derecha" : `¡Adelante, ${look.name}! Muévete con WASD, dispara con F o clic y usa tu habilidad con ESPACIO`, 4.5);
   }
 }
@@ -1475,7 +1536,7 @@ function makeExit() {
 function paintMini(x, y) {
   const t = T(x, y);
   miniCtx.fillStyle = t === WALL || t === CRACK ? "#6b5a4b" : t === DOOR ? KEYS[doorCol[y * W + x]].c : t === EXIT ? "#7fd8ff" :
-    t === SPIKE ? "#5a4a3a" : t === WATER ? "#1d4c78" : t === ICE ? "#5d8fae" : t === LAVA ? "#c4481a" : t === GATE ? "#8a8a96" : t === CRATE ? "#7a5a34" : t === WEB ? "#4a4550" : "#2a231e";
+    t === SPIKE ? "#5a4a3a" : t === WATER ? "#1d4c78" : t === ICE ? "#5d8fae" : t === LAVA ? "#c4481a" : t === GATE ? "#8a8a96" : t === PORTAL ? "#c070ff" : t === CRATE ? "#7a5a34" : t === WEB ? "#4a4550" : "#2a231e";
   miniCtx.fillRect(x * 4, y * 4, 4, 4);
 }
 function markSeen(tx, ty) {
@@ -1832,18 +1893,208 @@ function drawRocks() {
 }
 function drawWorldCard() {
   if (worldCard <= 0 || state !== "play") return;
-  const w = WORLDS[curWorld()], a = Math.min(1, worldCard * 1.5, (4.5 - worldCard) * 3);
+  const sd = secretIdx !== null ? SECRETS[secretIdx] : null;
+  const w = sd ? { name: sd.name, twist: PUZZLE_TIPS[sd.puzzle](sd), color: "#c070ff" } : WORLDS[curWorld()], a = Math.min(1, worldCard * 1.5, ((sd ? 5 : 4.5) - worldCard) * 3);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.save(); ctx.globalAlpha = Math.max(0, a); ctx.textAlign = "center";
   const cy = Math.max(sm() ? 150 : 140, VH * 0.17), slide = A11().motion ? 0 : (1 - ease(Math.min(1, (4.5 - worldCard) * 2))) * -30;
   const bgc = ctx.createLinearGradient(0, 0, VW, 0); bgc.addColorStop(0, "rgba(5,4,7,0)"); bgc.addColorStop(0.5, "rgba(5,4,7,0.7)"); bgc.addColorStop(1, "rgba(5,4,7,0)");
   ctx.fillStyle = bgc; ctx.fillRect(0, cy - 46, VW, 104);
   ctx.translate(slide, 0);
-  ctx.fillStyle = w.color; ctx.font = `bold ${sm() ? 13 : 16}px system-ui`; ctx.fillText(`MUNDO ${curWorld() + 1}`, VW / 2, cy - 20);
+  ctx.fillStyle = w.color; ctx.font = `bold ${sm() ? 13 : 16}px system-ui`; ctx.fillText(sd ? "NIVEL SECRETO · DIFÍCIL" : `MUNDO ${curWorld() + 1}`, VW / 2, cy - 20);
   ctx.fillStyle = "#fff3dc"; ctx.font = `900 ${sm() ? 24 : 36}px ${TITLE_FONT}`; ctx.fillText(w.name, VW / 2, cy + 14, VW - 24);
   ctx.translate(-slide * 2, 0);
   ctx.fillStyle = "rgba(243,230,200,0.85)"; ctx.font = `${sm() ? 12 : 14}px system-ui`; ctx.fillText(w.twist, VW / 2, cy + 42, VW - 24);
   ctx.restore();
+}
+
+// ---------- Niveles secretos, retos y poderes ----------
+const secretFor = i => i % 10 === 2 ? Math.floor(i / 10) * 2 : i % 10 === 6 ? Math.floor(i / 10) * 2 + 1 : null;
+const secretsKey = () => "secrets." + charId, powersKey = () => "powers." + charId;
+const secretDone = si => (store.get(secretsKey(), []) || []).includes(si);
+const POWERS = [
+  { id: "heart", name: "Corazón de cristal", desc: "Tienes 2 corazones más", icon: "💎", color: "#ff6b9a" },
+  { id: "reload", name: "Recarga relámpago", desc: "Recargas mucho más rápido", icon: "⚡", color: "#ffd23f" },
+  { id: "ice", name: "Dardos de hielo", desc: "Tus dardos congelan un instante a los monstruos", icon: "❄️", color: "#8fd8ff" },
+  { id: "magnet", name: "Imán de tesoros", desc: "Atraes el oro y los objetos desde lejos", icon: "🧲", color: "#e5484d" },
+  { id: "vision", name: "Visión nocturna", desc: "Ves mucho más lejos en la oscuridad", icon: "👁️", color: "#b58cff" },
+  { id: "double", name: "Dardo doble", desc: "A veces disparas dos dardos a la vez", icon: "🎯", color: "#9be15d" },
+  { id: "lavaboots", name: "Botas de lava", desc: "La lava y los pinchos no te hacen daño", icon: "🥾", color: "#ff7a2a" },
+  { id: "autoshield", name: "Escudo automático", desc: "Cada 20 segundos un escudo para un golpe", icon: "🛡️", color: "#3fb7ff" },
+];
+const hasPower = id => (store.get(powersKey(), []) || []).includes(id);
+const PUZZLE_TIPS = {
+  runes: d => `Memoriza el orden en que brillan las ${d.len} runas y dispárales igual`,
+  braziers: () => "Enciende los 5 braseros a la vez disparándoles antes de que se apaguen",
+  plates: () => "Pisa las 4 placas escondidas en las esquinas para abrir la puerta",
+  survive: d => `¡Aguanta ${d.time} segundos hasta que se abra la puerta!`,
+};
+function enterSecret(si, portalIdx) {
+  // se guarda la partida justo antes de entrar
+  const ok = checkpoint(); if (ok) gameDirty = false;
+  // al volver (o al continuar la partida) apareces junto al portal, no encima
+  if (ok && P.prevX !== undefined) { saved.full.P.x = P.prevX; saved.full.P.y = P.prevY; store.set(saveKey(), saved); }
+  const ck = saved && saved.full ? structuredClone(saved.full) : null;
+  if (ck) ck.tiles[portalIdx] = FLOOR;
+  secretRet = { level: levelIdx, ck, heartBefore: hasPower("heart"), pStart: structuredClone({ hp: P.hp, maxHp: P.maxHp, weapons: P.weapons, cur: P.cur, ammo: P.ammo, res: P.res }) };
+  secretIdx = si; SFX.secret(); SFX.uiGo(); flashes.push({ x: P.x, y: P.y, r: 200, life: 0.4 });
+  loadLevel(levelIdx);
+  showToast("¡Has encontrado un nivel secreto! Aquí la dificultad es Difícil", 3);
+}
+function returnFromSecret() {
+  const r = secretRet; secretIdx = null; secretRet = null;
+  const pNow = { weapons: P.weapons.slice(), ammo: { ...P.ammo }, res: { ...P.res } };
+  suppressSave = true; loadLevel(r.level); suppressSave = false; worldCard = 0;
+  if (r.ck) restoreCheckpoint(r.ck, true);
+  Object.assign(P, pNow); P.hp = P.maxHp; P.cur = Math.min(P.cur, P.weapons.length - 1);
+  if (hasPower("heart") && !r.heartBefore) { P.maxHp += 2; P.hp = P.maxHp; }
+  saved.hp = P.hp; saved.maxHp = P.maxHp; saved.weapons = P.weapons.slice(); saved.ammo = { ...P.ammo }; saved.res = { ...P.res };
+  if (saved.full) Object.assign(saved.full.P, { hp: P.hp, maxHp: P.maxHp, weapons: P.weapons.slice(), ammo: { ...P.ammo }, res: { ...P.res } });
+  store.set(saveKey(), saved); saveIcon = 1.8; gameDirty = false;
+  showToast("¡Has vuelto del nivel secreto con un poder nuevo!", 3);
+}
+function setupPuzzle() {
+  const d = SECRETS[secretIdx];
+  puzzle = { type: d.puzzle, d, objs: puzzleObjs, step: 0, solved: false, t: 0, spawnT: 2, timer: d.time || 0, seq: [], showT: 1.2 };
+  if (d.puzzle === "runes") for (let k = 0; k < d.len; k++) puzzle.seq.push(Math.floor(Math.random() * puzzle.objs.length));
+}
+function puzzleSpawn(n, near) {
+  const pool = ["sktx", "tkxo", "fxok", "eqpk"][curWorld()];
+  for (let k = 0; k < n; k++) {
+    for (let tries = 0; tries < 20; tries++) {
+      const x = rand(48, 12 * TS), y = rand(48, 15 * TS);
+      if (solid(Math.floor(x / TS), Math.floor(y / TS)) || Math.hypot(x - P.x, y - P.y) < 110) continue;
+      spawnMon(pool[Math.floor(Math.random() * pool.length)], x, y, 0, 0); break;
+    }
+  }
+}
+function solvePuzzle() {
+  puzzle.solved = true; SFX.secret(); SFX.door(); shake = Math.max(shake, 8);
+  for (const g of puzzleDoor) { tiles[g] = FLOOR; repaintAround(g % W, Math.floor(g / W)); for (let i = 0; i < 16; i++) parts.push({ x: (g % W) * TS + 16, y: Math.floor(g / W) * TS + 16, vx: rand(-90, 90), vy: rand(-90, 90), life: 0.6, max: 0.6, c: "#e0b0ff", s: 3, glow: true }); }
+  flowDirty = true;
+  showToast("¡Reto superado! La puerta se abre... cuidado con el guardián", 3);
+}
+function puzzleHit(p) {
+  if (!puzzle || puzzle.solved || (puzzle.type !== "runes" && puzzle.type !== "braziers")) return false;
+  const o = puzzle.objs.find(o => Math.hypot(o.x - p.x, o.y - p.y) < 16); if (!o) return false;
+  const i = puzzle.objs.indexOf(o);
+  if (puzzle.type === "braziers") { if (o.t <= 0) { SFX.secret(); for (let k = 0; k < 10; k++) parts.push({ x: o.x, y: o.y - 8, vx: rand(-30, 30), vy: rand(-90, -30), life: 0.5, max: 0.5, c: "#ffb040", s: 2.5, glow: true }); } o.t = puzzle.d.dur; return true; }
+  if (puzzle.showT > 0) return true;
+  o.flash = 0.4;
+  if (i === puzzle.seq[puzzle.step]) { puzzle.step++; beep(500 + puzzle.step * 120, 0.12, "triangle", 0.06); if (puzzle.step >= puzzle.seq.length) solvePuzzle(); }
+  else { SFX.hurt(); showToast("¡Orden equivocado! Fíjate otra vez", 2); puzzle.step = 0; puzzle.showT = 1.2; puzzleSpawn(2); }
+  return true;
+}
+function hintSecret() {
+  if (secretIdx !== null || inTutorial) return;
+  const si = secretFor(levelIdx); if (si === null || secretDone(si)) return;
+  const near = (tx, ty) => { for (let y = ty - 3; y <= ty + 3; y++) for (let x = tx - 3; x <= tx + 3; x++) if (T(x, y) === CRACK) return true; return false; };
+  if (near(Math.floor(P.x / TS), Math.floor(P.y / TS))) hint("secret" + levelIdx, "Se oye un zumbido extraño tras esa pared agrietada... ¡dispárale!", 3.5);
+}
+function updatePuzzle(dt) {
+  hintSecret();
+  if (!puzzle || puzzle.solved) return;
+  puzzle.t += dt;
+  for (const o of puzzle.objs) o.flash = Math.max(0, o.flash - dt);
+  if (puzzle.type === "runes") {
+    if (puzzle.showT > 0) {
+      // las runas se iluminan una a una en el orden secreto
+      const prev = puzzle.showT; puzzle.showT += dt;
+      const k = Math.floor((puzzle.showT - 1.2) / 0.75), kp = Math.floor((prev - 1.2) / 0.75);
+      if (k >= 0 && k !== kp && k < puzzle.seq.length) { puzzle.objs[puzzle.seq[k]].flash = 0.55; beep(420 + puzzle.seq[k] * 110, 0.2, "sine", 0.05); }
+      if (k >= puzzle.seq.length) { puzzle.showT = 0; showToast("¡Ahora tú! Dispara a las runas en el mismo orden", 2.5); }
+    }
+  } else if (puzzle.type === "braziers") {
+    for (const o of puzzle.objs) o.t = Math.max(0, o.t - dt);
+    if (puzzle.objs.every(o => o.t > 0)) solvePuzzle();
+    puzzle.spawnT -= dt; if (puzzle.spawnT <= 0) { puzzle.spawnT = 7; if (monsters.length < 7) puzzleSpawn(1); }
+  } else if (puzzle.type === "plates") {
+    for (const o of puzzle.objs) if (!o.on && Math.hypot(o.x - P.x, o.y - P.y) < 18) { o.on = true; SFX.key(); puzzleSpawn(2); showToast(`Placa ${puzzle.objs.filter(o => o.on).length}/4`, 1.5); }
+    if (puzzle.objs.every(o => o.on)) solvePuzzle();
+  } else if (puzzle.type === "survive") {
+    puzzle.timer -= dt; puzzle.spawnT -= dt;
+    if (puzzle.spawnT <= 0) { puzzle.spawnT = 2.6; if (monsters.length < 10) puzzleSpawn(1 + (puzzle.timer < 15 ? 1 : 0)); }
+    if (puzzle.timer <= 0) solvePuzzle();
+  }
+}
+function drawPuzzle() {
+  if (!puzzle) return;
+  for (let i = 0; i < puzzle.objs.length; i++) {
+    const o = puzzle.objs[i];
+    if (puzzle.type === "runes") {
+      const lit = o.flash > 0;
+      ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.beginPath(); ctx.ellipse(o.x, o.y + 12, 11, 4, 0, 0, 7); ctx.fill();
+      const g = ctx.createLinearGradient(o.x - 9, 0, o.x + 9, 0); g.addColorStop(0, "#5a5a6a"); g.addColorStop(1, "#2a2a36");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(o.x - 9, o.y - 16, 18, 28, 4); ctx.fill();
+      const col = ["#ff5a6a", "#5ac8ff", "#9be15d", "#ffd23f"][i % 4];
+      if (lit) { ctx.shadowColor = col; ctx.shadowBlur = 24; }
+      ctx.strokeStyle = lit ? "#fff" : col; ctx.globalAlpha = lit ? 1 : 0.55; ctx.lineWidth = 2.2;
+      ctx.beginPath(); const sh = [[[-4, -8], [4, -8], [0, 4]], [[-4, -6], [4, 2], [-4, 2]], [[0, -9], [0, 5], [-4, -2], [4, -2]], [[-4, -8], [4, -8], [-4, 4], [4, 4]]][i % 4];
+      sh.forEach(([dx, dy], j) => j ? ctx.lineTo(o.x + dx, o.y + dy) : ctx.moveTo(o.x + dx, o.y + dy)); ctx.stroke();
+      ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+      if (!puzzle.solved && puzzle.showT <= 0) for (let k = 0; k < puzzle.step; k++) if (puzzle.seq[k] === i) { ctx.fillStyle = "#9be15d"; ctx.beginPath(); ctx.arc(o.x + 10, o.y - 16, 3, 0, 7); ctx.fill(); }
+    } else if (puzzle.type === "braziers") {
+      ctx.fillStyle = "#3a3a44"; ctx.beginPath(); ctx.moveTo(o.x - 10, o.y - 4); ctx.lineTo(o.x + 10, o.y - 4); ctx.lineTo(o.x + 6, o.y + 10); ctx.lineTo(o.x - 6, o.y + 10); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = "#6a6a76"; ctx.lineWidth = 1.5; ctx.stroke();
+      if (o.t > 0 || puzzle.solved) { const k = puzzle.solved ? 1 : o.t / puzzle.d.dur; flame(o.x, o.y - 4, 7 * (0.5 + k * 0.5), 20 * (0.4 + k * 0.6) + Math.sin(time * 14 + i) * 3, Math.sin(time * 5 + i) * 2, "#ff8a1f"); flame(o.x, o.y - 4, 3.5, 11 * (0.4 + k * 0.6), 0, "#ffe08a");
+        if (!puzzle.solved) { ctx.strokeStyle = "#ffd23f"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(o.x, o.y + 18, 6, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); ctx.stroke(); } }
+      else { ctx.fillStyle = "rgba(120,120,130,0.6)"; ctx.beginPath(); ctx.arc(o.x, o.y - 6, 3, 0, 7); ctx.fill(); }
+    } else if (puzzle.type === "plates") {
+      ctx.fillStyle = o.on ? "#9be15d" : "#4a4a56"; ctx.strokeStyle = o.on ? "#d0ffa0" : "#6a6a76"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.roundRect(o.x - 12, o.y - 12, 24, 24, 4); ctx.fill(); ctx.stroke();
+      if (o.on) { ctx.shadowColor = "#9be15d"; ctx.shadowBlur = 16; ctx.fillStyle = "#e8ffd0"; ctx.beginPath(); ctx.arc(o.x, o.y, 4, 0, 7); ctx.fill(); ctx.shadowBlur = 0; }
+    }
+  }
+}
+function drawPuzzleHud() {
+  if (!puzzle || puzzle.solved || state !== "play") return;
+  const t = puzzle.type, txt = t === "runes" ? (puzzle.showT > 0 ? "Mira el orden de las runas..." : `Runas: ${puzzle.step}/${puzzle.seq.length}`)
+    : t === "braziers" ? `Braseros encendidos: ${puzzle.objs.filter(o => o.t > 0).length}/${puzzle.objs.length}`
+    : t === "plates" ? `Placas: ${puzzle.objs.filter(o => o.on).length}/4` : `Aguanta: ${Math.ceil(puzzle.timer)} s`;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.font = "bold 15px system-ui"; const w = ctx.measureText(tr(txt)).width + 30, x = VW / 2 - w / 2, y = VH - (isTouch() ? 300 : 150);
+  ctx.fillStyle = "rgba(40,15,60,0.85)"; ctx.strokeStyle = "#c070ff"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(x, y, w, 32, 10); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#f0dcff"; ctx.textAlign = "center"; ctx.fillText(txt, VW / 2, y + 21);
+}
+// recompensa al vencer al minijefe
+let powerPop = null;
+function secretReward() {
+  const si = secretIdx, pw = POWERS[si];
+  const done = store.get(secretsKey(), []) || []; if (!done.includes(si)) done.push(si); store.set(secretsKey(), done);
+  const pws = store.get(powersKey(), []) || []; if (!pws.includes(pw.id)) { pws.push(pw.id); store.set(powersKey(), pws); if (pw.id === "heart") { P.maxHp += 2; } }
+  P.hp = P.maxHp;
+  powerPop = { pw, t: 0 }; JINGLES.ach(); SFX.secret();
+  if (exitMark >= 0) { tiles[exitMark] = EXIT; exits.push({ x: (exitMark % W) * TS + 16, y: Math.floor(exitMark / W) * TS + 16 }); repaintAround(exitMark % W, Math.floor(exitMark / W)); }
+  for (let i = 0; i < 60; i++) { const a = Math.random() * 7, v = rand(60, 260); parts.push({ x: P.x, y: P.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1, max: 1, c: [pw.color, "#ffffff", "#ffd23f"][i % 3], s: rand(2, 4), glow: true }); }
+}
+function drawPowerPop() {
+  if (!powerPop) return;
+  powerPop.t += frameDt; const t = powerPop.t, pw = powerPop.pw;
+  if (t > 5) { powerPop = null; return; }
+  const k = A11().motion ? 1 : easeBack(Math.min(1, t * 2.5)), a = Math.min(1, (5 - t) * 2);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.save(); ctx.globalAlpha = a; ctx.translate(VW / 2, VH * 0.42); ctx.scale(k, k);
+  const w = Math.min(420, VW - 32);
+  ctx.fillStyle = "rgba(20,10,30,0.92)"; ctx.strokeStyle = pw.color; ctx.lineWidth = 3; ctx.shadowColor = pw.color; ctx.shadowBlur = 30;
+  ctx.beginPath(); ctx.roundRect(-w / 2, -80, w, 160, 18); ctx.fill(); ctx.stroke(); ctx.shadowBlur = 0;
+  ctx.textAlign = "center"; ctx.fillStyle = pw.color; ctx.font = "bold 14px system-ui"; ctx.fillText("¡NUEVO PODER!", 0, -52);
+  ctx.font = "44px system-ui"; ctx.save(); ctx.translate(0, -14); ctx.rotate(A11().motion ? 0 : Math.sin(t * 3) * 0.15); ctx.fillText(pw.icon, 0, 14); ctx.restore();
+  ctx.fillStyle = "#fff3dc"; ctx.font = `900 24px ${TITLE_FONT}`; ctx.fillText(pw.name, 0, 36, w - 24);
+  ctx.fillStyle = "rgba(243,230,200,0.8)"; ctx.font = "14px system-ui"; ctx.fillText(pw.desc, 0, 60, w - 24);
+  ctx.restore();
+}
+function drawPowerBadges() {
+  if (inTutorial || state !== "play" && state !== "pause") return;
+  const pws = POWERS.filter(p => hasPower(p.id)); if (!pws.length) return;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const y = 82; ctx.font = "13px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  pws.forEach((pw, i) => {
+    const x = 24 + i * 26, cool = pw.id === "autoshield" && (P.ashT || 0) > 0;
+    ctx.fillStyle = "rgba(14,10,18,0.8)"; ctx.strokeStyle = cool ? "rgba(120,120,130,0.5)" : pw.color; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(x, y, 11, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.globalAlpha = cool ? 0.4 : 1; ctx.fillText(pw.icon, x, y + 1); ctx.globalAlpha = 1;
+  });
+  ctx.textBaseline = "alphabetic";
 }
 
 // ---------- Arena del jefe ----------
@@ -1858,7 +2109,7 @@ function setupArena() {
     for (const j of [i - 1, i + 1, i - W, i + W]) {
       if (j < 0 || j >= W * H || region.has(j)) continue;
       const t = tiles[j];
-      if (barrier.has(j) || t === DOOR) { gates.add(j); continue; }
+      if (barrier.has(j) || t === DOOR || t === GATE) { gates.add(j); continue; }
       if (t === WALL || t === CRACK) continue;
       region.add(j); q.push(j);
     }
@@ -1884,6 +2135,7 @@ function updateArena(dt) {
     arena.done = true; arena.sealed = false;
     for (const g of arena.gates) { tiles[g] = arena.prev[g] === DOOR ? DOOR : FLOOR; repaintAround(g % W, Math.floor(g / W)); }
     flowDirty = true; SFX.door(); SFX.secret();
+    if (secretIdx !== null) secretReward();
     const lvAt = levelIdx; setTimeout(() => { if (levelIdx === lvAt && state === "play") showToast("¡La puerta del jefe se ha abierto!", 2.5); }, 1800);
   }
 }
@@ -1963,7 +2215,8 @@ function fire() {
   camKick.x -= Math.cos(P.aim) * (w.rocket ? 6 : w.darts > 1 ? 4 : 1.5); camKick.y -= Math.sin(P.aim) * (w.rocket ? 6 : w.darts > 1 ? 4 : 1.5);
   const a = P.aim;
   const mx = P.x + Math.cos(a) * 18, my = P.y + Math.sin(a) * 18 + 2;
-  for (let i = 0; i < w.darts; i++) {
+  const nd = w.darts + (hasPower("double") && w.darts === 1 && !w.water && !w.rocket && Math.random() < 0.35 ? 1 : 0);
+  for (let i = 0; i < nd; i++) {
     const s = w.darts > 1 ? (i / (w.darts - 1) - 0.5) * w.spread + rand(-0.05, 0.05) : rand(-w.spread, w.spread);
     const ang = a + s, sp = w.speed * (w.darts > 1 ? rand(0.85, 1.1) : 1);
     const kind = w.rocket ? "rocket" : w.pierce ? "bolt" : w.disc ? "disc" : w.grenade ? "grenade" : w.water ? "water" : w.mega ? "mega" : "dart";
@@ -1997,6 +2250,7 @@ function damageMon(m, d, ang, silent, quiet, critC = 0.08) {
   if (!silent && Math.random() < critC) { d *= 2; crit = true; }
   if (m.stun > 0) d *= 1.5;
   m.hp -= d; m.flash = 0.1; m.sq = m.def.boss ? 0.18 : 0.4;
+  if (hasPower("ice") && !m.def.boss) { m.stun = Math.max(m.stun || 0, 0.35); if (Math.random() < 0.5) parts.push({ x: m.x + rand(-6, 6), y: m.y + rand(-6, 6), vx: rand(-20, 20), vy: rand(-30, 0), life: 0.4, max: 0.4, c: "#cfefff", s: 2, glow: true }); }
   const kb = m.def.rooted ? 0 : (m.def.heavy ? 35 : 170) * Math.min(1, d);
   m.kx += Math.cos(ang) * kb; m.ky += Math.sin(ang) * kb;
   if (m.alert <= 0) onAlert(m);
@@ -2086,6 +2340,12 @@ function explode(x, y, rad, dmg) {
 }
 function hurtPlayer(d, sx, sy) {
   if (P.inv > 0 || P.dash > 0 || state !== "play") return;
+  if (hasPower("autoshield") && (P.ashT || 0) <= 0) {
+    // el escudo automático para el golpe
+    P.ashT = 20; P.inv = 0.8; SFX.bounce(); beep(1100, 0.1, "sine", 0.05, 400);
+    rings.push({ x: P.x, y: P.y, r: 8, max: 34, life: 0.4, c: "#3fb7ff" }); floatText(P.x, P.y - 18, "¡Escudo!", "#8fd8ff", 12);
+    return;
+  }
   if (P.shield > 0) {
     // el escudo de lana absorbe el golpe
     P.inv = 0.4; SFX.bounce(); beep(900, 0.08, "sine", 0.04, 300);
@@ -2150,7 +2410,10 @@ function update(rdt) {
   updateFx(dt);
 
   updateAmbient(dt);
-  comboT -= dt; updateBark(dt); updateTutorial(dt); updateArena(dt); updateWorld(dt); updatePet(dt);
+  comboT -= dt; updateBark(dt); updateTutorial(dt); updateArena(dt); updateWorld(dt); updatePet(dt); updatePuzzle(dt);
+  P.ashT = Math.max(0, (P.ashT || 0) - dt);
+  // portal secreto bajo los pies
+  { const pi = Math.floor(P.y / TS) * W + Math.floor(P.x / TS); if (tiles[pi] === PORTAL && secretIdx === null && P.exiting <= 0) { enterSecret(secretFor(levelIdx), pi); return; } P.prevX = P.x; P.prevY = P.y; }
   const ptx = Math.floor(P.x / TS), pty = Math.floor(P.y / TS);
   if (P.exiting > 0) {
     P.exiting -= rdt; P.inv = 1;
@@ -2167,7 +2430,7 @@ function updatePlayer(dt) {
   P.inv -= dt; P.cd -= dt; P.dashCd -= dt; P.muzzle -= dt; P.recoil = Math.max(0, P.recoil - dt * 8);
   P.spinV = (P.spinV || 0) + ((P.recoil > 0.1 ? 34 : 1.5) - (P.spinV || 0)) * Math.min(1, dt * 4); P.spin = (P.spin || 0) + P.spinV * dt;
   if (P.reloading > 0) {
-    P.reloading -= dt;
+    P.reloading -= dt * (hasPower("reload") ? 1.7 : 1);
     if (P.reloading <= 0) { const id = curId(), take = Math.min(curW().clip - P.ammo[id], P.res[id] || 0); P.ammo[id] += take; P.res[id] -= take; SFX.reloaded(); }
   }
 
@@ -2238,8 +2501,8 @@ function updatePlayer(dt) {
 
   // pinchos
   const t = T(Math.floor(P.x / TS), Math.floor(P.y / TS));
-  if (t === SPIKE && spikeUp(Math.floor(P.x / TS), Math.floor(P.y / TS))) hurtPlayer(1, P.x + rand(-1, 1), P.y + rand(-1, 1));
-  if (t === LAVA && P.dash <= 0) {
+  if (t === SPIKE && !hasPower("lavaboots") && spikeUp(Math.floor(P.x / TS), Math.floor(P.y / TS))) hurtPlayer(1, P.x + rand(-1, 1), P.y + rand(-1, 1));
+  if (t === LAVA && P.dash <= 0 && !hasPower("lavaboots")) {
     hint("lava", "¡La lava quema! Sáltala esquivando con SHIFT", 3);
     if (P.inv <= 0) { hurtPlayer(1, P.x + rand(-1, 1), P.y + 4); for (let i = 0; i < 8; i++) parts.push({ x: P.x + rand(-6, 6), y: P.y + 8, vx: rand(-30, 30), vy: rand(-90, -40), life: 0.5, max: 0.5, c: i % 2 ? "#ff7a12" : "#ffd24a", s: 2.5, glow: true }); }
   }
@@ -2263,7 +2526,7 @@ function visPoly(px, py, R) {
   return pts;
 }
 
-const darkK = () => curWorld() === 2 ? 0.55 : 1;
+const darkK = () => (curWorld() === 2 ? 0.55 : 1) * (hasPower("vision") ? 1.35 : 1);
 const angDiffSigned = (a, b) => ((a - b + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
 function rayLen(x, y, a, max) {
   const c = Math.cos(a), s = Math.sin(a);
@@ -2523,6 +2786,7 @@ function updateQueen(m, dt, d, dx, dy, sp, D, chase, setV) {
 function updateProjs(dt) {
   for (const p of projs) {
     p.life -= dt; p.t += dt; p.px = p.x; p.py = p.y; p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.owner === "p" && puzzle && puzzleHit(p)) { p.dead = true; p.life = 0; continue; }
     if (p.trail) { const tp = dartTrail(p); if (tp) parts.push(tp); }
     if (p.kind === "grenade") { p.vx *= Math.pow(0.35, dt); p.vy *= Math.pow(0.35, dt); if (Math.random() < 0.4) parts.push({ x: p.x, y: p.y - 4, vx: rand(-8, 8), vy: rand(-20, -5), life: 0.3, max: 0.3, c: "rgba(200,200,200,0.4)", s: 2 }); }
     if (p.kind === "water") { p.vx *= Math.pow(0.4, dt); p.vy *= Math.pow(0.4, dt); }
@@ -2610,7 +2874,8 @@ function updateItems(dt) {
     const d = Math.hypot(it.x - P.x, it.y - P.y);
     const wants = it.kind === "bullets" ? !!ammoTarget() : it.kind !== "heart" || P.hp < P.maxHp;
     // imán suave para recoger objetos
-    if (wants && d < 64 && d > 1) { const k = (1 - d / 64) * 260 * dt; it.x += (P.x - it.x) / d * k; it.y += (P.y - it.y) / d * k; }
+    const mr = hasPower("magnet") ? 160 : 64;
+    if (wants && d < mr && d > 1) { const k = (1 - d / mr) * (mr > 64 ? 420 : 260) * dt; it.x += (P.x - it.x) / d * k; it.y += (P.y - it.y) / d * k; }
     if (Math.random() < dt * 1.5 && (it.kind === "gold" || it.kind === "key" || it.kind === "bullets")) glints.push({ x: it.x + rand(-6, 6), y: it.y + rand(-8, 4), life: 0.4 });
     if (d > P.r + 12 || !wants) continue;
     if (it.kind === "key") {
@@ -2740,6 +3005,7 @@ function updateFx(dt) {
 
 function finishLevel() {
   if (inTutorial) { JINGLES.clear(); endTutorial(); return; }
+  if (secretIdx !== null) { returnFromSecret(); return; }
   const bonus = Math.max(0, Math.round((240 - lv.time) * 2));
   lv.bonus = bonus; run.score += bonus;
   lv.stars = 1 + (lv.monTotal === 0 || lv.kills >= lv.monTotal * 0.8 ? 1 : 0) + (lv.goldTotal === 0 || lv.goldGot >= lv.goldTotal * 0.8 ? 1 : 0)
@@ -2821,6 +3087,7 @@ function drawMain() {
     else if (t === WEB) drawWeb(px, py, x, y);
     else if (t === LAVA) drawLava(px, py, x, y);
     else if (t === GATE) drawGate(px, py, x, y);
+    else if (t === PORTAL) drawPortal(px, py, x, y);
     else if (t === CRATE) drawCrate(px, py, thp[y * W + x]);
     else if (t === WATER) {
       ctx.strokeStyle = "rgba(150,215,255,0.11)"; ctx.lineWidth = 1;
@@ -2920,7 +3187,7 @@ function drawMain() {
   for (const d of drops) { ctx.strokeStyle = "rgba(170,215,255,0.7)"; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(d.x, d.y - d.z); ctx.lineTo(d.x, d.y - d.z - 5); ctx.stroke(); ctx.fillStyle = `rgba(0,0,0,${0.25 * (1 - d.z / 150)})`; ctx.beginPath(); ctx.ellipse(d.x, d.y, 1.8, 0.8, 0, 0, 7); ctx.fill(); }
   for (const p of projs) drawProj(p);
   for (const r of rings) { ctx.globalAlpha = Math.max(0, r.life * 2.5); ctx.strokeStyle = r.c; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, 7); ctx.stroke(); }
-  ctx.globalAlpha = 1; drawRocks(); drawPet();
+  ctx.globalAlpha = 1; drawRocks(); drawPet(); drawPuzzle();
   for (const p of parts) { ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.c; ctx.fillRect(p.x - p.s / 2, p.y - p.s / 2, p.s, p.s); }
   ctx.globalAlpha = 1;
 
@@ -3031,7 +3298,8 @@ function drawMain() {
     drawMiniMap(VW / 2 - mw / 2, VH / 2 - mh / 2 - 20, mw, mh, sc, false);
   }
   if (touch.on && state === "play") drawTouch();
-  if (state === "play") { drawCombo(); drawTutorialPanel(); drawWorldCard(); }
+  if (state === "play") { drawCombo(); drawTutorialPanel(); drawWorldCard(); drawPuzzleHud(); }
+  drawPowerBadges(); drawPowerPop();
   if (fade > 0) { ctx.fillStyle = `rgba(5,4,7,${fade})`; ctx.fillRect(0, 0, VW, VH); }
   if (state === "pause") drawPause();
   if (state === "dead") drawDead();
@@ -3920,7 +4188,7 @@ function drawHUD() {
   }
   // nivel, oro y puntos
   ctx.textAlign = "right"; ctx.font = `bold ${small ? 12 : 14}px system-ui, sans-serif`;
-  const l1 = inTutorial ? "Tutorial" : `${levelLabel(levelIdx)} · ${DIFF().name}`, l2 = `Oro ${run.gold}  ·  Puntos ${run.score}`;
+  const l1 = inTutorial ? "Tutorial" : secretIdx !== null ? `Nivel secreto · Mundo ${curWorld() + 1} · ${DIFF().name}` : `${levelLabel(levelIdx)} · ${DIFF().name}`, l2 = `Oro ${run.gold}  ·  Puntos ${run.score}`;
   const pw = Math.max(ctx.measureText(l1).width, ctx.measureText(l2).width + 10) + 24;
   panel(VW - pw - 10, 10, pw, 50);
   ctx.fillStyle = "#f3e6c8"; ctx.fillText(l1, VW - 22, 30);
@@ -3982,7 +4250,7 @@ function drawHUD() {
     const a = Math.min(1, banner, (3.2 - banner) * 3);
     ctx.globalAlpha = a; ctx.textAlign = "center";
     ctx.fillStyle = "#e8a33d"; ctx.font = `bold ${small ? 13 : 16}px system-ui`;
-    ctx.fillText(inTutorial ? "— TUTORIAL —" : `— MUNDO ${curWorld() + 1} · NIVEL ${levelIdx % 10 + 1}/10 —`, VW / 2, VH * 0.36);
+    ctx.fillText(inTutorial ? "— TUTORIAL —" : secretIdx !== null ? "— NIVEL SECRETO · DIFÍCIL —" : `— MUNDO ${curWorld() + 1} · NIVEL ${levelIdx % 10 + 1}/10 —`, VW / 2, VH * 0.36);
     ctx.fillStyle = "#f3e6c8"; ctx.font = `900 ${small ? 26 : 40}px ${TITLE_FONT}`;
     ctx.shadowColor = "rgba(232,163,61,0.6)"; ctx.shadowBlur = 18;
     ctx.fillText(curDef().name, VW / 2, VH * 0.36 + (small ? 36 : 50), VW - 32);
@@ -4163,7 +4431,7 @@ const toMenu = () => {
     saved = { level: levelIdx + 1, diff: settings.diff, weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
     store.set(saveKey(), saved); saveIcon = 1.8;
   }
-  gameDirty = false; exitDlg = null;
+  gameDirty = false; exitDlg = null; secretIdx = null; secretRet = null;
   inTutorial = false; state = "title"; uiSel = 0; saved = store.get(saveKey(), null);
 };
 
@@ -5902,6 +6170,7 @@ let saveIcon = 0, gameDirty = false, exitDlg = null;
 // guarda la partida en el punto exacto en que estás
 function saveGame() {
   if (inTutorial) { showToast("En el tutorial no hace falta guardar", 2); return; }
+  if (secretIdx !== null) { showToast("En el nivel secreto no se puede guardar: tu partida se guardó al entrar", 2.6); return; }
   if (state !== "play" && state !== "pause") return;
   const s0 = state; state = "play"; const ok = checkpoint(); state = s0;
   if (ok) { gameDirty = false; SFX.secret(); showToast("¡Partida guardada!", 1.8); }
@@ -5910,7 +6179,7 @@ function saveGame() {
 // si hay progreso sin guardar, pregunta antes de salir; devuelve true si ha abierto el aviso
 function askLeave(then) {
   if (exitDlg) return true;
-  if (!gameDirty || inTutorial || (state !== "play" && state !== "pause")) return false;
+  if (!gameDirty || inTutorial || secretIdx !== null || (state !== "play" && state !== "pause")) return false;
   if (state === "play") pause();
   for (const k in keys) keys[k] = false; mouse.down = false; touch.fire = false;
   SFX.hurt();
@@ -5964,7 +6233,7 @@ function checkpoint() {
   store.set(saveKey(), saved); saveIcon = 1.8;
   return true;
 }
-function restoreCheckpoint(ck) {
+function restoreCheckpoint(ck, quiet) {
   tiles = ck.tiles.slice(); thp = ck.thp.slice(); seen = ck.seen.slice(); doorCol = { ...ck.doorCol };
   items = structuredClone(ck.items);
   monsters = structuredClone(ck.monsters).map(m => Object.assign(m, { def: MON[m.type] }));
@@ -5974,7 +6243,7 @@ function restoreCheckpoint(ck) {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (seen[y * W + x]) paintMini(x, y);
   flowDirty = true; flowFrom = -1; camX = P.x - VW / 2; camY = P.y - VH / 2;
   saved.full = ck; store.set(saveKey(), saved); gameDirty = false;
-  showToast("Partida cargada: sigues donde lo dejaste", 3);
+  if (!quiet) showToast("Partida cargada: sigues donde lo dejaste", 3);
 }
 function drawSaveIcon() {
   if (saveIcon <= 0) return;
@@ -5995,6 +6264,55 @@ function drawSaveIcon() {
 TR_ROWS.push(
 ["Inicio", "Home", "Início", "Accueil", "Start", "Inizio"],
 ["Volver", "Back", "Voltar", "Retour", "Zurück", "Indietro"],
+["Nivel secreto · Mundo {0} · {1}", "Secret level · World {0} · {1}", "Nível secreto · Mundo {0} · {1}", "Niveau secret · Monde {0} · {1}", "Geheimlevel · Welt {0} · {1}", "Livello segreto · Mondo {0} · {1}"],
+["NIVEL SECRETO · DIFÍCIL", "SECRET LEVEL · HARD", "NÍVEL SECRETO · DIFÍCIL", "NIVEAU SECRET · DIFFICILE", "GEHEIMLEVEL · SCHWER", "LIVELLO SEGRETO · DIFFICILE"],
+["¡Has encontrado un nivel secreto! Aquí la dificultad es Difícil", "You found a secret level! Difficulty here is Hard", "Você encontrou um nível secreto! Aqui a dificuldade é Difícil", "Tu as trouvé un niveau secret ! Ici la difficulté est Difficile", "Du hast ein Geheimlevel gefunden! Hier ist es Schwer", "Hai trovato un livello segreto! Qui la difficoltà è Difficile"],
+["¡Has vuelto del nivel secreto con un poder nuevo!", "You're back from the secret level with a new power!", "Você voltou do nível secreto com um novo poder!", "Tu reviens du niveau secret avec un nouveau pouvoir !", "Du bist mit einer neuen Kraft aus dem Geheimlevel zurück!", "Sei tornato dal livello segreto con un nuovo potere!"],
+["En el nivel secreto no se puede guardar: tu partida se guardó al entrar", "You can't save in the secret level: your game was saved when you entered", "Não dá para salvar no nível secreto: seu jogo foi salvo ao entrar", "Impossible de sauvegarder ici : ta partie a été sauvegardée en entrant", "Im Geheimlevel kann man nicht speichern: Beim Betreten wurde gespeichert", "Nel livello segreto non si salva: la partita è stata salvata all'ingresso"],
+["¡Reto superado! La puerta se abre... cuidado con el guardián", "Challenge complete! The door opens... beware of the guardian", "Desafio superado! A porta se abre... cuidado com o guardião", "Défi réussi ! La porte s'ouvre... attention au gardien", "Rätsel gelöst! Die Tür öffnet sich... Vorsicht vor dem Wächter", "Sfida superata! La porta si apre... attento al guardiano"],
+["¡Orden equivocado! Fíjate otra vez", "Wrong order! Watch again", "Ordem errada! Observe de novo", "Mauvais ordre ! Regarde encore", "Falsche Reihenfolge! Schau nochmal hin", "Ordine sbagliato! Guarda di nuovo"],
+["¡Ahora tú! Dispara a las runas en el mismo orden", "Your turn! Shoot the runes in the same order", "Sua vez! Atire nas runas na mesma ordem", "À toi ! Tire sur les runes dans le même ordre", "Du bist dran! Schieß die Runen in derselben Reihenfolge", "Tocca a te! Spara alle rune nello stesso ordine"],
+["Mira el orden de las runas...", "Watch the order of the runes...", "Observe a ordem das runas...", "Regarde l'ordre des runes...", "Merk dir die Reihenfolge der Runen...", "Guarda l'ordine delle rune..."],
+["Runas: {0}/{1}", "Runes: {0}/{1}", "Runas: {0}/{1}", "Runes : {0}/{1}", "Runen: {0}/{1}", "Rune: {0}/{1}"],
+["Braseros encendidos: {0}/{1}", "Braziers lit: {0}/{1}", "Braseiros acesos: {0}/{1}", "Braseros allumés : {0}/{1}", "Feuerschalen an: {0}/{1}", "Bracieri accesi: {0}/{1}"],
+["Placas: {0}/4", "Plates: {0}/4", "Placas: {0}/4", "Dalles : {0}/4", "Platten: {0}/4", "Piastre: {0}/4"],
+["Placa {0}/4", "Plate {0}/4", "Placa {0}/4", "Dalle {0}/4", "Platte {0}/4", "Piastra {0}/4"],
+["Aguanta: {0} s", "Hold on: {0} s", "Aguente: {0} s", "Tiens bon : {0} s", "Durchhalten: {0} s", "Resisti: {0} s"],
+["Memoriza el orden en que brillan las {0} runas y dispárales igual", "Memorize the order the {0} runes glow and shoot them the same way", "Memorize a ordem em que as {0} runas brilham e atire nelas igual", "Mémorise l'ordre où brillent les {0} runes et tire-leur dessus pareil", "Merk dir, in welcher Reihenfolge die {0} Runen leuchten, und schieß genauso", "Memorizza l'ordine in cui brillano le {0} rune e sparagli uguale"],
+["Enciende los 5 braseros a la vez disparándoles antes de que se apaguen", "Light all 5 braziers at once by shooting them before they go out", "Acenda os 5 braseiros ao mesmo tempo atirando neles antes que apaguem", "Allume les 5 braseros en même temps en tirant dessus avant qu'ils s'éteignent", "Zünde alle 5 Feuerschalen gleichzeitig an, bevor sie ausgehen", "Accendi i 5 bracieri insieme sparandogli prima che si spengano"],
+["Pisa las 4 placas escondidas en las esquinas para abrir la puerta", "Step on the 4 plates hidden in the corners to open the door", "Pise nas 4 placas escondidas nos cantos para abrir a porta", "Marche sur les 4 dalles cachées dans les coins pour ouvrir la porte", "Tritt auf die 4 Platten in den Ecken, um die Tür zu öffnen", "Calpesta le 4 piastre negli angoli per aprire la porta"],
+["¡Aguanta {0} segundos hasta que se abra la puerta!", "Hold on for {0} seconds until the door opens!", "Aguente {0} segundos até a porta abrir!", "Tiens {0} secondes jusqu'à ce que la porte s'ouvre !", "Halte {0} Sekunden durch, bis sich die Tür öffnet!", "Resisti {0} secondi finché la porta si apre!"],
+["Se oye un zumbido extraño tras esa pared agrietada... ¡dispárale!", "There's a strange hum behind that cracked wall... shoot it!", "Ouve-se um zumbido estranho atrás da parede rachada... atire nela!", "Un bourdonnement étrange derrière ce mur fissuré... tire dessus !", "Hinter der rissigen Wand summt es seltsam... schieß drauf!", "Si sente un ronzio strano dietro quel muro crepato... sparagli!"],
+["¡NUEVO PODER!", "NEW POWER!", "NOVO PODER!", "NOUVEAU POUVOIR !", "NEUE KRAFT!", "NUOVO POTERE!"],
+["¡Escudo!", "Shield!", "Escudo!", "Bouclier !", "Schild!", "Scudo!"],
+["Corazón de cristal", "Crystal heart", "Coração de cristal", "Cœur de cristal", "Kristallherz", "Cuore di cristallo"],
+["Tienes 2 corazones más", "You get 2 more hearts", "Você tem 2 corações a mais", "Tu as 2 cœurs de plus", "Du hast 2 Herzen mehr", "Hai 2 cuori in più"],
+["Recarga relámpago", "Lightning reload", "Recarga relâmpago", "Recharge éclair", "Blitz-Nachladen", "Ricarica lampo"],
+["Recargas mucho más rápido", "You reload much faster", "Você recarrega muito mais rápido", "Tu recharges beaucoup plus vite", "Du lädst viel schneller nach", "Ricarichi molto più in fretta"],
+["Dardos de hielo", "Ice darts", "Dardos de gelo", "Fléchettes de glace", "Eispfeile", "Dardi di ghiaccio"],
+["Tus dardos congelan un instante a los monstruos", "Your darts freeze monsters for a moment", "Seus dardos congelam os monstros por um instante", "Tes fléchettes gèlent un instant les monstres", "Deine Pfeile frieren Monster kurz ein", "I tuoi dardi congelano i mostri per un attimo"],
+["Imán de tesoros", "Treasure magnet", "Ímã de tesouros", "Aimant à trésors", "Schatzmagnet", "Calamita dei tesori"],
+["Atraes el oro y los objetos desde lejos", "You pull gold and items from far away", "Você atrai ouro e objetos de longe", "Tu attires l'or et les objets de loin", "Du ziehst Gold und Gegenstände von weit her an", "Attiri oro e oggetti da lontano"],
+["Visión nocturna", "Night vision", "Visão noturna", "Vision nocturne", "Nachtsicht", "Visione notturna"],
+["Ves mucho más lejos en la oscuridad", "You see much farther in the dark", "Você enxerga muito mais longe no escuro", "Tu vois bien plus loin dans le noir", "Du siehst im Dunkeln viel weiter", "Vedi molto più lontano al buio"],
+["Dardo doble", "Double dart", "Dardo duplo", "Double fléchette", "Doppelpfeil", "Dardo doppio"],
+["A veces disparas dos dardos a la vez", "Sometimes you fire two darts at once", "Às vezes você dispara dois dardos de uma vez", "Parfois tu tires deux fléchettes à la fois", "Manchmal schießt du zwei Pfeile auf einmal", "A volte spari due dardi insieme"],
+["Botas de lava", "Lava boots", "Botas de lava", "Bottes de lave", "Lavastiefel", "Stivali di lava"],
+["La lava y los pinchos no te hacen daño", "Lava and spikes don't hurt you", "A lava e os espinhos não te machucam", "La lave et les pics ne te blessent pas", "Lava und Stacheln tun dir nichts", "Lava e spuntoni non ti fanno male"],
+["Escudo automático", "Auto shield", "Escudo automático", "Bouclier automatique", "Auto-Schild", "Scudo automatico"],
+["Cada 20 segundos un escudo para un golpe", "Every 20 seconds a shield blocks one hit", "A cada 20 segundos um escudo bloqueia um golpe", "Toutes les 20 secondes, un bouclier bloque un coup", "Alle 20 Sekunden blockt ein Schild einen Treffer", "Ogni 20 secondi uno scudo blocca un colpo"],
+["La Cámara de las Runas", "The Rune Chamber", "A Câmara das Runas", "La Chambre des Runes", "Die Runenkammer", "La Camera delle Rune"],
+["La Sala de los Braseros", "The Brazier Hall", "A Sala dos Braseiros", "La Salle des Braseros", "Der Feuerschalensaal", "La Sala dei Bracieri"],
+["La Cripta de Hielo", "The Ice Crypt", "A Cripta de Gelo", "La Crypte de Glace", "Die Eisgruft", "La Cripta di Ghiaccio"],
+["El Eco Helado", "The Frozen Echo", "O Eco Gelado", "L'Écho Gelé", "Das Eisige Echo", "L'Eco Ghiacciata"],
+["El Jardín Sin Luz", "The Lightless Garden", "O Jardim Sem Luz", "Le Jardin Sans Lumière", "Der Lichtlose Garten", "Il Giardino Senza Luce"],
+["El Asedio de las Sombras", "The Shadow Siege", "O Cerco das Sombras", "Le Siège des Ombres", "Die Schattenbelagerung", "L'Assedio delle Ombre"],
+["La Forja Apagada", "The Cold Forge", "A Forja Apagada", "La Forge Éteinte", "Die Erloschene Schmiede", "La Forgia Spenta"],
+["El Horno Eterno", "The Eternal Furnace", "O Forno Eterno", "Le Four Éternel", "Der Ewige Ofen", "La Fornace Eterna"],
+["GUARDIÁN RÚNICO · MINIJEFE", "RUNE GUARDIAN · MINI-BOSS", "GUARDIÃO RÚNICO · MINICHEFE", "GARDIEN RUNIQUE · MINI-BOSS", "RUNENWÄCHTER · MINIBOSS", "GUARDIANO RUNICO · MINIBOSS"],
+["ESPÍRITU DE HIELO · MINIJEFE", "ICE SPIRIT · MINI-BOSS", "ESPÍRITO DE GELO · MINICHEFE", "ESPRIT DE GLACE · MINI-BOSS", "EISGEIST · MINIBOSS", "SPIRITO DI GHIACCIO · MINIBOSS"],
+["SOMBRA MENOR · MINIJEFE", "LESSER SHADOW · MINI-BOSS", "SOMBRA MENOR · MINICHEFE", "OMBRE MINEURE · MINI-BOSS", "KLEINER SCHATTEN · MINIBOSS", "OMBRA MINORE · MINIBOSS"],
+["SALAMANDRA DE FUEGO · MINIJEFE", "FIRE SALAMANDER · MINI-BOSS", "SALAMANDRA DE FOGO · MINICHEFE", "SALAMANDRE DE FEU · MINI-BOSS", "FEUERSALAMANDER · MINIBOSS", "SALAMANDRA DI FUOCO · MINIBOSS"],
 ["Mundo {0} · Nivel {1}/10", "World {0} · Level {1}/10", "Mundo {0} · Nível {1}/10", "Monde {0} · Niveau {1}/10", "Welt {0} · Level {1}/10", "Mondo {0} · Livello {1}/10"],
 ["Mundo {0} · Nivel {1}/10 · {2}", "World {0} · Level {1}/10 · {2}", "Mundo {0} · Nível {1}/10 · {2}", "Monde {0} · Niveau {1}/10 · {2}", "Welt {0} · Level {1}/10 · {2}", "Mondo {0} · Livello {1}/10 · {2}"],
 ["Continuar · Mundo {0} · Nivel {1}/10 ({2})", "Continue · World {0} · Level {1}/10 ({2})", "Continuar · Mundo {0} · Nível {1}/10 ({2})", "Continuer · Monde {0} · Niveau {1}/10 ({2})", "Weiter · Welt {0} · Level {1}/10 ({2})", "Continua · Mondo {0} · Livello {1}/10 ({2})"],
