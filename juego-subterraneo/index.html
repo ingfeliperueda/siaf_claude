@@ -2374,6 +2374,7 @@ function drawMain() {
   if (state === "ach") { drawAchScreen(); return; }
   if (state === "device") { drawDeviceScreen(); return; }
   if (state === "options" || state === "access") { drawSubMenu(); return; }
+  if (state === "bye") { drawBye(); return; }
   CZ = ZOOM * (1 + zoomPunch);
   const vw = VW / CZ, vh = VH / CZ;
   // cámara adelantada hacia donde apuntas
@@ -3538,15 +3539,16 @@ function drawTouch() {
 function button(label, x, y, w, h, fn, opts = {}) {
   const idx = ui.length;
   ui.push({ x, y, w, h, fn, lr: opts.lr, label, hint: opts.hint });
-  const sel = uiSel === idx, A = A11(), hc = A.contrast;
+  const sel = uiSel === idx, A = A11(), hc = A.contrast, red = opts.danger && exitAsk > 0;
   uiAnim[idx] = A.motion ? (sel ? 1 : 0) : (uiAnim[idx] || 0) + ((sel ? 1 : 0) - (uiAnim[idx] || 0)) * Math.min(1, frameDt * 14);
   const an = uiAnim[idx], ap = A.motion ? 1 : ease((stateT - 0.08 - Math.min(idx, 8) * 0.06) * 4), zs = A.motion ? 0 : an * 0.04;
   ctx.save(); ctx.globalAlpha = ap; ctx.translate(x + w / 2, y + h / 2 + (1 - ap) * 22); ctx.scale(1 + zs, 1 + zs); ctx.translate(-x - w / 2, -y - h / 2);
   if (an > 0.02 && !hc) { ctx.shadowColor = `rgba(232,163,61,${0.5 * an})`; ctx.shadowBlur = 18 * an; }
   ctx.fillStyle = hc ? (sel ? "#3d2e00" : "#000") : sel ? "rgba(232,163,61,0.22)" : "rgba(20,16,24,0.85)";
   ctx.strokeStyle = hc ? (sel ? "#ffd400" : "#fff") : sel ? "#e8a33d" : "rgba(243,230,200,0.2)"; ctx.lineWidth = hc ? (sel ? 4 : 2) : sel ? 2 : 1;
+  if (red) { ctx.fillStyle = "rgba(150,40,30,0.85)"; ctx.strokeStyle = "#ff8a6a"; }
   ctx.beginPath(); ctx.roundRect(x, y, w, h, 10); ctx.fill(); ctx.stroke(); ctx.shadowBlur = 0;
-  ctx.fillStyle = hc ? (sel ? "#ffd400" : "#fff") : sel ? "#ffe2a8" : "#f3e6c8"; ctx.font = `bold ${(opts.size || 16) * UIK()}px system-ui, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = red ? "#fff" : hc ? (sel ? "#ffd400" : "#fff") : sel ? "#ffe2a8" : "#f3e6c8"; ctx.font = `bold ${(opts.size || 16) * UIK()}px system-ui, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillText(label, x + w / 2, y + h / 2 + 1, w - (opts.lr ? 52 : 16)); ctx.textBaseline = "alphabetic";
   // marca de foco con forma, no solo con color
   if (sel && w > 60 && x > 26) { ctx.fillStyle = hc ? "#ffd400" : "#e8a33d"; ctx.beginPath(); const mx = x - 10 - (A.motion ? 0 : Math.sin(time * 5) * 2), my = y + h / 2; ctx.moveTo(mx, my); ctx.lineTo(mx - 9, my - 7); ctx.lineTo(mx - 9, my + 7); ctx.fill(); }
@@ -3714,6 +3716,7 @@ function drawTitle() {
   items.push({ label: `Logros (${ACH.filter(a => achieved[a.id]).length}/${ACH.length})`, fn: () => { state = "ach"; uiSel = 0; } });
   items.push({ label: "Opciones", fn: () => openSub("options") });
   items.push({ label: "Accesibilidad", fn: () => openSub("access") });
+  items.push({ label: exitAsk > 0 ? "¿Seguro? Pulsa otra vez para salir" : "Salir del juego", fn: askExit, danger: true });
   const y0 = ty + (s ? 140 : 205), room = VH - y0 - (s ? 70 : 80);
   const bh = Math.max(40, Math.min((s ? 40 : 46) * UIK(), room / items.length - 8));
   menuList(items, VW / 2, y0, Math.min(340 * Math.min(UIK(), 1.15), VW - 40), bh, 8);
@@ -4828,17 +4831,40 @@ function goBack() {
   else if (state === "options" || state === "access") closeSub();
   else if (state === "play") pause();
   else if (state === "pause") resume();
+  else if (state === "title") openDevice();
   else toMenu();
 }
-const showNav = () => !(state === "title" || (state === "device" && !settings.device));
+const showNav = () => !((state === "device" && !settings.device) || state === "bye");
+// botones rápidos del menú principal
+const canFull = () => !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+function toggleFull() {
+  try {
+    if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else { const el = document.documentElement; const r = (el.requestFullscreen || el.webkitRequestFullscreen).call(el); if (r && r.catch) r.catch(() => showToast("Tu navegador no deja usar pantalla completa aquí", 2.5)); }
+  } catch (e) { showToast("Tu navegador no deja usar pantalla completa aquí", 2.5); }
+}
+const NAV_ACT = {
+  home: () => goHome(), back: () => goBack(),
+  sound: () => { setSound(!settings.sound); SFX.uiGo(); },
+  lang: () => { openCustom("menu"); customRow = 1; openPicker(); },
+  access: () => { SFX.uiGo(); openSub("access"); },
+  full: () => { SFX.uiGo(); toggleFull(); },
+};
+const NAV_TIP = { sound: () => settings.sound ? "Sonido: Sí" : "Sonido: No", lang: () => "Idioma", access: () => "Accesibilidad", full: () => "Pantalla completa", back: () => "Volver", home: () => "Inicio" };
 function navHit(x, y) {
-  for (const b of navBtns) if (x >= b.x - 4 && x <= b.x + b.w + 4 && y >= b.y - 4 && y <= b.y + b.h + 4) { b.kind === "home" ? goHome() : goBack(); return true; }
+  for (const b of navBtns) if (x >= b.x - 4 && x <= b.x + b.w + 4 && y >= b.y - 4 && y <= b.y + b.h + 4) { NAV_ACT[b.kind](); return true; }
   return false;
 }
 const homeHit = navHit;
 function navRects() {
   if (!showNav()) return [];
   const ask = homeAsk > 0, h = 40, inGame = state === "play" || state === "pause";
+  if (state === "title") {
+    const kinds = ["sound", "lang", "access", ...(canFull() ? ["full"] : [])], bw = 44, gap = 8;
+    const out = [{ kind: "back", x: 16, y: 16, w: VW < 360 ? 44 : 104, h, label: VW >= 360 }];
+    kinds.forEach((k, i) => out.push({ kind: k, x: VW - 16 - (kinds.length - i) * (bw + gap) + gap, y: 16, w: bw, h }));
+    return out;
+  }
   if (inGame) {
     // en partida: arriba al centro; en pantallas táctiles el botón de pausa ya hace de «Volver»
     const hw = ask ? 158 : 44;
@@ -4850,7 +4876,7 @@ function navRects() {
   return [{ kind: "back", x: 16, y: 16, w: nw, h, label: lab }, { kind: "home", x: 16 + nw + 8, y: 16, w: ask ? 158 : nw, h, ask, label: lab }];
 }
 function drawNavBtns() {
-  homeAsk = Math.max(0, homeAsk - frameDt);
+  homeAsk = Math.max(0, homeAsk - frameDt); exitAsk = state === "title" ? Math.max(0, exitAsk - frameDt) : 0;
   if (state !== "play" && state !== "pause") homeAsk = 0;
   navBtns = navRects();
   if (!navBtns.length) return;
@@ -4869,6 +4895,23 @@ function drawNavBtns() {
       ctx.beginPath(); ctx.moveTo(cx - 9, cy - 1); ctx.lineTo(cx, cy - 9); ctx.lineTo(cx + 9, cy - 1); ctx.stroke();
       ctx.beginPath(); ctx.rect(cx - 6, cy - 2, 12, 10); ctx.stroke();
       ctx.fillRect(cx - 2, cy + 3, 4, 5);
+    } else if (b.kind === "sound") {
+      ctx.beginPath(); ctx.moveTo(cx - 9, cy - 4); ctx.lineTo(cx - 5, cy - 4); ctx.lineTo(cx + 1, cy - 9); ctx.lineTo(cx + 1, cy + 7); ctx.lineTo(cx - 5, cy + 2); ctx.lineTo(cx - 9, cy + 2); ctx.closePath(); ctx.fill();
+      if (settings.sound) { ctx.beginPath(); ctx.arc(cx + 2, cy - 1, 5, -0.9, 0.9); ctx.stroke(); ctx.beginPath(); ctx.arc(cx + 2, cy - 1, 9, -0.9, 0.9); ctx.stroke(); }
+      else { ctx.strokeStyle = "#ff6b6b"; ctx.beginPath(); ctx.moveTo(cx + 4, cy - 5); ctx.lineTo(cx + 10, cy + 3); ctx.moveTo(cx + 10, cy - 5); ctx.lineTo(cx + 4, cy + 3); ctx.stroke(); }
+    } else if (b.kind === "lang") {
+      ctx.font = "20px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(flagOf(look.country || "ES"), cx, cy);
+    } else if (b.kind === "access") {
+      ctx.beginPath(); ctx.arc(cx, cy - 7, 2.6, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(cx - 8, cy - 3); ctx.lineTo(cx + 8, cy - 3); ctx.moveTo(cx, cy - 3); ctx.lineTo(cx, cy + 3); ctx.lineTo(cx - 5, cy + 9); ctx.moveTo(cx, cy + 3); ctx.lineTo(cx + 5, cy + 9); ctx.stroke();
+    } else if (b.kind === "full") {
+      // esquinas: hacia fuera para entrar, hacia dentro para salir
+      const on = !!(document.fullscreenElement || document.webkitFullscreenElement), d = on ? 5 : -5;
+      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        const px = cx + sx * (on ? 3 : 9), py = cy - 1 + sy * (on ? 3 : 7);
+        ctx.beginPath(); ctx.moveTo(px + sx * d, py); ctx.lineTo(px, py); ctx.lineTo(px, py + sy * d); ctx.stroke();
+      }
     } else {
       // flecha hacia atrás
       ctx.beginPath(); ctx.moveTo(cx + 8, cy - 1); ctx.lineTo(cx - 7, cy - 1); ctx.moveTo(cx - 2, cy - 7); ctx.lineTo(cx - 8, cy - 1); ctx.lineTo(cx - 2, cy + 5); ctx.stroke();
@@ -4877,8 +4920,49 @@ function drawNavBtns() {
     if (b.ask) ctx.fillText("¿Salir? Pulsa otra vez", b.x + 38, b.y + b.h / 2, b.w - 44);
     else if (b.label) ctx.fillText(b.kind === "home" ? "Inicio" : "Volver", b.x + 40, b.y + b.h / 2, b.w - 46);
     ctx.restore(); ctx.textBaseline = "alphabetic";
+    if (hov && !b.label && !b.ask && NAV_TIP[b.kind]) {
+      const tip = tr(NAV_TIP[b.kind]()); ctx.font = "bold 12px system-ui";
+      const tw = ctx.measureText(tip).width + 16, tx = clamp(b.x + b.w / 2 - tw / 2, 8, VW - tw - 8);
+      ctx.fillStyle = "rgba(10,8,12,0.92)"; ctx.beginPath(); ctx.roundRect(tx, b.y + b.h + 6, tw, 24, 6); ctx.fill();
+      ctx.fillStyle = "#fff3dc"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(tip, tx + 8, b.y + b.h + 18); ctx.textBaseline = "alphabetic";
+    }
   }
 }
+
+// ---------- Salir del juego: se borra el progreso y se vuelve al principio ----------
+let exitAsk = 0, byeT = 0;
+function askExit() {
+  if (exitAsk <= 0) { exitAsk = 3; SFX.ui(); return; }
+  exitGame(true);
+}
+function exitGame(showBye) {
+  exitAsk = 0; homeAsk = 0; inTutorial = false; saved = null;
+  for (const k of SESSION_KEYS) delete sessionMem[k];
+  settings.device = null; touch.on = false;
+  for (const k in keys) keys[k] = false; mouse.down = false; touch.fire = false;
+  picker.open = false;
+  if (showBye) { state = "bye"; byeT = 0; uiSel = -1; if (AC) JINGLES.clear(); }
+  else openDevice();
+}
+function drawBye() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = "#050407"; ctx.fillRect(0, 0, VW, VH);
+  ui = []; byeT += frameDt;
+  const a = Math.min(1, byeT * 2) * Math.min(1, (2.6 - byeT) * 2);
+  ctx.save(); ctx.globalAlpha = Math.max(0, a); ctx.textAlign = "center";
+  ctx.save(); ctx.translate(VW / 2, VH / 2 - 60); ctx.rotate(A11().motion ? 0 : byeT * 4); drawGun("pistola", 3); ctx.restore();
+  ctx.fillStyle = "#ffe2a8"; ctx.font = `900 ${sm() ? 30 : 44}px ${TITLE_FONT}`; ctx.fillText(`¡Hasta pronto, ${look.name}!`, VW / 2, VH / 2 + 20, VW - 24);
+  ctx.fillStyle = "rgba(243,230,200,0.75)"; ctx.font = `${sm() ? 14 : 17}px system-ui`; ctx.fillText("Progreso borrado. Empezamos de nuevo…", VW / 2, VH / 2 + 56, VW - 24);
+  ctx.restore();
+  if (byeT > 2.6) openDevice();
+}
+// si dejas el juego un rato (otra pestaña, otra app) y vuelves, empieza todo otra vez
+let hiddenAt = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { hiddenAt = performance.now(); if (state === "play") pause(); }
+  else if (hiddenAt && performance.now() - hiddenAt > 60000) exitGame(false);
+});
+addEventListener("pageshow", e => { if (e.persisted) exitGame(false); });
 
 // ---------- Guardado del progreso ----------
 let saveIcon = 0, ckT = 0, ckWant = false;
@@ -4926,6 +5010,13 @@ function drawSaveIcon() {
 TR_ROWS.push(
 ["Inicio", "Home", "Início", "Accueil", "Start", "Inizio"],
 ["Volver", "Back", "Voltar", "Retour", "Zurück", "Indietro"],
+["Salir del juego", "Quit game", "Sair do jogo", "Quitter le jeu", "Spiel beenden", "Esci dal gioco"],
+["¿Seguro? Pulsa otra vez para salir", "Sure? Press again to quit", "Certeza? Aperte de novo para sair", "Sûr ? Appuie encore pour quitter", "Sicher? Nochmal drücken zum Beenden", "Sicuro? Premi ancora per uscire"],
+["¡Hasta pronto, {0}!", "See you soon, {0}!", "Até logo, {0}!", "À bientôt, {0} !", "Bis bald, {0}!", "A presto, {0}!"],
+["Progreso borrado. Empezamos de nuevo…", "Progress cleared. Starting over…", "Progresso apagado. Recomeçando…", "Progression effacée. On recommence…", "Fortschritt gelöscht. Wir fangen neu an…", "Progressi cancellati. Si ricomincia…"],
+["Idioma", "Language", "Idioma", "Langue", "Sprache", "Lingua"],
+["Pantalla completa", "Full screen", "Tela cheia", "Plein écran", "Vollbild", "Schermo intero"],
+["Tu navegador no deja usar pantalla completa aquí", "Your browser doesn't allow full screen here", "Seu navegador não permite tela cheia aqui", "Ton navigateur n'autorise pas le plein écran ici", "Dein Browser erlaubt hier kein Vollbild", "Il tuo browser non consente lo schermo intero qui"],
 ["Guardando…", "Saving…", "Salvando…", "Sauvegarde…", "Speichern…", "Salvataggio…"],
 ["Progreso guardado ✓", "Progress saved ✓", "Progresso salvo ✓", "Progression sauvegardée ✓", "Fortschritt gespeichert ✓", "Progressi salvati ✓"],
 ["Partida cargada: sigues donde lo dejaste", "Game loaded: you're right where you left off", "Jogo carregado: você continua de onde parou", "Partie chargée : tu reprends là où tu t'étais arrêté", "Spiel geladen: du machst dort weiter, wo du aufgehört hast", "Partita caricata: riprendi da dove avevi lasciato"],
