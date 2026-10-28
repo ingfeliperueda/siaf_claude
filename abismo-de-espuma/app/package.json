@@ -8,7 +8,8 @@
     "iconos": "node hacer-iconos.js",
     "capturas": "node hacer-capturas.js",
     "android": "node construir.js && npx cap sync android && npx cap open android",
-    "ios": "node construir.js && npx cap sync ios && npx cap open ios"
+    "ios": "node construir.js && npx cap sync ios && npx cap open ios",
+    "apk": "node construir.js && python3 apk/hacer-apk.py"
   },
   "dependencies": {
     "@capacitor/android": "8.5.2",

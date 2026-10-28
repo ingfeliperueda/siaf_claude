@@ -23,6 +23,14 @@ npm run construir      # actualiza www/
 npx cap sync           # copia www/ a los proyectos de Android e iOS
 ```
 
+**App para Android sin Android Studio** (para instalarla directamente en un celular, no para Google Play):
+
+```bash
+npm run apk            # crea apk/AbismoDeEspuma.apk
+```
+
+La primera vez crea la clave de firma en `apk/clave/abismo.keystore`. Guárdala: las versiones nuevas solo se instalan encima (sin perder el progreso) si se firman con la misma clave.
+
 Si cambias el aspecto del juego: `npm run iconos`, `npm run capturas` y `python3 iconos-android.py`.
 
 **Antes de publicar:**
