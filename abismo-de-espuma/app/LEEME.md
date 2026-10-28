@@ -17,7 +17,7 @@ El juego está en `../index.html`. Esta carpeta prepara la versión para tiendas
 **Cada vez que cambies el juego**, vuelve a preparar la versión para tiendas:
 
 ```bash
-cd juego-subterraneo/app
+cd abismo-de-espuma/app
 npm install            # solo la primera vez
 npm run construir      # actualiza www/
 npx cap sync           # copia www/ a los proyectos de Android e iOS
