@@ -680,6 +680,7 @@ try { for (const k of SESSION_KEYS) localStorage.removeItem("abismoNerf." + k); 
 const store = {
   get(k, d) { if (SESSION_KEYS.has(k)) return k in sessionMem ? sessionMem[k] : d; try { const v = localStorage.getItem("abismoNerf." + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { if (SESSION_KEYS.has(k)) { sessionMem[k] = v; return; } try { localStorage.setItem("abismoNerf." + k, JSON.stringify(v)); } catch (e) {} },
+  del(k) { try { localStorage.removeItem("abismoNerf." + k); } catch (e) {} },
 };
 const settings = { device: null, diff: store.get("diff", 1), sound: store.get("sound", true), minimap: +store.get("minimap", 1), fx: store.get("fx", true) };
 if (!(settings.minimap >= 0 && settings.minimap <= 2)) settings.minimap = 1;
@@ -688,9 +689,10 @@ settings.res = store.get("res", "auto"); if (!(settings.res === "auto" || [0, 1,
 settings.a11y = Object.assign({ text: 0, contrast: false, motion: matchMedia("(prefers-reduced-motion: reduce)").matches, voice: false }, store.get("a11y", {}) || {});
 const A11 = () => settings.a11y, UIK = () => [1, 1.2, 1.4][A11().text] || 1;
 settings.device = ["pc", "tablet", "phone"].includes(store.get("device", null)) ? store.get("device", null) : null;
-let best = store.get("best", 0);
+let best = 0; // récord del personaje actual (se carga con loadCharData)
 let saved = null; // partida del personaje actual (se carga al conocer el personaje)
 const saveKey = () => "save." + (typeof charId === "string" ? charId : "x");
+const charK = (k, id = charId) => k + "." + id; // datos propios de cada personaje: logros, récord, Brasa
 const NIGHTMARE = { name: "Pesadilla", hp: 6, mhp: 1.8, spd: 1.2, drop: 0.5, proj: 1.25, rate: 1.45, pts: 2.5 };
 const DIFF = () => typeof secretIdx !== "undefined" && secretIdx !== null ? (secretIdx === ULTRA ? NIGHTMARE : DIFFS[2]) : DIFFS[settings.diff];
 const TITLE_FONT = "Cinzel, Georgia, serif";
@@ -1872,7 +1874,7 @@ let coinChain = 0, lastCoin = -9;
 // ---------- Brasa, el dragoncito que te acompaña ----------
 let pet = null;
 function updatePet(dt) {
-  if (!store.get("brasa", false) || inTutorial) { pet = null; return; }
+  if (!store.get(charK("brasa"), false) || inTutorial) { pet = null; return; }
   if (!pet) pet = { x: P.x - 20, y: P.y - 20, t: 0, cd: 2 };
   pet.t += dt; pet.cd -= dt;
   const tx = P.x - Math.cos(P.aim) * 26 + Math.sin(pet.t * 1.3) * 10, ty = P.y - 24 + Math.cos(pet.t * 1.7) * 6;
@@ -2052,7 +2054,7 @@ function drawMap() {
     const dx = target.x - mapAv.x, dy = target.y - mapAv.y, d = Math.hypot(dx, dy);
     if (d > 1) { const st = Math.min(d, frameDt * 420); mapAv.x += dx / d * st; mapAv.y += dy / d * st; mapAv.walk += frameDt * 12; }
     ctx.save(); ctx.translate(mapAv.x, mapAv.y - 30 - (d > 1 ? Math.abs(Math.sin(mapAv.walk)) * 4 : 0)); ctx.scale(1.5, 1.5); drawHeroStatic(0, 0, dx < -1 ? Math.PI : 0, "pistola", mapAv.walk); ctx.restore();
-    if (store.get("brasa", false)) drawBabyDragon(mapAv.x + 26, mapAv.y - 48 + Math.sin(time * 3) * 4, 1, time);
+    if (store.get(charK("brasa"), false)) drawBabyDragon(mapAv.x + 26, mapAv.y - 48 + Math.sin(time * 3) * 4, 1, time);
   }
   // panel inferior
   const pw = Math.min(520, VW - 24), px = VW / 2 - pw / 2, py = VH - (s ? 150 : 128);
@@ -3386,9 +3388,9 @@ function finishLevel() {
     startWorldEnd(curWorld());
   } else if (levelIdx + 1 >= LEVELS.length) {
     if (settings.diff === 2) unlock("legend");
-    store.set("brasa", true);
+    store.set(charK("brasa"), true);
     startEnding();
-    if (run.score > best) { best = run.score; store.set("best", best); lv.record = true; }
+    if (run.score > best) { best = run.score; store.set(charK("best"), best); lv.record = true; }
   } else { state = "levelDone"; uiSel = 0; JINGLES.clear(); }
 }
 
@@ -5399,7 +5401,7 @@ const lookDirty = () => editBackup && JSON.stringify(lookSnap(look)) !== JSON.st
 function useChar(id, quiet) {
   if (!chars.some(c => c.id === id)) return;
   charId = id; Object.assign(look, lookSnap(curChar())); saveLook(); saveChars();
-  saved = store.get(saveKey(), null);
+  saved = store.get(saveKey(), null); loadCharData();
   if (typeof setLang === "function") setLang(countryOf(look.country).lang);
   if (!quiet) { SFX.uiGo(); showToast(`Ahora juegas con ${look.name}`, 2); }
 }
@@ -5411,7 +5413,7 @@ function saveCharacter() {
     const c = { ...lookSnap(look), id: newCharId() }; chars.push(c); editId = c.id;
   }
   charId = editId; saveChars(); saveLook(); editBackup = lookSnap(look);
-  saved = store.get(saveKey(), null);
+  saved = store.get(saveKey(), null); loadCharData();
   SFX.secret(); showToast(`¡${look.name} guardado!`, 2.2); saveIcon = 1.8;
   return true;
 }
@@ -5427,6 +5429,7 @@ function deleteChar(id) {
   if (delAsk.id !== id || delAsk.t <= 0) { delAsk = { id, t: 3 }; SFX.ui(); return; }
   const c = chars.find(c => c.id === id);
   chars = chars.filter(c => c.id !== id); store.set("save." + id, null);
+  for (const k of ["ach", "best", "brasa", "secrets", "powers"]) store.del(charK(k, id));
   if (charId === id) useChar(chars[0].id, true); else saveChars();
   delAsk = { id: null, t: 0 }; SFX.hurt && SFX.hurt(); showToast(`${c.name} borrado`, 2);
 }
@@ -5809,11 +5812,21 @@ const ACH = [
   { id: "ogre",    name: "Héroe del abismo",   desc: "Derrota al Rey Ogro y rescata a Chispa" },
   { id: "legend",  name: "Leyenda",            desc: "Termina el juego en Difícil" },
 ];
-const achieved = store.get("ach", {});
+const achieved = {};
+// cada personaje tiene sus propios logros, récord y mascota; al cambiar de personaje se cargan los suyos
+function loadCharData() {
+  for (const k in achieved) delete achieved[k];
+  Object.assign(achieved, store.get(charK("ach"), {}) || {});
+  best = +store.get(charK("best"), 0) || 0;
+  achQueue.length = 0; achPop = null;
+}
+// las partidas antiguas guardaban los logros para todos: se quedan con el personaje que se estaba usando
+for (const k of ["ach", "best", "brasa"]) { const v = store.get(k, null); if (v != null) { if (store.get(charK(k), null) == null) store.set(charK(k), v); store.del(k); } }
 const achQueue = []; let achPop = null;
+loadCharData();
 function unlock(id) {
   if (achieved[id]) return;
-  achieved[id] = true; store.set("ach", achieved);
+  achieved[id] = true; store.set(charK("ach"), achieved);
   achQueue.push({ a: ACH.find(a => a.id === id), t: 0 });
 }
 function trophy(x, y, s, on) {
