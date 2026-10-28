@@ -727,6 +727,11 @@ function resize() {
   vignette.addColorStop(0, "rgba(0,0,0,0)"); vignette.addColorStop(0.6, "rgba(8,10,28,0.25)"); vignette.addColorStop(1, "rgba(6,8,24,0.68)");
 }
 addEventListener("resize", resize);
+// al girar el celular o la tableta algunos navegadores tardan en dar el tamaño nuevo
+const resizeSoon = () => { resize(); setTimeout(resize, 150); setTimeout(resize, 450); };
+addEventListener("orientationchange", resizeSoon);
+if (window.visualViewport) visualViewport.addEventListener("resize", resize);
+document.addEventListener("fullscreenchange", resizeSoon); document.addEventListener("webkitfullscreenchange", resizeSoon);
 resize();
 
 // ---------- Sonido ----------
@@ -1728,7 +1733,7 @@ function btns() {
     reload: { x: VW - 136 * s - 12, y: VH - 222 * s - 12, r: 24 * s },
     abil:   { x: VW - 196 * s - 12, y: VH - 150 * s - 12, r: 30 * s },
     // en pantallas estrechas la pausa baja bajo los corazones para no tapar nada
-    pause:  VW < 480 ? { x: 32, y: 100, r: 20 } : { x: VW / 2, y: 34, r: 22 },
+    pause:  VW < 480 ? { x: 32, y: 100, r: 20 } : land() ? { x: hudL() + 22, y: 34, r: 20 } : { x: VW / 2, y: 34, r: 22 },
   };
 }
 const inBtn = (b, x, y) => Math.hypot(x - b.x, y - b.y) < b.r + 10;
@@ -1964,10 +1969,18 @@ function openMap(sel) {
 }
 const ultraOpen = () => !!(saved && saved.prog && saved.prog.beaten);
 const mapTop = () => Math.max(prog().unlocked || 0, saved ? saved.level : 0) + (ultraOpen() ? 1 : 0) * 0 ;
+// mapa en una fila (pantalla ancha o aparato en horizontal) o en dos filas (celular en vertical)
+const mapTall = () => VW < 760 && !land();
 function mapNode(i) {
-  if (isSecretNode(i)) { const b = mapNode(secretParent(i)); return { x: b.x + (VW < 760 ? 0 : VW * 0.02), y: b.y - (VW < 760 ? 64 : 88) }; }
-  if (i === 40) return { x: VW * (VW < 760 ? 0.5 : 0.86), y: VH * (VW < 760 ? 0.2 : 0.22) };
+  const ld = land();
+  if (isSecretNode(i)) { const b = mapNode(secretParent(i)); return { x: b.x + (mapTall() ? 0 : VW * 0.02), y: b.y - (mapTall() ? 64 : ld ? 54 : 88) }; }
+  if (i === 40) return ld ? { x: VW * 0.9, y: 110 } : { x: VW * (mapTall() ? 0.5 : 0.86), y: VH * (mapTall() ? 0.2 : 0.22) };
   const n = i % 10, w = Math.floor(i / 10);
+  if (ld) {
+    // poca altura: los niveles entre el título y el panel de abajo
+    const top = 140, bot = VH - 128, mid = (top + bot) / 2, amp = Math.max(0, (bot - top) / 2);
+    return { x: VW * 0.06 + VW * 0.88 * n / 9, y: mid + Math.sin(n * 1.25 + w * 0.7) * amp };
+  }
   if (VW < 760) {
     const row = Math.floor(n / 5), col = row ? 4 - n % 5 : n % 5;
     return { x: VW * 0.12 + (VW * 0.76) * col / 4, y: VH * (0.34 + row * 0.24) + Math.sin(n * 1.7 + w) * 10 };
@@ -2038,8 +2051,9 @@ function drawMap() {
   ui = [];
   const w = mapPage, top = Math.max(prog().unlocked || 0, saved ? saved.level : 0), pr = prog(), s = VW < 760;
   drawMapScene(w);
-  titleText(`MUNDO ${w + 1}`, s ? 70 : 64, s ? 22 : 30, WORLDS[w].color);
-  ctx.textAlign = "center"; ctx.fillStyle = "#fff3dc"; ctx.font = `bold ${s ? 15 : 18}px system-ui`; ctx.fillText(WORLDS[w].name, VW / 2, s ? 96 : 92, VW - 24);
+  const ld = land();
+  titleText(`MUNDO ${w + 1}`, ld ? 42 : s ? 70 : 64, ld ? 22 : s ? 22 : 30, WORLDS[w].color);
+  ctx.textAlign = "center"; ctx.fillStyle = "#fff3dc"; ctx.font = `bold ${ld ? 13 : s ? 15 : 18}px system-ui`; ctx.fillText(WORLDS[w].name, VW / 2, ld ? 62 : s ? 96 : 92, ld ? VW - 260 : VW - 24);
   // camino
   const nodes = []; for (let n = 0; n < 10; n++) nodes.push(mapNode(w * 10 + n));
   ctx.lineCap = "round";
@@ -2099,18 +2113,19 @@ function drawMap() {
     if (store.get(charK("brasa"), false)) drawBabyDragon(mapAv.x + 26, mapAv.y - 48 + Math.sin(time * 3) * 4, 1, time);
   }
   // panel inferior
-  const pw = Math.min(520, VW - 24), px = VW / 2 - pw / 2, py = VH - (s ? 150 : 128);
-  panel(px, py, pw, s ? 138 : 116, 14);
+  const pw = Math.min(520, VW - 24), px = VW / 2 - pw / 2, py = VH - (ld ? 100 : mapTall() ? 150 : 128);
+  panel(px, py, pw, ld ? 92 : mapTall() ? 138 : 116, 14);
   const secSel = isSecretNode(mapSel) ? SECRETS[mapSel - SECRET_NODE] : null, secPow = secSel && POWERS[mapSel - SECRET_NODE];
   const name = mapSel === 40 ? "La Grieta del Vacío" : secSel ? secSel.name : LEVELS[mapSel].name;
   ctx.textAlign = "center"; ctx.fillStyle = mapSel === 40 ? "#ff8af0" : secSel ? "#d0a0ff" : "#e8a33d"; ctx.font = "bold 12px system-ui";
   ctx.fillText(mapSel === 40 ? "NIVEL SUPERSECRETO · PESADILLA" : secSel ? `NIVEL SECRETO · DIFÍCIL${secPow ? " · premio: " + secPow.icon + " " + secPow.name : ""}` : levelLabel(mapSel), VW / 2, py + 20, pw - 16);
-  ctx.fillStyle = "#fff3dc"; ctx.font = `900 ${s ? 18 : 22}px ${TITLE_FONT}`; ctx.fillText(name, VW / 2, py + 46, pw - 20);
-  const bw = s ? (pw - 40) / 3 : 150, by = py + (s ? 66 : 62);
-  button("‹ Mundo", px + 10, by, bw, 40, () => mapKey({ code: "ArrowDown" }), { size: 13 });
-  button(saved && saved.level === mapSel && saved.full ? "▶ Continuar" : "▶ Jugar", VW / 2 - bw / 2, by, bw, 40, () => playFromMap(mapSel), { size: 15 });
-  button("Mundo ›", px + pw - bw - 10, by, bw, 40, () => mapKey({ code: "ArrowUp" }), { size: 13 });
-  if (!s) { ctx.fillStyle = "rgba(243,230,200,0.5)"; ctx.font = "12px system-ui"; ctx.fillText("←→ elegir nivel  ·  ↑↓ cambiar de mundo  ·  ENTER jugar  ·  ESC volver", VW / 2, py - 10); }
+  ctx.fillStyle = "#fff3dc"; ctx.font = `900 ${ld ? 16 : s ? 18 : 22}px ${TITLE_FONT}`; ctx.fillText(name, VW / 2, py + (ld ? 38 : 46), pw - 20);
+  const bw = s ? (pw - 40) / 3 : 150, by = py + (ld ? 46 : s ? 66 : 62);
+  const bh = ld ? 38 : 40;
+  button("‹ Mundo", px + 10, by, bw, bh, () => mapKey({ code: "ArrowDown" }), { size: 13 });
+  button(saved && saved.level === mapSel && saved.full ? "▶ Continuar" : "▶ Jugar", VW / 2 - bw / 2, by, bw, bh, () => playFromMap(mapSel), { size: 15 });
+  button("Mundo ›", px + pw - bw - 10, by, bw, bh, () => mapKey({ code: "ArrowUp" }), { size: 13 });
+  if (!s && !isTouch()) { ctx.fillStyle = "rgba(243,230,200,0.5)"; ctx.font = "12px system-ui"; ctx.fillText("←→ elegir nivel  ·  ↑↓ cambiar de mundo  ·  ENTER jugar  ·  ESC volver", VW / 2, py - 10); }
   if (picker.open) drawPicker();
 }
 
@@ -4973,6 +4988,7 @@ function panel(x, y, w, h, r = 8) {
   ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fill(); ctx.stroke();
   ctx.strokeStyle = "rgba(255,255,255,0.06)"; ctx.beginPath(); ctx.moveTo(x + r, y + 1.5); ctx.lineTo(x + w - r, y + 1.5); ctx.stroke();
 }
+let hudInfoX = 0;
 function drawHUD() {
   const small = VW < 560;
   // vida y llaves
@@ -5001,12 +5017,12 @@ function drawHUD() {
   ctx.textAlign = "right"; ctx.font = `bold ${small ? 12 : 14}px system-ui, sans-serif`;
   const l1 = inTutorial ? "Tutorial" : secretIdx === ULTRA ? `Nivel supersecreto · ${DIFF().name}` : secretIdx !== null ? `Nivel secreto · Mundo ${curWorld() + 1} · ${DIFF().name}` : `${levelLabel(levelIdx)} · ${DIFF().name}`, l2 = `Oro ${run.gold}  ·  Puntos ${run.score}`;
   const pw = Math.max(ctx.measureText(l1).width, ctx.measureText(l2).width + 10) + 24;
-  panel(VW - pw - 10, 10, pw, 50);
+  panel(VW - pw - 10, 10, pw, 50); hudInfoX = VW - pw - 10;
   ctx.fillStyle = "#f3e6c8"; ctx.fillText(l1, VW - 22, 30);
   ctx.fillStyle = "#f5c542"; ctx.font = `${small ? 11 : 13}px system-ui, sans-serif`; ctx.fillText(l2, VW - 22, 49);
   // minimapa: vista local alrededor del jugador (o mapa completo con TAB)
   if (settings.minimap === 1 && mini) {
-    const mw = small ? 128 : 184, mh = small ? 96 : 132, mx = VW - mw - 12, my = 68;
+    const lt = land() && touch.on, mw = lt ? 140 : small ? 128 : 184, mh = lt ? 70 : small ? 96 : 132, mx = VW - mw - 12, my = 68;
     drawMiniMap(mx, my, mw, mh, small ? 4 : 5, true);
   }
   // barra de armas: todas las armas, con cargador | reserva
@@ -5028,7 +5044,7 @@ function drawHUD() {
     drawAbilityIcon(dx - 52, dy, 21);
   } else {
     // táctil: las armas que tienes, en una cuadrícula a la izquierda (tócalas para cambiar)
-    const cols = 4, slotW = 44, slotH = 52, gap = 4, owned = ORDER.filter(id => P.weapons.includes(id));
+    const cols = land() ? 6 : 4, slotW = 44, slotH = 52, gap = 4, owned = ORDER.filter(id => P.weapons.includes(id));
     const rows = Math.ceil(owned.length / cols), x0 = 10, y0 = VH - 150 - rows * (slotH + gap);
     owned.forEach((id, i) => drawSlot(id, x0 + (i % cols) * (slotW + gap), y0 + Math.floor(i / cols) * (slotH + gap), slotW, slotH, ""));
     ctx.textAlign = "left"; ctx.font = "bold 12px system-ui"; ctx.fillStyle = curW().color;
@@ -5037,11 +5053,17 @@ function drawHUD() {
 
   // jefe
   const boss = monsters.find(m => m.def.boss && m.alert > 0);
-  const bossY = isTouch() && VW < 480 ? 176 : small ? 76 : 16;
+  let bossY = isTouch() && VW < 480 ? 176 : small && !(land() && isTouch()) ? 76 : isTouch() && !land() ? 64 : 16; // en táctil, debajo de los botones de arriba
   if (boss) {
-    const bw = Math.min(420, VW - 40 - (settings.minimap === 1 && !small ? 210 : 0) - (small ? 0 : 140)), bx = VW / 2 - bw / 2;
+    let bw = Math.min(420, VW - 40 - (settings.minimap === 1 && !small ? 210 : 0) - (small ? 0 : 140)), bx = VW / 2 - bw / 2;
+    if (land() && isTouch()) {
+      // en horizontal la barra va entre los botones de arriba y el panel del nivel
+      const nb = navBtns.filter(b => b.y < 60), x0 = nb.length ? Math.max(...nb.map(b => b.x + b.w)) + 14 : hudL() + 50, x1 = hudInfoX - 14;
+      if (x1 - x0 >= 200) { bw = Math.min(420, x1 - x0); bx = x0 + (x1 - x0 - bw) / 2; }
+      else { const y1 = hudL(), y2 = VW - (settings.minimap === 1 ? 166 : 14); bw = Math.min(420, y2 - y1); bx = y1 + (y2 - y1 - bw) / 2; bossY = 72; } // si no cabe arriba, justo debajo
+    }
     panel(bx - 6, bossY - 4, bw + 12, 36);
-    ctx.fillStyle = "#f3e6c8"; ctx.font = `bold 11px ${TITLE_FONT}`; ctx.textAlign = "center"; ctx.fillText(boss.def.title, VW / 2, bossY + 9);
+    ctx.fillStyle = "#f3e6c8"; ctx.font = `bold 11px ${TITLE_FONT}`; ctx.textAlign = "center"; ctx.fillText(boss.def.title, bx + bw / 2, bossY + 9, bw);
     const fr = Math.max(0, boss.hp / boss.maxHp);
     boss.trail = Math.max(fr, (boss.trail ?? 1) - frameDt * 0.25);
     ctx.fillStyle = "#3a1d22"; ctx.fillRect(bx, bossY + 15, bw, 10);
@@ -5243,6 +5265,20 @@ function titleText(txt, y, size, color = "#f3e6c8") {
 }
 function dim(a = 0.75) { ctx.fillStyle = `rgba(5,4,7,${a * ease(stateT * 3)})`; ctx.fillRect(0, 0, VW, VH); }
 const sm = () => VW < 560 || VH < 560;
+// celular o tableta pequeña en horizontal: poca altura, mucho ancho
+const land = () => VW > VH && VH < 560;
+// ya a pantalla completa como app (instalada o la app de Android)
+const standalone = () => matchMedia("(display-mode: fullscreen), (display-mode: standalone)").matches || navigator.standalone === true || /[?&]app=1/.test(location.search);
+const showFull = () => !standalone() && (canFull() || isTouch());
+// borde derecho del panel de vida (en horizontal, los botones de la partida van a su lado)
+const hudL = () => 10 + Math.max(20 + P.maxHp / 2 * 21, 116) + 10;
+// menú en una columna o, si no cabe en la altura, en dos
+function menuGrid(items, cx, y0, bottom, w, h, gap) {
+  if (y0 + items.length * (h + gap) <= bottom) return menuList(items, cx, y0, w, h, gap);
+  if (uiSel >= items.length) uiSel = 0;
+  const rows = Math.ceil(items.length / 2), cw = Math.min(w, (VW - 60) / 2), bh = clamp((bottom - y0) / rows - gap, 30, h);
+  items.forEach((it, i) => button(it.label, cx + (i % 2 ? 6 : -cw - 6), y0 + Math.floor(i / 2) * (bh + gap), cw, bh, it.fn, it));
+}
 const toggleDiff = (d = 1) => { settings.diff = (settings.diff + d + DIFFS.length) % DIFFS.length; store.set("diff", settings.diff); };
 const RES_NAMES = ["Alta", "Media", "Baja", "Muy baja", "Mínima"];
 const resLabel = () => settings.res === "auto" ? `Automática (${RES_NAMES[resIdx]})` : RES_NAMES[settings.res];
@@ -5265,8 +5301,9 @@ const toMenu = () => {
 function drawPause() {
   dim(0.72);
   const s = sm();
-  titleText("PAUSA", VH * 0.2, s ? 34 : 50);
-  menuList([
+  const ld = land();
+  titleText("PAUSA", ld ? 96 : VH * 0.2, s ? 30 : 50);
+  menuGrid([
     { label: "Continuar", fn: resume },
     ...(inTutorial ? [] : [{ label: gameDirty ? "💾 Guardar partida" : "✓ Partida guardada", fn: saveGame }]),
     { label: "Reiniciar nivel", fn: () => loadLevel(levelIdx, true) },
@@ -5275,8 +5312,8 @@ function drawPause() {
     volItem(),
     { label: `Efectos: ${settings.fx ? "Altos" : "Bajos"}`, fn: toggleFx },
     { label: "Salir al menú", fn: () => { if (!askLeave(toMenu)) toMenu(); } },
-  ], VW / 2, VH * 0.2 + 30, Math.min(300, VW - 40), s ? 40 : 46, 8);
-  if (!touch.on) {
+  ], VW / 2, ld ? 112 : VH * 0.2 + 30, ld ? VH - 10 : VH, Math.min(300, VW - 40), s ? 40 : 46, 8);
+  if (!touch.on && !ld) {
     ctx.fillStyle = "rgba(243,230,200,0.55)"; ctx.font = "13px system-ui"; ctx.textAlign = "center";
     const y = VH * 0.2 + 30 + 8 * 54 + 24;
     ["F, J o clic: disparar  ·  ESPACIO: habilidad del sombrero  ·  WASD/flechas: moverse  ·  SHIFT o clic derecho: esquivar",
@@ -5395,10 +5432,12 @@ function drawTitle() {
     sg.addColorStop(0, "rgba(255,255,255,0)"); sg.addColorStop(0.5, "rgba(255,255,255,0.75)"); sg.addColorStop(1, "rgba(255,255,255,0)");
     ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = sg; ctx.fillText("ABISMO DE ESPUMA", VW / 2, ty + (s ? 52 : 84), VW - 24); ctx.restore();
   }
+  const ld = land();
   ctx.fillStyle = A11().contrast ? "#fff" : "rgba(243,230,200,0.75)"; ctx.font = `${s ? 13 : 16}px system-ui`;
-  ctx.fillText("4 mundos y 40 niveles: rescata a Chispa y descubre qué esconde el Corazón del Abismo.", VW / 2, ty + (s ? 80 : 120), VW - 24);
+  if (!ld) ctx.fillText("4 mundos y 40 niveles: rescata a Chispa y descubre qué esconde el Corazón del Abismo.", VW / 2, ty + (s ? 80 : 120), VW - 24);
 
   // lanzadores girando
+  if (!ld) {
   const gsp = s ? Math.min(42, (VW - 40) / ORDER.length) : 62;
   ctx.save(); ctx.translate(VW / 2 - gsp * (ORDER.length - 1) / 2, ty + (s ? 112 : 168));
   const mt = A11().motion ? 0 : time;
@@ -5413,6 +5452,7 @@ function drawTitle() {
     if (h > 0.3) { ctx.save(); ctx.globalAlpha = h; ctx.fillStyle = "#ffe2a8"; ctx.font = "bold 11px system-ui"; ctx.textAlign = "center"; ctx.fillText(WEAPONS[id].name, i * gsp, 26); ctx.restore(); }
   });
   ctx.restore();
+  }
 
   const items = [];
   if (saved && (saved.level > 0 || (saved.prog && saved.prog.unlocked > 0))) items.push({ label: `🗺️ Continuar · ${levelLabel(saved.level)}`, fn: () => openMap() });
@@ -5423,11 +5463,12 @@ function drawTitle() {
   items.push({ label: "Opciones", fn: () => openSub("options") });
   items.push({ label: "Accesibilidad", fn: () => openSub("access") });
   items.push({ label: exitAsk > 0 ? "¿Seguro? Pulsa otra vez para salir" : "Salir del juego", fn: askExit, danger: true });
-  const y0 = ty + (s ? 140 : 205), room = VH - y0 - (s ? 70 : 80);
+  const y0 = ld ? ty + 72 : ty + (s ? 140 : 205), room = VH - y0 - (s ? 70 : 80);
   const bh = Math.max(40, Math.min((s ? 40 : 46) * UIK(), room / items.length - 8));
-  menuList(items, VW / 2, y0, Math.min(340 * Math.min(UIK(), 1.15), VW - 40), bh, 8);
+  if (ld) menuGrid(items, VW / 2, y0, VH - 12, Math.min(320, (VW - 60) / 2), 44, 8);
+  else menuList(items, VW / 2, y0, Math.min(340 * Math.min(UIK(), 1.15), VW - 40), bh, 8);
 
-  const yb = y0 + items.length * (bh + 8) + 18;
+  const yb = ld ? VH + 99 : y0 + items.length * (bh + 8) + 18; // en horizontal no hay sitio para la ayuda
   ctx.textAlign = "center"; ctx.fillStyle = A11().contrast ? "#fff" : "rgba(243,230,200,0.55)"; ctx.font = `${(s ? 12 : 14) * Math.min(UIK(), 1.2)}px system-ui`;
   const lines = touch.on || isTouch()
     ? ["Joystick a la izquierda · DISPARA a la derecha", "(arrastra DISPARA para apuntar) · ESQUIVA · HABILIDAD · ARMA"]
@@ -5830,13 +5871,15 @@ function drawCustom() {
   const g = ctx.createRadialGradient(VW / 2, VH * 0.4, 0, VW / 2, VH * 0.4, Math.max(VW, VH) * 0.7);
   g.addColorStop(0, "#2a1c12"); g.addColorStop(1, "#060406"); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
   ui = [];
-  const s = VW < 760, k = ease(stateT * 3);
+  // en horizontal con poca altura: la vista previa a la izquierda y las opciones en dos columnas
+  const ld = land() && VW >= 600, s = VW < 760 && !ld, k = ease(stateT * 3);
   ctx.globalAlpha = k;
-  titleText("TU PERSONAJE", s ? 42 : 58, VW < 500 ? 19 : s ? 24 : 34);
+  titleText("TU PERSONAJE", ld ? 36 : s ? 42 : 58, VW < 500 ? 19 : s || ld ? 24 : 34);
   // vista previa
-  const pvW = s ? Math.min(VW - 24, 360) : 300, pvH = s ? 170 : 380, pvX = s ? VW / 2 - pvW / 2 : VW / 2 - 370, pvY = s ? 64 : 90;
+  let pvW = s ? Math.min(VW - 24, 360) : 300, pvH = s ? 170 : 380, pvX = s ? VW / 2 - pvW / 2 : VW / 2 - 370, pvY = s ? 64 : 90;
+  if (ld) { pvW = Math.min(230, VW * 0.28); pvH = VH - 68; pvX = 12; pvY = 56; }
   panel(pvX, pvY, pvW, pvH, 12);
-  const cx = pvX + pvW * (s ? 0.35 : 0.42), cy = pvY + pvH * 0.56, hs = s ? 3.6 : 5.6, aim = Math.sin(time * 0.9) * 0.5;
+  const cx = pvX + pvW * (s ? 0.35 : 0.42), cy = pvY + pvH * (ld ? 0.45 : 0.56), hs = s ? 3.6 : ld ? 3.8 : 5.6, aim = Math.sin(time * 0.9) * 0.5;
   ctx.save(); ctx.beginPath(); ctx.rect(pvX, pvY, pvW, pvH); ctx.clip();
   const lg = ctx.createRadialGradient(cx, cy, 0, cx, cy, pvW * 0.6); lg.addColorStop(0, "rgba(255,220,160,0.18)"); lg.addColorStop(1, "rgba(255,220,160,0)"); ctx.fillStyle = lg; ctx.fillRect(pvX, pvY, pvW, pvH);
   ctx.save(); ctx.translate(cx, cy); ctx.scale(hs, hs);
@@ -5852,19 +5895,28 @@ function drawCustom() {
   const ab = ABILITIES[look.hat] || ABILITIES[0];
   ctx.fillStyle = ab.color; ctx.font = `bold ${s ? 11 : 13}px system-ui`;
   ctx.fillText(`Habilidad (ESPACIO): ${ab.name}`, pvX + pvW / 2, pvY + pvH - (s ? 14 : 36), pvW - 16);
-  if (!s) { ctx.fillStyle = "rgba(243,230,200,0.65)"; ctx.font = "11px system-ui"; wrapText(ab.desc, pvW - 30).forEach((l, i) => ctx.fillText(l, pvX + pvW / 2, pvY + pvH - 20 + i * 13)); }
+  if (!s && !ld) { ctx.fillStyle = "rgba(243,230,200,0.65)"; ctx.font = "11px system-ui"; wrapText(ab.desc, pvW - 30).forEach((l, i) => ctx.fillText(l, pvX + pvW / 2, pvY + pvH - 20 + i * 13)); }
   // opciones
-  const oX = s ? 12 : VW / 2 - 50, oW = s ? VW - 24 : 420, rowH = s ? 46 : 50, oY = s ? pvY + pvH + 10 : 90;
+  let oX = s ? 12 : VW / 2 - 50, oW = s ? VW - 24 : 420;
+  const rowH = s ? 46 : 50, oY = s ? pvY + pvH + 10 : 90;
   const rowHs = CUSTOM_ROWS.map(R => R.list && R.list.length > 9 ? rowH + (s ? 14 : 12) : rowH);
   const rowY = rowHs.map((h, i) => oY + rowHs.slice(0, i).reduce((a, b) => a + b, 0));
+  // en horizontal: 4 filas por columna, con el nombre de la fila encima de sus opciones
+  const ax = pvX + pvW + 12, aw = VW - 12 - ax, colW = (aw - 10) / 2, lrh = (VH - 56 - 56) / 4;
+  if (ld) { oX = ax; oW = aw; }
   CUSTOM_ROWS.forEach((R, r) => {
-    const y = rowY[r], rowH = rowHs[r], sel = customRow === r;
+    const sel = customRow === r;
+    let y = rowY[r], rowH = rowHs[r], rX = oX, rW = oW;
+    if (ld) { rX = ax + (r >= 4 ? colW + 10 : 0); rW = colW; y = 56 + (r % 4) * lrh; rowH = lrh; }
+    { const oX = rX, oW = rW;
     ctx.fillStyle = sel ? "rgba(232,163,61,0.16)" : "rgba(20,16,24,0.7)"; ctx.strokeStyle = sel ? "#e8a33d" : "rgba(243,230,200,0.12)"; ctx.lineWidth = sel ? 1.5 : 1;
     ctx.beginPath(); ctx.roundRect(oX, y, oW, rowH - 6, 9); ctx.fill(); ctx.stroke();
-    ui.push({ x: oX, y, w: s ? 92 : 128, h: rowH - 6, fn: () => { customRow = r; if (!R.key) nameInput.focus(); } });
-    ctx.fillStyle = "rgba(243,230,200,0.8)"; ctx.font = `bold ${s ? 11 : 13}px system-ui`; ctx.textAlign = "left";
-    ctx.fillText(R.label, oX + 12, y + (rowH - 6) / 2 + 4, s ? 84 : 120);
-    const x0 = oX + (s ? 96 : 134), cw = oW - (x0 - oX) - 10, mid = y + (rowH - 6) / 2;
+    ui.push({ x: oX, y, w: ld ? oW : s ? 92 : 128, h: ld ? 16 : rowH - 6, fn: () => { customRow = r; if (!R.key) nameInput.focus(); } });
+    ctx.fillStyle = "rgba(243,230,200,0.8)"; ctx.font = `bold ${s || ld ? 11 : 13}px system-ui`; ctx.textAlign = "left";
+    if (ld) ctx.fillText(R.label, oX + 10, y + 14, oW - 20);
+    else ctx.fillText(R.label, oX + 12, y + (rowH - 6) / 2 + 4, s ? 84 : 120);
+    const x0 = ld ? oX + 8 : oX + (s ? 96 : 134), cw = ld ? oW - 16 : oW - (x0 - oX) - 10, mid = ld ? y + 18 + (rowH - 24) / 2 : y + (rowH - 6) / 2;
+    const y0 = y, rowH0 = rowH, ih = Math.min(rowH0 - 24, 40); { const y = ld ? mid - (ih + 10) / 2 : y0, rowH = ld ? ih + 16 : rowH0;
     if (!R.key) {
       Object.assign(nameInput.style, { display: "block", left: x0 + "px", top: (y + 5) + "px", width: (cw - 44) + "px", height: (rowH - 16) + "px" });
       button("🎲", x0 + cw - 38, y + 5, 38, rowH - 16, () => { customRow = 0; customChange(0, 1 + Math.floor(Math.random() * 5)); }, { size: 15 });
@@ -5896,8 +5948,9 @@ function drawCustom() {
         ctx.save(); ctx.translate(x0 + cw / 2 + ctx.measureText(name).width / 2 + 4, mid); ctx.scale(1.8, 1.8); drawDartShape(sk.body(WEAPONS.pistola.color), sk.tip); ctx.restore();
       } else ctx.fillText(name, x0 + cw / 2, mid + 5);
     }
+    } }
   });
-  const by = rowY[rowY.length - 1] + rowHs[rowHs.length - 1] + 6, isNew = customFrom === "new", nb = isNew ? 3 : 2, bw = (oW - 10 * (nb - 1)) / nb;
+  const by = ld ? VH - 50 : rowY[rowY.length - 1] + rowHs[rowHs.length - 1] + 6, isNew = customFrom === "new", nb = isNew ? 3 : 2, bw = (oW - 10 * (nb - 1)) / nb;
   const dirty = editBackup ? lookDirty() : true;
   button("Aleatorio", oX, by, bw, 44, randomLook, { size: s ? 13 : 15 });
   // guardar el personaje (en verde cuando ya está guardado)
@@ -5908,7 +5961,7 @@ function drawCustom() {
   if (customRow === CUSTOM_ROWS.length) { const hx = isNew ? oX + 2 * (bw + 10) : gx; ctx.strokeStyle = "#e8a33d"; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(hx - 2, by - 2, bw + 4, 48, 11); ctx.stroke(); }
   ctx.fillStyle = "rgba(243,230,200,0.5)"; ctx.font = `${s ? 11 : 13}px system-ui`; ctx.textAlign = "center";
   const cnt = `${editId ? chars.findIndex(c => c.id === editId) + 1 : chars.length + 1}/${MAX_CHARS}`;
-  ctx.fillText(s ? `Personaje ${cnt}` : `Personaje ${cnt}  ·  ↑↓ elegir fila  ·  ←→ cambiar  ·  ENTER ${isNew ? "jugar" : "guardar"}  ·  Ctrl+G guardar`, VW / 2, by + (s ? 62 : 74), VW - 24);
+  if (!ld) ctx.fillText(s ? `Personaje ${cnt}` : `Personaje ${cnt}  ·  ↑↓ elegir fila  ·  ←→ cambiar  ·  ENTER ${isNew ? "jugar" : "guardar"}  ·  Ctrl+G guardar`, VW / 2, by + (s ? 62 : 74), VW - 24);
   ctx.globalAlpha = 1;
   if (picker.open) drawPicker();
 }
@@ -6169,11 +6222,12 @@ function drawAchScreen() {
   const g = ctx.createRadialGradient(VW / 2, VH * 0.4, 0, VW / 2, VH * 0.4, Math.max(VW, VH) * 0.7);
   g.addColorStop(0, "#2a1c12"); g.addColorStop(1, "#060406"); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
   ui = [];
-  const s = VW < 640, n = ACH.filter(a => achieved[a.id]).length;
-  titleText("LOGROS", s ? 46 : 62, s ? 26 : 38);
-  ctx.fillStyle = "rgba(243,230,200,0.7)"; ctx.font = `${s ? 13 : 15}px system-ui`; ctx.textAlign = "center"; ctx.fillText(`${n} de ${ACH.length} desbloqueados`, VW / 2, s ? 72 : 92);
-  const cols = s ? 1 : 2, cw = s ? VW - 24 : Math.min(360, (VW - 60) / 2), ch = s ? 50 : 58, gap = 8;
-  const x0 = VW / 2 - (cols * cw + (cols - 1) * gap) / 2, y0 = s ? 86 : 112;
+  const ld = land(), s = VW < 640 && !ld, n = ACH.filter(a => achieved[a.id]).length;
+  titleText("LOGROS", ld ? 40 : s ? 46 : 62, s || ld ? 26 : 38);
+  ctx.fillStyle = "rgba(243,230,200,0.7)"; ctx.font = `${s || ld ? 13 : 15}px system-ui`; ctx.textAlign = "center"; ctx.fillText(`${n} de ${ACH.length} desbloqueados`, VW / 2, ld ? 62 : s ? 72 : 92);
+  // en horizontal, tres columnas más bajas para que quepan todos
+  const cols = ld ? 3 : s ? 1 : 2, cw = ld ? Math.min(300, (VW - 48) / 3) : s ? VW - 24 : Math.min(360, (VW - 60) / 2), gap = ld ? 6 : 8, ch = ld ? 46 : s ? clamp((VH - 86 - 64) / ACH.length - gap, 38, 50) : 58;
+  const x0 = VW / 2 - (cols * cw + (cols - 1) * gap) / 2, y0 = ld ? 74 : s ? 86 : 112;
   ACH.forEach((a, i) => {
     const on = !!achieved[a.id], x = x0 + (i % cols) * (cw + gap), y = y0 + Math.floor(i / cols) * (ch + gap), k = ease((stateT - i * 0.04) * 4);
     ctx.save(); ctx.globalAlpha = k; ctx.translate(0, (1 - k) * 14);
@@ -6718,12 +6772,14 @@ function drawSubMenu() {
   if (hc) { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, VW, VH); }
   else { const g = ctx.createRadialGradient(VW / 2, VH * 0.4, 0, VW / 2, VH * 0.4, Math.max(VW, VH) * 0.7); g.addColorStop(0, "#2a1c12"); g.addColorStop(1, "#060406"); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH); }
   ui = [];
-  const s = sm(), acc = state === "access", items = acc ? a11yItems() : optionItems();
-  titleText(acc ? "ACCESIBILIDAD" : "OPCIONES", s ? 92 : 120, s ? 28 : 44, hc ? "#fff" : undefined);
-  const w = Math.min(420 * Math.min(UIK(), 1.15), VW - 48), bh = (s ? 46 : 52) * UIK(), y0 = s ? 132 : 175;
-  menuList(items, VW / 2, y0, w, bh, 10);
+  const s = sm(), ld = land(), acc = state === "access", items = acc ? a11yItems() : optionItems();
+  titleText(acc ? "ACCESIBILIDAD" : "OPCIONES", ld ? 40 : s ? 92 : 120, s ? 28 : 44, hc ? "#fff" : undefined);
+  const w = Math.min(420 * Math.min(UIK(), 1.15), VW - 48), bh = (s ? 46 : 52) * UIK(), y0 = ld ? 62 : s ? 132 : 175;
+  if (ld) menuGrid(items, VW / 2, y0, VH - 46, Math.min(360, (VW - 60) / 2), 46 * Math.min(UIK(), 1.1), 8);
+  else menuList(items, VW / 2, y0, w, bh, 10);
   // explicación del botón seleccionado
   const it = items[uiSel];
+  if (ld) { if (it && it.hint) { ctx.textAlign = "center"; ctx.fillStyle = hc ? "#fff" : "rgba(243,230,200,0.8)"; ctx.font = "13px system-ui"; ctx.fillText(it.hint, VW / 2, VH - 18, VW - 24); } return; }
   if (it && it.hint) {
     ctx.textAlign = "center"; ctx.fillStyle = hc ? "#fff" : "rgba(243,230,200,0.8)"; ctx.font = `${15 * Math.min(UIK(), 1.25)}px system-ui`;
     ctx.fillText(it.hint, VW / 2, y0 + items.length * (bh + 10) + 22, VW - 32);
@@ -6808,6 +6864,7 @@ const showNav = () => !((state === "device" && !settings.device) || state === "b
 // botones rápidos del menú principal
 const canFull = () => !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
 function toggleFull() {
+  if (!canFull()) { showToast("En iPhone: pulsa Compartir y «Añadir a pantalla de inicio» para jugar a pantalla completa", 5); return; }
   try {
     if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
     else { const el = document.documentElement; const r = (el.requestFullscreen || el.webkitRequestFullscreen).call(el); if (r && r.catch) r.catch(() => showToast("Tu navegador no deja usar pantalla completa aquí", 2.5)); }
@@ -6889,7 +6946,7 @@ function navRects() {
   if (!showNav()) return [];
   const ask = homeAsk > 0, h = 40, inGame = state === "play" || state === "pause";
   if (state === "title") {
-    const kinds = ["sound", "lang", "access", ...(canFull() ? ["full"] : [])], bw = 44, gap = 8;
+    const kinds = ["sound", "lang", "access", ...(showFull() ? ["full"] : [])], bw = 44, gap = 8;
     const out = [{ kind: "back", x: 16, y: 16, w: VW < 360 ? 44 : 104, h, label: VW >= 360 }]; // en el título hay sitio para el texto
     kinds.forEach((k, i) => out.push({ kind: k, x: VW - 16 - (kinds.length - i) * (bw + gap) + gap, y: 16, w: bw, h }));
     return out;
@@ -6897,14 +6954,24 @@ function navRects() {
   if (inGame) {
     // en partida: arriba al centro; en pantallas táctiles el botón de pausa ya hace de «Volver»
     const hw = ask ? 158 : 44, sv = inTutorial ? [] : ["save"];
+    const fu = isTouch() && showFull();
     if (isTouch() && VW < 480) {
       const out = [{ kind: "home", x: 62, y: 80, w: hw, h, ask }];
       if (sv.length && !ask) out.push({ kind: "save", x: 62 + hw + 8, y: 80, w: 44, h });
+      if (fu && !ask) out.push({ kind: "full", x: 62 + hw + 8 + (sv.length ? 52 : 0), y: 80, w: 44, h });
+      return out;
+    }
+    if (isTouch() && land()) {
+      // en horizontal: todo en fila junto al panel de vida, después del botón de pausa
+      let x = hudL() + 50; const out = [{ kind: "home", x, y: 14, w: hw, h, ask }]; x += hw + 8;
+      if (sv.length) { out.push({ kind: "save", x, y: 14, w: 44, h }); x += 52; }
+      if (fu) out.push({ kind: "full", x, y: 14, w: 44, h });
       return out;
     }
     if (isTouch()) {
       const out = [{ kind: "home", x: Math.max(8, VW / 2 - 30 - hw), y: 14, w: hw, h, ask }];
       if (sv.length) out.push({ kind: "save", x: VW / 2 - 30 - hw - 52, y: 14, w: 44, h });
+      if (fu) out.push({ kind: "full", x: VW / 2 + 30, y: 14, w: 44, h });
       return out.filter(b => b.x >= 6);
     }
     const bw = 44, n = 2 + sv.length, x0 = VW / 2 - (bw * (n - 1) + 8 * (n - 1) + hw) / 2;
@@ -6912,7 +6979,7 @@ function navRects() {
     if (sv.length) out.push({ kind: "save", x: x0 + bw + 8 + hw + 8, y: 14, w: bw, h });
     return out;
   }
-  const nw = VW < 500 ? 44 : 104, lab = nw > 44;
+  const nw = VW < 500 || land() ? 44 : 104, lab = nw > 44;
   return [{ kind: "back", x: 16, y: 16, w: nw, h, label: lab }, { kind: "home", x: 16 + nw + 8, y: 16, w: ask ? 158 : nw, h, ask, label: lab }];
 }
 function drawNavBtns() {
@@ -7164,6 +7231,7 @@ TR_ROWS.push(
 ["NIVEL SECRETO · DIFÍCIL · premio: {0} {1}", "SECRET LEVEL · HARD · reward: {0} {1}", "NÍVEL SECRETO · DIFÍCIL · prêmio: {0} {1}", "NIVEAU SECRET · DIFFICILE · récompense : {0} {1}", "GEHEIMLEVEL · SCHWER · Belohnung: {0} {1}", "LIVELLO SEGRETO · DIFFICILE · premio: {0} {1}"],
 ["¡{0}! Dificultad: Difícil", "{0}! Difficulty: Hard", "{0}! Dificuldade: Difícil", "{0} ! Difficulté : Difficile", "{0}! Schwierigkeit: Schwer", "{0}! Difficoltà: Difficile"],
 ["¡Nivel secreto superado! Ya tienes su poder", "Secret level cleared! You now have its power", "Nível secreto superado! Agora você tem o poder dele", "Niveau secret réussi ! Tu as maintenant son pouvoir", "Geheimlevel geschafft! Jetzt hast du seine Kraft", "Livello segreto superato! Ora hai il suo potere"],
+["En iPhone: pulsa Compartir y «Añadir a pantalla de inicio» para jugar a pantalla completa", "On iPhone: tap Share and “Add to Home Screen” to play full screen", "No iPhone: toque em Compartilhar e «Adicionar à Tela de Início» para jogar em tela cheia", "Sur iPhone : touche Partager puis « Sur l'écran d'accueil » pour jouer en plein écran", "Auf dem iPhone: Tippe auf Teilen und „Zum Home-Bildschirm“, um im Vollbild zu spielen", "Su iPhone: tocca Condividi e «Aggiungi alla schermata Home» per giocare a schermo intero"],
 ["Llega antes a su nivel para abrirlo", "Reach its level first to unlock it", "Chegue primeiro ao nível dele para abri-lo", "Atteins d'abord son niveau pour l'ouvrir", "Erreiche zuerst sein Level, um es freizuschalten", "Raggiungi prima il suo livello per sbloccarlo"],
 ["¡Has encontrado un nivel secreto! Aquí la dificultad es Difícil", "You found a secret level! Difficulty here is Hard", "Você encontrou um nível secreto! Aqui a dificuldade é Difícil", "Tu as trouvé un niveau secret ! Ici la difficulté est Difficile", "Du hast ein Geheimlevel gefunden! Hier ist es Schwer", "Hai trovato un livello segreto! Qui la difficoltà è Difficile"],
 ["¡Has vuelto del nivel secreto con un poder nuevo!", "You're back from the secret level with a new power!", "Você voltou do nível secreto com um novo poder!", "Tu reviens du niveau secret avec un nouveau pouvoir !", "Du bist mit einer neuen Kraft aus dem Geheimlevel zurück!", "Sei tornato dal livello segreto con un nuovo potere!"],
@@ -7404,15 +7472,16 @@ function drawDeviceScreen() {
   const g = ctx.createRadialGradient(VW / 2, VH * 0.45, 0, VW / 2, VH * 0.45, Math.max(VW, VH) * 0.7);
   g.addColorStop(0, "#2e1c10"); g.addColorStop(1, "#050407"); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
   ui = [];
-  const s = VW < 720, guess = guessDevice();
-  titleText("ABISMO DE ESPUMA", s ? 70 : 110, s ? 34 : 56);
-  ctx.textAlign = "center"; ctx.fillStyle = "#fff3dc"; ctx.font = `bold ${s ? 18 : 24}px system-ui`;
-  ctx.fillText("¿Dónde vas a jugar?", VW / 2, s ? 116 : 170);
-  ctx.fillStyle = "rgba(243,230,200,0.6)"; ctx.font = `${s ? 12 : 14}px system-ui`;
-  ctx.fillText("Así ajustamos los controles a tu pantalla", VW / 2, s ? 138 : 196);
-  const cw = s ? Math.min(VW - 40, 300) : 220, ch = s ? 118 : 230, gap = 18;
+  // en horizontal con poca altura: las tres tarjetas en fila y más bajas
+  const ld = land(), s = VW < 720 && !ld, guess = guessDevice();
+  titleText("ABISMO DE ESPUMA", ld ? 44 : s ? 70 : 110, s || ld ? 34 : 56);
+  ctx.textAlign = "center"; ctx.fillStyle = "#fff3dc"; ctx.font = `bold ${s || ld ? 18 : 24}px system-ui`;
+  ctx.fillText("¿Dónde vas a jugar?", VW / 2, ld ? 82 : s ? 116 : 170);
+  ctx.fillStyle = "rgba(243,230,200,0.6)"; ctx.font = `${s || ld ? 12 : 14}px system-ui`;
+  ctx.fillText("Así ajustamos los controles a tu pantalla", VW / 2, ld ? 102 : s ? 138 : 196);
+  const cw = s ? Math.min(VW - 40, 300) : ld ? Math.min(220, (VW - 60) / 3) : 220, ch = s ? 118 : ld ? Math.min(230, VH - 134) : 230, gap = 18;
   DEVICES.forEach((d, i) => {
-    const x = s ? VW / 2 - cw / 2 : VW / 2 - (3 * cw + 2 * gap) / 2 + i * (cw + gap), y = s ? 158 + i * (ch + 12) : 230;
+    const x = s ? VW / 2 - cw / 2 : VW / 2 - (3 * cw + 2 * gap) / 2 + i * (cw + gap), y = s ? 158 + i * (ch + 12) : ld ? 118 : 230;
     const on = deviceSel === i, k = ease((stateT - i * 0.1) * 3.5), bob = on ? Math.sin(time * 4) * 3 : 0;
     ctx.save(); ctx.globalAlpha = k; ctx.translate(0, (1 - k) * 20);
     if (on) { ctx.shadowColor = "rgba(232,163,61,0.6)"; ctx.shadowBlur = 22; }
@@ -7423,9 +7492,10 @@ function drawDeviceScreen() {
       ctx.textAlign = "left"; ctx.fillStyle = on ? "#ffe2a8" : "#fff3dc"; ctx.font = "bold 18px system-ui"; ctx.fillText(d.name, x + 104, y + ch / 2 - 4, cw - 114);
       ctx.fillStyle = "rgba(243,230,200,0.6)"; ctx.font = "13px system-ui"; ctx.fillText(d.desc, x + 104, y + ch / 2 + 18, cw - 114);
     } else {
-      drawDeviceIcon(d.id, x + cw / 2, y + 88 + bob, 1.2, on);
-      ctx.textAlign = "center"; ctx.fillStyle = on ? "#ffe2a8" : "#fff3dc"; ctx.font = "bold 20px system-ui"; ctx.fillText(d.name, x + cw / 2, y + 178, cw - 20);
-      ctx.fillStyle = "rgba(243,230,200,0.6)"; ctx.font = "14px system-ui"; ctx.fillText(d.desc, x + cw / 2, y + 202, cw - 20);
+      const kk = ch / 230;
+      drawDeviceIcon(d.id, x + cw / 2, y + 88 * kk + bob, 1.2 * Math.max(0.6, kk), on);
+      ctx.textAlign = "center"; ctx.fillStyle = on ? "#ffe2a8" : "#fff3dc"; ctx.font = `bold ${ld ? 17 : 20}px system-ui`; ctx.fillText(d.name, x + cw / 2, y + ch - (ld ? 34 : 52), cw - 20);
+      ctx.fillStyle = "rgba(243,230,200,0.6)"; ctx.font = `${ld ? 12 : 14}px system-ui`; ctx.fillText(d.desc, x + cw / 2, y + ch - (ld ? 14 : 28), cw - 20);
     }
     if (d.id === guess) {
       ctx.fillStyle = "#9be15d"; ctx.font = "bold 11px system-ui"; ctx.textAlign = "center";
@@ -7435,7 +7505,7 @@ function drawDeviceScreen() {
     ctx.restore();
     ui.push({ x, y, w: cw, h: ch, fn: () => { deviceSel = i; chooseDevice(d.id); } });
   });
-  if (!s) { ctx.fillStyle = "rgba(243,230,200,0.5)"; ctx.font = "13px system-ui"; ctx.textAlign = "center"; ctx.fillText("←→ elegir  ·  ENTER confirmar", VW / 2, 500); }
+  if (!s && !ld) { ctx.fillStyle = "rgba(243,230,200,0.5)"; ctx.font = "13px system-ui"; ctx.textAlign = "center"; ctx.fillText("←→ elegir  ·  ENTER confirmar", VW / 2, 500); }
 }
 TR_ROWS.push(
 ["¿Dónde vas a jugar?", "Where are you going to play?", "Onde você vai jogar?", "Où vas-tu jouer ?", "Wo spielst du?", "Dove giocherai?"],

@@ -26,7 +26,7 @@ public class MainActivity extends Activity {
     web.setWebViewClient(new WebViewClient());
     web.setWebChromeClient(new WebChromeClient());
     setContentView(web);
-    web.loadUrl("file:///android_asset/index.html");
+    web.loadUrl("file:///android_asset/index.html?app=1"); // app=1: ya es pantalla completa
   }
 
   // Pantalla completa inmersiva: oculta las barras del sistema.
