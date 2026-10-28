@@ -697,6 +697,7 @@ const store = {
 const settings = { device: null, diff: store.get("diff", 1), sound: store.get("sound", true), minimap: +store.get("minimap", 1), fx: store.get("fx", true) };
 if (!(settings.minimap >= 0 && settings.minimap <= 2)) settings.minimap = 1;
 settings.volume = clamp(+store.get("volume", 0.8) || 0, 0, 1);
+settings.res = store.get("res", "auto"); if (!(settings.res === "auto" || [0, 1, 2, 3, 4].includes(settings.res))) settings.res = "auto";
 settings.a11y = Object.assign({ text: 0, contrast: false, motion: matchMedia("(prefers-reduced-motion: reduce)").matches, voice: false }, store.get("a11y", {}) || {});
 const A11 = () => settings.a11y, UIK = () => [1, 1.2, 1.4][A11().text] || 1;
 settings.device = ["pc", "tablet", "phone"].includes(store.get("device", null)) ? store.get("device", null) : null;
@@ -712,6 +713,8 @@ const cv = document.getElementById("c");
 const ctx = cv.getContext("2d");
 const lc = document.createElement("canvas");
 const lctx = lc.getContext("2d");
+// los resplandores de colores se suman en otra capa a media resolución (son brillos difusos)
+const gcv = document.createElement("canvas"), gctx = gcv.getContext("2d");
 // posprocesado: resplandor (bloom) por reducción de resolución y grano de película
 const bl1 = document.createElement("canvas"), bl2 = document.createElement("canvas");
 const b1 = bl1.getContext("2d"), b2 = bl2.getContext("2d");
@@ -719,11 +722,15 @@ const grainC = document.createElement("canvas"); grainC.width = grainC.height = 
 { const g = grainC.getContext("2d"), img = g.createImageData(128, 128); for (let i = 0; i < img.data.length; i += 4) { const v = Math.random() * 255; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255; } g.putImageData(img, 0, 0); }
 let grainPat = null;
 let VW, VH, DPR, ZOOM, vignette = null;
+// resolución: «auto» la ajusta según lo fluido que vaya el dispositivo; la capa de luces va a media resolución (son degradados suaves)
+const RES_STEPS = [1, 0.8, 0.65, 0.5, 0.4], LS = 0.5;
+let resIdx = 0;
 function resize() {
-  DPR = Math.min(2, window.devicePixelRatio || 1);
+  const fixed = typeof settings !== "undefined" && settings.res !== "auto" ? settings.res : null;
+  DPR = Math.max(0.5, Math.min(2, window.devicePixelRatio || 1) * RES_STEPS[fixed ?? resIdx]);
   VW = innerWidth; VH = innerHeight;
-  cv.width = lc.width = Math.round(VW * DPR);
-  cv.height = lc.height = Math.round(VH * DPR);
+  cv.width = Math.round(VW * DPR); cv.height = Math.round(VH * DPR);
+  gcv.width = lc.width = Math.max(1, Math.round(VW * DPR * LS)); gcv.height = lc.height = Math.max(1, Math.round(VH * DPR * LS));
   ZOOM = Math.max(1, Math.min(2.2, Math.min(VW / (TS * 15), VH / (TS * 10))));
   bl1.width = Math.max(1, Math.ceil(VW / 5)); bl1.height = Math.max(1, Math.ceil(VH / 5));
   bl2.width = Math.max(1, Math.ceil(VW / 14)); bl2.height = Math.max(1, Math.ceil(VH / 14));
@@ -3446,7 +3453,7 @@ function drawMain() {
   const kf = 1 - Math.pow(0.00002, frameDt); camX += (tx - camX) * kf; camY += (ty - camY) * kf;
   if (Math.abs(tx - camX) > vw) { camX = tx; camY = ty; }
   const sx = (Math.random() - 0.5) * shake, sy = (Math.random() - 0.5) * shake;
-  const worldT = (c) => { c.setTransform(DPR * CZ, 0, 0, DPR * CZ, 0, 0); c.translate(-camX + sx + camKick.x, -camY + sy + camKick.y); };
+  const worldT = (c, k = 1) => { c.setTransform(DPR * CZ * k, 0, 0, DPR * CZ * k, 0, 0); c.translate(-camX + sx + camKick.x, -camY + sy + camKick.y); };
   worldT(ctx);
   blitView(tileCache);
 
@@ -3577,7 +3584,7 @@ function drawMain() {
   lctx.globalCompositeOperation = "source-over";
   lctx.fillStyle = "rgba(3,2,6,0.95)"; lctx.fillRect(0, 0, lc.width, lc.height);
   lctx.globalCompositeOperation = "destination-out";
-  worldT(lctx);
+  worldT(lctx, LS);
   const light = (x, y, r, k = 1) => {
     const g = lctx.createRadialGradient(x, y, 0, x, y, r);
     g.addColorStop(0, `rgba(0,0,0,${k})`); g.addColorStop(0.5, `rgba(0,0,0,${k * 0.75})`); g.addColorStop(1, "rgba(0,0,0,0)");
@@ -3607,15 +3614,17 @@ function drawMain() {
   for (const l of emiLights) if (inView(l.x, l.y, l.r)) light(l.x, l.y, l.r * (l.flick ? 0.92 + 0.08 * Math.sin(time * 11 + l.x) : 1), l.k);
   if (P.muzzle > 0) light(P.x + Math.cos(P.aim) * 20, P.y + Math.sin(P.aim) * 20, 90, 0.8);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.drawImage(lc, 0, 0);
+  ctx.drawImage(lc, 0, 0, cv.width, cv.height);
 
   // resplandores de color
   worldT(ctx);
   ctx.globalCompositeOperation = "lighter";
+  gctx.setTransform(1, 0, 0, 1, 0, 0); gctx.globalCompositeOperation = "source-over"; gctx.clearRect(0, 0, gcv.width, gcv.height);
+  gctx.globalCompositeOperation = "lighter"; worldT(gctx, LS);
   const glow = (x, y, r, c, a) => {
-    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    const g = gctx.createRadialGradient(x, y, 0, x, y, r);
     g.addColorStop(0, `rgba(${c},${a})`); g.addColorStop(1, `rgba(${c},0)`);
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+    gctx.fillStyle = g; gctx.beginPath(); gctx.arc(x, y, r, 0, 7); gctx.fill();
   };
   for (const tq of torches) if (inView(tq.x, tq.y, 120)) glow(tq.x, tq.y + 8, 110, "255,140,40", 0.15 + Math.sin(time * 9 + tq.ph) * 0.02);
   for (const d of decor) if (d.kind === "mush" && inView(d.x, d.y, 80)) glow(d.x, d.y, 60, "60,220,230", 0.13);
@@ -3642,6 +3651,7 @@ function drawMain() {
   for (const p of parts) if (p.glow) glow(p.x, p.y, 8, "255,210,120", 0.25 * p.life / p.max);
   for (const g of glints) { ctx.fillStyle = `rgba(255,255,220,${g.life * 2})`; ctx.fillRect(g.x - 0.5, g.y - 2, 1, 4); ctx.fillRect(g.x - 2, g.y - 0.5, 4, 1); }
   if (P.muzzle > 0) glow(P.x + Math.cos(P.aim) * 20, P.y + Math.sin(P.aim) * 20, 26, "255,230,150", 0.6);
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(gcv, 0, 0, cv.width, cv.height); ctx.restore();
   ctx.globalCompositeOperation = "source-over";
 
   // la niebla vuelve a tapar lo no explorado (para que los brillos no revelen el mapa)
@@ -4936,6 +4946,13 @@ function titleText(txt, y, size, color = "#f3e6c8") {
 function dim(a = 0.75) { ctx.fillStyle = `rgba(5,4,7,${a * ease(stateT * 3)})`; ctx.fillRect(0, 0, VW, VH); }
 const sm = () => VW < 560 || VH < 560;
 const toggleDiff = (d = 1) => { settings.diff = (settings.diff + d + DIFFS.length) % DIFFS.length; store.set("diff", settings.diff); };
+const RES_NAMES = ["Alta", "Media", "Baja", "Muy baja", "Mínima"];
+const resLabel = () => settings.res === "auto" ? `Automática (${RES_NAMES[resIdx]})` : RES_NAMES[settings.res];
+function cycleRes(d) {
+  const opts = ["auto", 0, 1, 2, 3, 4], i = opts.indexOf(settings.res);
+  settings.res = opts[(i + d + opts.length) % opts.length]; store.set("res", settings.res);
+  perf.downs = 0; perf.good = 0; resize();
+}
 const toggleFx = () => { settings.fx = !settings.fx; store.set("fx", settings.fx); slowT = 0; fxAuto = false; };
 const toMenu = () => {
   // si sales tras superar un nivel, «Continuar» empieza en el siguiente
@@ -5041,7 +5058,7 @@ function cave(yBase, amp, seed, color, top) {
   }
   ctx.lineTo(VW, top ? 0 : VH); ctx.closePath(); ctx.fill();
 }
-const gunHov = [];
+const gunHov = []; let titleCache = null;
 function drawTitle() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   const g = ctx.createRadialGradient(VW / 2, VH * 0.45, 0, VW / 2, VH * 0.45, Math.max(VW, VH) * 0.7);
@@ -5062,11 +5079,18 @@ function drawTitle() {
   const ty = VH * (s ? 0.14 : 0.17);
   ctx.textAlign = "center"; ctx.fillStyle = "#ff8a1f"; ctx.font = `bold ${s ? 12 : 15}px system-ui`;
   ctx.fillText("· UNA AVENTURA BAJO TIERRA ·", VW / 2, ty);
-  const tg = ctx.createLinearGradient(0, ty + 10, 0, ty + (s ? 60 : 90));
-  tg.addColorStop(0, "#fff1cf"); tg.addColorStop(1, "#e8a33d");
-  ctx.font = `900 ${s ? 42 : 78}px ${TITLE_FONT}`; ctx.fillStyle = tg;
-  ctx.shadowColor = "rgba(255,138,31,0.5)"; ctx.shadowBlur = 30;
-  ctx.fillText("ABISMO DE ESPUMA", VW / 2, ty + (s ? 52 : 84), VW - 24); ctx.shadowBlur = 0;
+  // el título con su resplandor se dibuja una sola vez y se guarda (la sombra difuminada es cara)
+  const tk = [LANG, VW, DPR, s, document.fonts ? document.fonts.status : ""].join("|"), th = s ? 96 : 150, tb = s ? 70 : 112;
+  if (!titleCache || titleCache.key !== tk) {
+    const c = document.createElement("canvas"); c.width = Math.ceil(VW * DPR); c.height = Math.ceil(th * DPR);
+    const g = c.getContext("2d"); g.setTransform(DPR, 0, 0, DPR, 0, 0); g.textAlign = "center";
+    const tg = g.createLinearGradient(0, tb - (s ? 42 : 74), 0, tb + (s ? 8 : 6)); tg.addColorStop(0, "#fff1cf"); tg.addColorStop(1, "#e8a33d");
+    g.font = `900 ${s ? 42 : 78}px ${TITLE_FONT}`; g.fillStyle = tg; g.shadowColor = "rgba(255,138,31,0.5)"; g.shadowBlur = 30;
+    g.fillText("ABISMO DE ESPUMA", VW / 2, tb, VW - 24);
+    titleCache = { key: tk, c };
+  }
+  ctx.drawImage(titleCache.c, 0, ty + (s ? 52 : 84) - tb, VW, th);
+  ctx.font = `900 ${s ? 42 : 78}px ${TITLE_FONT}`;
   if (!A11().motion) {
     const tw = Math.min(VW - 24, ctx.measureText("ABISMO DE ESPUMA").width), sx0 = VW / 2 - tw / 2, ph = (time * 0.35) % 1.6 - 0.3;
     const sg = ctx.createLinearGradient(sx0 + tw * ph - 60, 0, sx0 + tw * ph + 60, 0);
@@ -6374,6 +6398,7 @@ function optionItems() {
     { label: `Dificultad: ${DIFF().name}`, fn: () => toggleDiff(1), lr: toggleDiff },
     volItem(),
     { label: `Efectos: ${settings.fx ? "Altos" : "Bajos"}`, hint: "Bajos va mejor en equipos lentos", fn: toggleFx },
+    { label: `Resolución: ${resLabel()}`, hint: "Automática baja la nitidez sola si el juego va lento", fn: () => cycleRes(1), lr: cycleRes },
     { label: `Dispositivo: ${{ pc: "Computador", tablet: "Tableta o iPad", phone: "Celular" }[settings.device] || "?"}`, fn: () => openDevice() },
     { label: "‹ Volver", fn: closeSub },
   ];
@@ -6781,6 +6806,14 @@ function drawSaveIcon() {
 TR_ROWS.push(
 ["Inicio", "Home", "Início", "Accueil", "Start", "Inizio"],
 ["Volver", "Back", "Voltar", "Retour", "Zurück", "Indietro"],
+["Resolución: {0}", "Resolution: {0}", "Resolução: {0}", "Résolution : {0}", "Auflösung: {0}", "Risoluzione: {0}"],
+["Automática ({0})", "Automatic ({0})", "Automática ({0})", "Automatique ({0})", "Automatisch ({0})", "Automatica ({0})"],
+["Alta", "High", "Alta", "Haute", "Hoch", "Alta"],
+["Media", "Medium", "Média", "Moyenne", "Mittel", "Media"],
+["Baja", "Low", "Baixa", "Basse", "Niedrig", "Bassa"],
+["Muy baja", "Very low", "Muito baixa", "Très basse", "Sehr niedrig", "Molto bassa"],
+["Mínima", "Minimum", "Mínima", "Minimale", "Minimal", "Minima"],
+["Automática baja la nitidez sola si el juego va lento", "Automatic lowers sharpness by itself if the game runs slowly", "Automática reduz a nitidez sozinha se o jogo ficar lento", "Automatique baisse la netteté si le jeu ralentit", "Automatisch senkt die Schärfe, wenn das Spiel ruckelt", "Automatica abbassa la nitidezza se il gioco rallenta"],
 ["¡Ahora! Está cansado", "Now! It's tired", "Agora! Está cansado", "Maintenant ! Il est fatigué", "Jetzt! Er ist müde", "Ora! È stanco"],
 ["¡CANSADO!", "TIRED!", "CANSADO!", "FATIGUÉ !", "MÜDE!", "STANCO!"],
 ["¡{0} usa todo su poder!", "{0} unleashes all its power!", "{0} usa todo o seu poder!", "{0} déchaîne toute sa puissance !", "{0} entfesselt seine ganze Kraft!", "{0} scatena tutto il suo potere!"],
@@ -7110,8 +7143,24 @@ setLang(LANG); // vuelve a cargar la tabla con las traducciones añadidas arriba
 
 // ---------- Bucle ----------
 let last = performance.now(), slowT = 0, fxAuto = true;
+// cada 1,5 s mira cuántas imágenes por segundo salen y ajusta la resolución si hace falta
+const perf = { t: 0, n: 0, good: 0, bad: 0, downs: 0, hitch: false };
+function autoRes(raw) {
+  if (settings.res !== "auto" || document.hidden) return;
+  // un tirón suelto (cargar un nivel, cambiar de pantalla) no cuenta como lentitud
+  if (raw > 0.2) { perf.hitch = true; return; }
+  perf.t += raw; perf.n++;
+  if (perf.t < 1.5) return;
+  const fps = perf.n / perf.t, hitch = perf.hitch; perf.t = 0; perf.n = 0; perf.hitch = false;
+  if (hitch) return;
+  if (fps < 42) { if (++perf.bad >= 2 && resIdx < RES_STEPS.length - 1) { resIdx++; perf.downs++; perf.bad = 0; perf.good = 0; resize(); } return; }
+  perf.bad = 0;
+  if (fps > 57 && resIdx > 0 && perf.downs < 4) { if (++perf.good >= 4) { resIdx--; perf.good = 0; resize(); } }
+  else perf.good = 0;
+}
 function loop(now) {
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw); last = now;
+  autoRes(raw);
   if (state === "play" && settings.fx && fxAuto && raw < 0.5) {
     slowT = raw > 1 / 38 ? slowT + raw : Math.max(0, slowT - raw * 0.5);
     if (slowT > 4) { settings.fx = false; fxAuto = false; showToast("Efectos reducidos para que el juego vaya más fluido (puedes cambiarlo en Pausa)", 4); }
