@@ -1964,17 +1964,21 @@ function drawWorldCard() {
 
 // ---------- Mapa de los mundos (como en los juegos de plataformas) ----------
 let mapSel = 0, mapPage = 0, mapAv = null, mapMove = 0;
+// en el mapa, 0..39 son los niveles, 40 la Grieta del Vacío y 100+m el nivel secreto del mundo m (junto a su nivel 3)
+const SECRET_NODE = 100, isSecretNode = i => i >= SECRET_NODE, secretParent = i => (i - SECRET_NODE) * 10 + 2;
+const mapPageOf = i => isSecretNode(i) ? i - SECRET_NODE : i >= 40 ? 3 : Math.floor(i / 10);
 const MAP_BG = [["#3a2614", "#120a05"], ["#1e4a6a", "#071624"], ["#2a1640", "#08040f"], ["#5a1a08", "#160402"]];
 function openMap(sel) {
   if (secretIdx !== null || inTutorial) { secretIdx = null; secretRet = null; inTutorial = false; }
   gameDirty = false; exitDlg = null; saved = store.get(saveKey(), null);
   const top = mapTop();
-  mapSel = clamp(sel ?? (saved ? saved.level : 0), 0, top); mapPage = mapSel >= 40 ? 3 : Math.floor(mapSel / 10);
+  mapSel = sel != null && isSecretNode(sel) && canPlay(sel) ? sel : clamp(sel ?? (saved ? saved.level : 0), 0, top); mapPage = mapPageOf(mapSel);
   mapAv = null; state = "map"; uiSel = -1; SFX.uiGo();
 }
 const ultraOpen = () => !!(saved && saved.prog && saved.prog.beaten);
 const mapTop = () => Math.max(prog().unlocked || 0, saved ? saved.level : 0) + (ultraOpen() ? 1 : 0) * 0 ;
 function mapNode(i) {
+  if (isSecretNode(i)) { const b = mapNode(secretParent(i)); return { x: b.x + (VW < 760 ? 0 : VW * 0.02), y: b.y - (VW < 760 ? 64 : 88) }; }
   if (i === 40) return { x: VW * (VW < 760 ? 0.5 : 0.86), y: VH * (VW < 760 ? 0.2 : 0.22) };
   const n = i % 10, w = Math.floor(i / 10);
   if (VW < 760) {
@@ -1983,10 +1987,11 @@ function mapNode(i) {
   }
   return { x: VW * 0.08 + VW * 0.84 * n / 9, y: VH * 0.47 + Math.sin(n * 1.25 + w * 0.7) * VH * 0.15 };
 }
-function canPlay(i) { return i === 40 ? ultraOpen() : i <= Math.max(prog().unlocked || 0, saved ? saved.level : 0); }
+function canPlay(i) { if (isSecretNode(i)) return canPlay(secretParent(i)); return i === 40 ? ultraOpen() : i <= Math.max(prog().unlocked || 0, saved ? saved.level : 0); }
 function playFromMap(i) {
   if (!canPlay(i)) { SFX.ui(); showToast("Todavía no has llegado hasta aquí", 1.6); return; }
   if (i === 40) return playUltra();
+  if (isSecretNode(i)) return playSecretFromMap(i - SECRET_NODE);
   if (saved && saved.level === i && saved.full) { continueGame(); return; }
   loadRun(); loadLevel(i);
 }
@@ -1996,10 +2001,28 @@ function playUltra() {
   secretIdx = ULTRA; loadLevel(39);
   showToast("¡La Grieta del Vacío! Dificultad: Pesadilla", 3);
 }
+// los niveles secretos también se juegan desde el mapa, sin tener que buscar el muro agrietado
+function playSecretFromMap(si) {
+  loadRun(); const lv = secretParent(SECRET_NODE + si); levelIdx = lv;
+  secretRet = { fromMap: true, mapSel: SECRET_NODE + si, level: saved ? saved.level : lv, ck: null, heartBefore: hasPower("heart"), pStart: structuredClone({ hp: P.hp, maxHp: P.maxHp, weapons: P.weapons, cur: P.cur, ammo: P.ammo, res: P.res }) };
+  secretIdx = si; loadLevel(lv);
+  showToast(`¡${SECRETS[si].name}! Dificultad: Difícil`, 3);
+}
 function mapKey(e) {
   const top = Math.max(prog().unlocked || 0, saved ? saved.level : 0);
-  if (["ArrowRight", "KeyD"].includes(e.code)) { if (mapSel === 39 && ultraOpen()) mapSel = 40; else if (mapSel < 40 && mapSel + 1 <= top) mapSel++; else SFX.ui(); mapPage = mapSel >= 40 ? 3 : Math.floor(mapSel / 10); }
-  else if (["ArrowLeft", "KeyA"].includes(e.code)) { if (mapSel === 40) mapSel = 39; else if (mapSel > 0) mapSel--; mapPage = Math.floor(Math.min(39, mapSel) / 10); }
+  const sn = i => SECRET_NODE + Math.floor(i / 10); // nodo secreto del mundo del nivel i
+  if (["ArrowRight", "KeyD"].includes(e.code)) {
+    if (isSecretNode(mapSel)) { const nx = secretParent(mapSel) + 1; if (nx <= top) mapSel = nx; else SFX.ui(); }
+    else if (mapSel < 40 && mapSel % 10 === 2 && canPlay(sn(mapSel))) mapSel = sn(mapSel);
+    else if (mapSel === 39 && ultraOpen()) mapSel = 40; else if (mapSel < 40 && mapSel + 1 <= top) mapSel++; else SFX.ui();
+    mapPage = mapPageOf(mapSel);
+  }
+  else if (["ArrowLeft", "KeyA"].includes(e.code)) {
+    if (isSecretNode(mapSel)) mapSel = secretParent(mapSel);
+    else if (mapSel < 40 && mapSel % 10 === 3 && canPlay(sn(mapSel))) mapSel = sn(mapSel);
+    else if (mapSel === 40) mapSel = 39; else if (mapSel > 0) mapSel--;
+    mapPage = mapPageOf(mapSel);
+  }
   else if (["ArrowUp", "KeyW", "PageUp"].includes(e.code)) { const np = Math.min(3, mapPage + 1); if (np * 10 <= top) { mapPage = np; mapSel = Math.min(top, np * 10); } }
   else if (["ArrowDown", "KeyS", "PageDown"].includes(e.code)) { const np = Math.max(0, mapPage - 1); mapPage = np; mapSel = Math.min(top, np * 10 + 9); }
   else if (["Enter", "Space"].includes(e.code)) playFromMap(mapSel);
@@ -2039,7 +2062,25 @@ function drawMap() {
     ctx.strokeStyle = open ? "#e8c27a" : "rgba(160,150,140,0.35)"; ctx.lineWidth = 8; ctx.setLineDash(open ? [] : [6, 8]); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]);
   }
   if (w === 3 && ultraOpen()) { const a = nodes[9], b = mapNode(40); ctx.strokeStyle = `rgba(255,80,240,${0.5 + 0.3 * Math.sin(time * 4)})`; ctx.lineWidth = 5; ctx.setLineDash([4, 6]); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]); }
+  // camino morado hasta el nivel secreto, junto al nivel 3
+  const sNode = SECRET_NODE + w, sOpen = canPlay(sNode), sp = mapNode(sNode), sa = nodes[2];
+  ctx.strokeStyle = sOpen ? `rgba(200,120,255,${0.6 + 0.3 * Math.sin(time * 4)})` : "rgba(160,140,180,0.3)"; ctx.lineWidth = 5; ctx.setLineDash([4, 6]); ctx.beginPath(); ctx.moveTo(sa.x, sa.y); ctx.lineTo(sp.x, sp.y); ctx.stroke(); ctx.setLineDash([]);
   // nodos
+  const drawSecretNode = (i, pt) => {
+    const si = i - SECRET_NODE, open = canPlay(i), sel = mapSel === i, done = secretDone(si), r = 18, bob = sel && !A11().motion ? Math.sin(time * 5) * 3 : 0;
+    if (sel) { ctx.strokeStyle = "#e0b0ff"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(pt.x, pt.y, r + 9 + Math.sin(time * 6) * 2, 0, 7); ctx.stroke(); }
+    if (open) { const gg = ctx.createRadialGradient(pt.x, pt.y + bob, 4, pt.x, pt.y + bob, r * 2.2); gg.addColorStop(0, "rgba(190,110,255,0.45)"); gg.addColorStop(1, "rgba(190,110,255,0)"); ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(pt.x, pt.y + bob, r * 2.2, 0, 7); ctx.fill(); }
+    // un rombo morado (una gema), como el portal de los niveles secretos
+    ctx.save(); ctx.translate(pt.x, pt.y + bob); ctx.rotate(Math.PI / 4 + (open && !A11().motion ? Math.sin(time * 2) * 0.08 : 0));
+    const g = ctx.createLinearGradient(-r, -r, r, r), c = open ? (done ? "#c070ff" : "#8a3ad0") : "#5a5a60";
+    g.addColorStop(0, mixHex(c, "#ffffff", 0.45)); g.addColorStop(1, mixHex(c, "#000000", 0.4));
+    ctx.fillStyle = g; ctx.fillRect(-r * 0.8, -r * 0.8, r * 1.6, r * 1.6); ctx.strokeStyle = open ? "#f0d0ff" : "rgba(0,0,0,0.6)"; ctx.lineWidth = 2; ctx.strokeRect(-r * 0.8, -r * 0.8, r * 1.6, r * 1.6);
+    ctx.restore();
+    ctx.fillStyle = "#fff"; ctx.font = "bold 15px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(!open ? "🔒" : done ? "✓" : "?", pt.x, pt.y + bob + 1); ctx.textBaseline = "alphabetic";
+    if (open) { const pw0 = POWERS[si]; if (pw0) { ctx.font = "13px system-ui"; ctx.fillText(pw0.icon, pt.x + r + 4, pt.y - r + 4); } }
+    ui.push({ x: pt.x - r - 6, y: pt.y - r - 6, w: r * 2 + 12, h: r * 2 + 12, fn: () => { if (mapSel === i) playFromMap(i); else if (open) { mapSel = i; SFX.ui(); } else showToast("Llega antes a su nivel para abrirlo", 1.6); }, label: SECRETS[si].name });
+  };
   const drawNode = (i, pt) => {
     const n = i % 10, open = canPlay(i), sel = mapSel === i, boss = n === 4 || n === 9, ultra = i === 40, r = ultra ? 24 : boss ? 22 : 17;
     const bob = sel && !A11().motion ? Math.sin(time * 5) * 3 : 0;
@@ -2059,9 +2100,10 @@ function drawMap() {
     ui.push({ x: pt.x - r - 6, y: pt.y - r - 6, w: r * 2 + 12, h: r * 2 + 12, fn: () => { if (mapSel === i) playFromMap(i); else if (canPlay(i)) { mapSel = i; SFX.ui(); } else showToast("Todavía no has llegado hasta aquí", 1.6); }, label: ultra ? "La Grieta del Vacío" : LEVELS[i].name });
   };
   nodes.forEach((pt, n) => drawNode(w * 10 + n, pt));
+  drawSecretNode(sNode, sp);
   if (w === 3 && ultraOpen()) drawNode(40, mapNode(40));
   // tu personaje camina hasta el nivel elegido
-  const target = mapSel === 40 || Math.floor(mapSel / 10) === w ? mapNode(mapSel) : null;
+  const target = mapPageOf(mapSel) === w ? mapNode(mapSel) : null;
   if (target) {
     if (!mapAv) mapAv = { x: target.x, y: target.y, walk: 0 };
     const dx = target.x - mapAv.x, dy = target.y - mapAv.y, d = Math.hypot(dx, dy);
@@ -2072,9 +2114,10 @@ function drawMap() {
   // panel inferior
   const pw = Math.min(520, VW - 24), px = VW / 2 - pw / 2, py = VH - (s ? 150 : 128);
   panel(px, py, pw, s ? 138 : 116, 14);
-  const name = mapSel === 40 ? "La Grieta del Vacío" : LEVELS[mapSel].name;
-  ctx.textAlign = "center"; ctx.fillStyle = mapSel === 40 ? "#ff8af0" : "#e8a33d"; ctx.font = "bold 12px system-ui";
-  ctx.fillText(mapSel === 40 ? "NIVEL SUPERSECRETO · PESADILLA" : levelLabel(mapSel), VW / 2, py + 20);
+  const secSel = isSecretNode(mapSel) ? SECRETS[mapSel - SECRET_NODE] : null, secPow = secSel && POWERS[mapSel - SECRET_NODE];
+  const name = mapSel === 40 ? "La Grieta del Vacío" : secSel ? secSel.name : LEVELS[mapSel].name;
+  ctx.textAlign = "center"; ctx.fillStyle = mapSel === 40 ? "#ff8af0" : secSel ? "#d0a0ff" : "#e8a33d"; ctx.font = "bold 12px system-ui";
+  ctx.fillText(mapSel === 40 ? "NIVEL SUPERSECRETO · PESADILLA" : secSel ? `NIVEL SECRETO · DIFÍCIL${secPow ? " · premio: " + secPow.icon + " " + secPow.name : ""}` : levelLabel(mapSel), VW / 2, py + 20, pw - 16);
   ctx.fillStyle = "#fff3dc"; ctx.font = `900 ${s ? 18 : 22}px ${TITLE_FONT}`; ctx.fillText(name, VW / 2, py + 46, pw - 20);
   const bw = s ? (pw - 40) / 3 : 150, by = py + (s ? 66 : 62);
   button("‹ Mundo", px + 10, by, bw, 40, () => mapKey({ code: "ArrowDown" }), { size: 13 });
@@ -2117,7 +2160,7 @@ function enterSecret(si, portalIdx) {
 }
 function returnFromSecret() {
   const r = secretRet;
-  if (r && r.fromMap) { secretIdx = null; secretRet = null; JINGLES.win(); openMap(40); showToast("¡Has conquistado la Grieta del Vacío!", 3); return; }
+  if (r && r.fromMap) { const back = r.mapSel ?? 40; secretIdx = null; secretRet = null; JINGLES.win(); openMap(back); showToast(back === 40 ? "¡Has conquistado la Grieta del Vacío!" : "¡Nivel secreto superado! Ya tienes su poder", 3); return; }
   secretIdx = null; secretRet = null;
   const pNow = { weapons: P.weapons.slice(), ammo: { ...P.ammo }, res: { ...P.res } };
   suppressSave = true; loadLevel(r.level); suppressSave = false; worldCard = 0;
@@ -3804,21 +3847,26 @@ function dartSprite(c, tip) {
   if (DART_SPR.size > 160) DART_SPR.clear();
   const K = DART_K; cv2 = document.createElement("canvas"); cv2.width = 18 * K; cv2.height = 10 * K;
   const g = cv2.getContext("2d"); g.setTransform(K, 0, 0, K, 10 * K, 5 * K);
-  // aletas traseras
-  g.fillStyle = "rgba(0,0,0,0.35)"; g.beginPath(); g.moveTo(-6.5, -1.6); g.lineTo(-9, -3.6); g.lineTo(-7.6, -1.6); g.moveTo(-6.5, 1.6); g.lineTo(-9, 3.6); g.lineTo(-7.6, 1.6); g.fill();
-  g.fillStyle = c; g.beginPath(); g.moveTo(-5.5, -1.7); g.lineTo(-8.4, -3.4); g.lineTo(-7, -1.7); g.moveTo(-5.5, 1.7); g.lineTo(-8.4, 3.4); g.lineTo(-7, 1.7); g.fill();
-  // cuerpo de espuma con volumen
-  const bg = g.createLinearGradient(0, -1.8, 0, 1.8); bg.addColorStop(0, "rgba(255,255,255,0.55)"); bg.addColorStop(0.25, "rgba(255,255,255,0)"); bg.addColorStop(1, "rgba(0,0,0,0.35)");
-  g.fillStyle = c; g.beginPath(); g.roundRect(-7, -1.8, 10.5, 3.6, 1.4); g.fill();
-  g.fillStyle = bg; g.beginPath(); g.roundRect(-7, -1.8, 10.5, 3.6, 1.4); g.fill();
-  // poros de la espuma y anillos
-  g.fillStyle = "rgba(0,0,0,0.18)"; for (let i = 0; i < 7; i++) { g.beginPath(); g.arc(-6 + i * 1.4, (i % 2 ? 0.7 : -0.5), 0.25, 0, 7); g.fill(); }
-  g.strokeStyle = "rgba(0,0,0,0.25)"; g.lineWidth = 0.3; for (const x of [-4.2, -1.2]) { g.beginPath(); g.moveTo(x, -1.8); g.lineTo(x, 1.8); g.stroke(); }
-  g.strokeStyle = "rgba(0,0,0,0.45)"; g.lineWidth = 0.35; g.beginPath(); g.roundRect(-7, -1.8, 10.5, 3.6, 1.4); g.stroke();
-  // punta de goma
-  const tg = g.createRadialGradient(4, -0.8, 0.2, 4.3, 0, 2.6); tg.addColorStop(0, "#ffffff"); tg.addColorStop(0.25, tip); tg.addColorStop(1, mixHex(tip.startsWith("#") && tip.length === 7 ? tip : "#ff6a00", "#000000", 0.4));
-  g.fillStyle = tg; g.beginPath(); g.moveTo(3, -2); g.quadraticCurveTo(6.8, -1.8, 6.8, 0); g.quadraticCurveTo(6.8, 1.8, 3, 2); g.closePath(); g.fill();
-  g.strokeStyle = "rgba(0,0,0,0.45)"; g.lineWidth = 0.35; g.stroke();
+  // dardo de espuma de verdad: tubo largo de espuma sin aletas, cola hueca y punta de goma chata
+  const tipD = mixHex(tip.startsWith("#") && tip.length === 7 ? tip : "#ff6a00", "#000000", 0.45);
+  g.fillStyle = "rgba(0,0,0,0.3)"; g.beginPath(); g.roundRect(-9.2, -1.2, 16.6, 3.4, 1.2); g.fill(); // sombra
+  g.fillStyle = c; g.beginPath(); g.roundRect(-9.5, -1.7, 13.5, 3.4, 0.6); g.fill();
+  const bg = g.createLinearGradient(0, -1.7, 0, 1.7); bg.addColorStop(0, "rgba(255,255,255,0.5)"); bg.addColorStop(0.3, "rgba(255,255,255,0.08)"); bg.addColorStop(0.65, "rgba(0,0,0,0)"); bg.addColorStop(1, "rgba(0,0,0,0.4)");
+  g.fillStyle = bg; g.fill();
+  // textura de la espuma: poros finos
+  g.fillStyle = "rgba(0,0,0,0.13)"; for (let i = 0; i < 14; i++) { g.beginPath(); g.arc(-8.6 + i * 0.9, ((i * 7) % 5 - 2) * 0.5, 0.18, 0, 7); g.fill(); }
+  g.fillStyle = "rgba(255,255,255,0.18)"; for (let i = 0; i < 6; i++) g.fillRect(-8 + i * 2, -1.1, 0.8, 0.25);
+  // cola hueca (se ve el agujero del tubo)
+  g.fillStyle = mixHex(c.startsWith("#") && c.length === 7 ? c : "#3fb7ff", "#000000", 0.25); g.beginPath(); g.ellipse(-9.5, 0, 0.75, 1.7, 0, 0, 7); g.fill();
+  g.fillStyle = "rgba(0,0,0,0.55)"; g.beginPath(); g.ellipse(-9.5, 0, 0.4, 0.9, 0, 0, 7); g.fill();
+  g.strokeStyle = "rgba(0,0,0,0.4)"; g.lineWidth = 0.3; g.beginPath(); g.roundRect(-9.5, -1.7, 13.5, 3.4, 0.6); g.stroke();
+  // punta de goma: cuello que abraza la espuma y cabeza redonda con el frente plano
+  const tg = g.createLinearGradient(0, -1.9, 0, 1.9); tg.addColorStop(0, mixHex(tip.startsWith("#") && tip.length === 7 ? tip : "#ff6a00", "#ffffff", 0.45)); tg.addColorStop(0.35, tip); tg.addColorStop(1, tipD);
+  g.fillStyle = tg; g.beginPath(); g.roundRect(3.2, -1.95, 1.6, 3.9, 0.4); g.fill();
+  g.beginPath(); g.moveTo(4.6, -1.9); g.lineTo(6.6, -1.75); g.quadraticCurveTo(7.6, -1.6, 7.6, -0.6); g.lineTo(7.6, 0.6); g.quadraticCurveTo(7.6, 1.6, 6.6, 1.75); g.lineTo(4.6, 1.9); g.closePath(); g.fill();
+  g.strokeStyle = "rgba(0,0,0,0.45)"; g.lineWidth = 0.3; g.stroke();
+  g.strokeStyle = tipD; g.lineWidth = 0.35; g.beginPath(); g.moveTo(4.7, -1.85); g.lineTo(4.7, 1.85); g.stroke();
+  g.fillStyle = "rgba(255,255,255,0.6)"; g.beginPath(); g.ellipse(6, -1, 1.1, 0.35, 0, 0, 7); g.fill();
   DART_SPR.set(key, cv2); return cv2;
 }
 function drawDartShape(c, tip = "#ff6a00") { ctx.drawImage(dartSprite(c, tip), -10, -5, 18, 10); }
@@ -4316,7 +4364,7 @@ const hexA = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${
 function drawBossUnder(m, em) {
   const r = m.r, t = time, look = Math.atan2(P.y - m.y, P.x - m.x), ty = m.type;
   if (em > 0.6) return;
-  if (ty === "O" || ty === "a") {
+  if (ty === "O") {
     // capa real ondeando a la espalda
     ctx.save(); ctx.translate(m.x - Math.cos(look) * r * 0.5, m.y - Math.sin(look) * r * 0.5); ctx.rotate(look + Math.PI);
     const cg = ctx.createLinearGradient(0, -r, r * 1.6, r); cg.addColorStop(0, ty === "a" ? "#3a4a6a" : "#8a1020"); cg.addColorStop(1, ty === "a" ? "#1a2238" : "#3a0508");
@@ -4337,11 +4385,7 @@ function drawBossUnder(m, em) {
 // detalles delante del cuerpo (cuernos, coronas, ojos que brillan)
 function drawBossOver(m) {
   const r = m.r, ty = m.type, t = time;
-  if (ty === "Y") { ctx.fillStyle = "#e8f8ff"; for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(m.x + s * 8, m.y - r + 4); ctx.lineTo(m.x + s * 14, m.y - r - 14); ctx.lineTo(m.x + s * 15, m.y - r + 6); ctx.fill(); } }
-  if (ty === "X") { ctx.fillStyle = "#2a1a40"; ctx.beginPath(); ctx.moveTo(m.x - 12, m.y - r + 2); for (let i = 0; i <= 6; i++) ctx.lineTo(m.x - 12 + i * 4, m.y - r + (i % 2 ? 0 : -12)); ctx.lineTo(m.x + 12, m.y - r + 6); ctx.lineTo(m.x - 12, m.y - r + 6); ctx.fill(); ctx.fillStyle = "#c08cff"; ctx.beginPath(); ctx.arc(m.x, m.y - r - 2, 2.5, 0, 7); ctx.fill(); }
-  if (ty === "J") { ctx.strokeStyle = `rgba(255,200,60,${0.5 + 0.5 * Math.sin(t * 7)})`; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(m.x - r * 0.7, m.y + 6); ctx.lineTo(m.x - r * 0.3, m.y + r * 0.6); ctx.moveTo(m.x + r * 0.6, m.y - r * 0.4); ctx.lineTo(m.x + r * 0.2, m.y + r * 0.2); ctx.stroke(); }
-  if (ty === "K" || ty === "i") { ctx.fillStyle = "rgba(200,245,255,0.9)"; for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(m.x + i * 6 - 3, m.y - r * 0.6); ctx.lineTo(m.x + i * 6, m.y - r * 1.25 - Math.abs(i) * -3); ctx.lineTo(m.x + i * 6 + 3, m.y - r * 0.6); ctx.fill(); } }
-  if (ty === "2") { const g = ctx.createRadialGradient(m.x, m.y - 4, 1, m.x, m.y - 4, 12); g.addColorStop(0, "#fff"); g.addColorStop(0.3, "#ff3af0"); g.addColorStop(1, "rgba(120,0,200,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(m.x, m.y - 4, 12, 0, 7); ctx.fill(); }
+  if (ty === "K") { ctx.fillStyle = "rgba(200,245,255,0.9)"; for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(m.x + i * 6 - 3, m.y - r * 0.6); ctx.lineTo(m.x + i * 6, m.y - r * 1.25 - Math.abs(i) * -3); ctx.lineTo(m.x + i * 6 + 3, m.y - r * 0.6); ctx.fill(); } }
   if (ty === "z") { ctx.fillStyle = "#c8a0ff"; ctx.beginPath(); ctx.moveTo(m.x - 9, m.y - r - 2); for (let i = 0; i <= 4; i++) ctx.lineTo(m.x - 9 + i * 4.5, m.y - r + (i % 2 ? -2 : -12)); ctx.lineTo(m.x + 9, m.y - r + 2); ctx.closePath(); ctx.fill(); }
 }
 function drawMonsterBody(m) {
@@ -4353,6 +4397,269 @@ function drawMonsterBody(m) {
   rim.addColorStop(0, "rgba(255,255,255,0.22)"); rim.addColorStop(1, "rgba(255,255,255,0)");
   ctx.fillStyle = rim; ctx.beginPath(); ctx.arc(m.x - r * 0.3, m.y - r * 0.35, r * 0.75, 0, 7); ctx.fill();
   if (m.alert > 0 && !m.def.fly) { ctx.strokeStyle = hexA(m.def.color, 0.35 + 0.2 * Math.sin(time * 6 + m.x)); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(m.x, m.y + r * 0.85, r * 1.1, r * 0.34, 0, 0, 7); ctx.stroke(); }
+}
+// cuerpos propios de cada jefe (los que no son el Ogro, la Reina Araña ni el Dragón)
+const BOSS_LOOK = {
+  J: { kind: "golem", rock: "#4a3028", dark: "#1e120e", glow: "#ff8a2a", hot: "#ffe08a" },
+  H: { kind: "golem", rock: "#7fd8f0", dark: "#2a6a8a", glow: "#e8ffff", hot: "#ffffff", crystal: true },
+  a: { kind: "golem", rock: "#8a9bb0", dark: "#3a4454", glow: "#7fe8ff", hot: "#e0fbff", runes: true },
+  Y: { kind: "yeti" }, y: { kind: "salamander" }, X: { kind: "shadowking" }, 2: { kind: "devourer" },
+  i: { kind: "wraith", body: "#d8f6ff", edge: "#7fc8f0", eye: "#3ab8ff", ice: true },
+  j: { kind: "wraith", body: "#4a3a6a", edge: "#1a1028", eye: "#e0b0ff" },
+};
+// polígono irregular pero siempre igual (como una roca)
+function rockPath(x, y, rx, ry, n, seed) {
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2, k = 0.86 + 0.14 * Math.abs(Math.sin(seed * 12.9898 + i * 78.233)); ctx.lineTo(x + Math.cos(a) * rx * k, y + Math.sin(a) * ry * k); }
+  ctx.closePath();
+}
+function bossEyes(x, y, sep, rr, c, look, slit) {
+  for (const s of [-1, 1]) {
+    const ex = x + s * sep, ey = y;
+    ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = hexA(c, 0.35); ctx.beginPath(); ctx.arc(ex, ey, rr * 2.2, 0, 7); ctx.fill(); ctx.restore();
+    ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(ex, ey, rr, slit ? rr * 0.55 : rr, s * 0.25, 0, 7); ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(ex + Math.cos(look) * rr * 0.35, ey + Math.sin(look) * rr * 0.25, rr * 0.38, 0, 7); ctx.fill();
+  }
+}
+function drawBossBody(m, fl, look) {
+  const L = BOSS_LOOK[m.type], r = m.r, t = time + m.x * 0.01, x = m.x, y = m.y;
+  const wind = m.wind > 0 || m.ph === "wind", charge = m.charging > 0 || m.ph === "lunge", hot = m.enraged || m.desperate;
+  if (L.kind === "golem") {
+    const glow = hot ? L.hot : L.glow, pul = 0.6 + 0.4 * Math.sin(t * (hot ? 9 : 4));
+    // puños de piedra que flotan a los lados (se levantan para golpear el suelo)
+    for (const s of [-1, 1]) {
+      const a = look + s * 1.2, lift = wind ? 10 : charge ? -4 : Math.sin(t * 3 + s) * 2;
+      const fx = x + Math.cos(a) * (r + 7), fy = y + Math.sin(a) * (r + 7) - lift;
+      ctx.fillStyle = fl ? "#fff" : L.dark; rockPath(fx, fy + 2, 9, 8, 7, s + 3); ctx.fill();
+      ctx.fillStyle = fl ? "#fff" : L.rock; rockPath(fx, fy, 8.5, 7.5, 7, s + 3); ctx.fill();
+      if (!fl) { ctx.strokeStyle = hexA(glow, 0.5 * pul); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(fx - 4, fy - 2); ctx.lineTo(fx + 1, fy + 1); ctx.lineTo(fx + 4, fy - 3); ctx.stroke(); gloss(fx, fy, 8, 0.25); }
+    }
+    // cuerpo de bloques
+    const bg = ctx.createLinearGradient(x - r, y - r, x + r, y + r);
+    bg.addColorStop(0, fl ? "#fff" : mixHex(L.rock, "#ffffff", 0.25)); bg.addColorStop(0.5, fl ? "#fff" : L.rock); bg.addColorStop(1, fl ? "#fff" : L.dark);
+    ctx.fillStyle = bg; rockPath(x, y, r * 1.08, r, 10, m.type.charCodeAt(0)); ctx.fill();
+    ctx.strokeStyle = fl ? "#fff" : L.dark; ctx.lineWidth = 2; ctx.stroke();
+    if (!fl) {
+      if (L.crystal) ctx.globalAlpha *= 0.92;
+      // placas de roca o facetas de cristal
+      const plates = [[-0.45, -0.35, 0.42], [0.42, -0.3, 0.38], [-0.3, 0.42, 0.36], [0.38, 0.4, 0.34]];
+      plates.forEach(([px, py, pr], i) => {
+        ctx.fillStyle = L.crystal ? `rgba(230,255,255,${0.18 + 0.1 * i % 0.3})` : hexA(L.dark, 0.35);
+        rockPath(x + px * r, y + py * r, pr * r, pr * r * 0.8, 6, i + 7); ctx.fill();
+        ctx.strokeStyle = L.crystal ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.35)"; ctx.lineWidth = 1; ctx.stroke();
+      });
+      if (L.crystal) {
+        // brillos en las facetas y cristales en los hombros
+        ctx.strokeStyle = "rgba(255,255,255,0.85)"; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x - r * 0.7, y - r * 0.2); ctx.lineTo(x - r * 0.35, y - r * 0.75); ctx.moveTo(x + r * 0.15, y - r * 0.8); ctx.lineTo(x + r * 0.55, y - r * 0.45); ctx.stroke();
+        for (const s of [-1, 1]) for (let i = 0; i < 3; i++) {
+          const bx = x + s * (r * 0.55 + i * 5), by = y - r * 0.6 + i * 3, h = 14 - i * 3;
+          const cg = ctx.createLinearGradient(bx, by - h, bx, by); cg.addColorStop(0, "#ffffff"); cg.addColorStop(1, L.rock);
+          ctx.fillStyle = cg; ctx.beginPath(); ctx.moveTo(bx - 3, by); ctx.lineTo(bx + s * 2, by - h); ctx.lineTo(bx + 3, by); ctx.closePath(); ctx.fill();
+        }
+      }
+      // grietas que brillan
+      ctx.save(); ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = hexA(glow, 0.55 + 0.4 * pul); ctx.lineWidth = hot ? 2.4 : 1.8; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(x - r * 0.8, y + r * 0.1); ctx.lineTo(x - r * 0.4, y + r * 0.25); ctx.lineTo(x - r * 0.15, y + r * 0.05);
+      ctx.moveTo(x + r * 0.15, y + r * 0.1); ctx.lineTo(x + r * 0.45, y + r * 0.35); ctx.lineTo(x + r * 0.8, y + r * 0.25);
+      ctx.moveTo(x - r * 0.1, y + r * 0.45); ctx.lineTo(x + r * 0.05, y + r * 0.8); ctx.stroke();
+      // núcleo en el pecho
+      const cg = ctx.createRadialGradient(x, y + r * 0.2, 0, x, y + r * 0.2, r * 0.45);
+      cg.addColorStop(0, hexA(L.hot, 0.9)); cg.addColorStop(0.4, hexA(glow, 0.5 * pul)); cg.addColorStop(1, hexA(glow, 0));
+      ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(x, y + r * 0.2, r * 0.45, 0, 7); ctx.fill();
+      if (L.runes) {
+        // runas grabadas que se encienden una tras otra
+        ctx.lineWidth = 1.4;
+        for (let i = 0; i < 4; i++) {
+          const a = -2.6 + i * 0.75, rx = x + Math.cos(a) * r * 0.7, ry = y + Math.sin(a) * r * 0.62 + r * 0.15, on = 0.35 + 0.65 * Math.max(0, Math.sin(t * 3 - i));
+          ctx.strokeStyle = hexA(L.glow, on); ctx.beginPath(); ctx.moveTo(rx, ry - 4); ctx.lineTo(rx, ry + 4); ctx.moveTo(rx, ry - 3); ctx.lineTo(rx + 3, ry - 1); ctx.lineTo(rx, ry + 1); ctx.stroke();
+        }
+      }
+      ctx.restore();
+      gloss(x, y, r, 0.22);
+      if (L.crystal) ctx.globalAlpha /= 0.92;
+    }
+    // cabeza: un bloque con ojos de rendija
+    ctx.fillStyle = fl ? "#fff" : L.dark; rockPath(x, y - r * 0.62, r * 0.5, r * 0.36, 7, 11); ctx.fill();
+    ctx.fillStyle = fl ? "#fff" : mixHex(L.rock, "#000000", 0.15); rockPath(x, y - r * 0.68, r * 0.46, r * 0.32, 7, 11); ctx.fill();
+    if (!fl) {
+      ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = hexA(glow, 0.95);
+      for (const s of [-1, 1]) { const ex = x + s * r * 0.2 + Math.cos(look) * 1.5, ey = y - r * 0.7 + Math.sin(look); ctx.beginPath(); ctx.moveTo(ex - 4, ey - 1); ctx.lineTo(ex + 4, ey - s * 0.5 - 1.5); ctx.lineTo(ex + 3, ey + 1.5); ctx.lineTo(ex - 4, ey + 1.5); ctx.fill(); }
+      ctx.restore();
+    }
+    if (m.type === "J" && !fl) for (let i = 0; i < 3; i++) flame(x - r * 0.35 + i * r * 0.35, y - r * 0.85, 3.2, 9 + Math.sin(t * 12 + i) * 3, Math.sin(t * 5 + i) * 2, i % 2 ? "#ffb040" : "#ff6a1a");
+  } else if (L.kind === "yeti") {
+    const fur = fl ? "#fff" : hot ? "#ffe2dc" : "#eef6ff", shade = fl ? "#fff" : "#9fb4c8";
+    // brazos largos y peludos con garras
+    for (const s of [-1, 1]) {
+      const a = look + s * 1.15, sw = wind ? -0.5 * s : Math.sin(m.t * 4 + s) * 0.25, ax = x + Math.cos(a) * r * 0.8, ay = y + Math.sin(a) * r * 0.8;
+      ctx.save(); ctx.translate(ax, ay); ctx.rotate(a - s * 0.9 + sw);
+      ctx.fillStyle = shade; ctx.beginPath(); ctx.ellipse(r * 0.55, 0, r * 0.62, r * 0.32, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = fur; ctx.beginPath(); for (let i = 0; i <= 12; i++) { const q = i / 12 * Math.PI * 2, k = i % 2 ? 1 : 1.18; ctx.lineTo(r * 0.5 + Math.cos(q) * r * 0.55 * k, Math.sin(q) * r * 0.28 * k); } ctx.fill();
+      ctx.fillStyle = fl ? "#fff" : "#5a7088"; ctx.beginPath(); ctx.arc(r * 1.1, 0, r * 0.22, 0, 7); ctx.fill();
+      ctx.fillStyle = "#2a3040"; for (const c of [-1, 0, 1]) { ctx.beginPath(); ctx.moveTo(r * 1.22, c * 3.5 - 1.2); ctx.lineTo(r * 1.22 + 6, c * 4.5); ctx.lineTo(r * 1.22, c * 3.5 + 1.2); ctx.fill(); }
+      ctx.restore();
+    }
+    // cuerpo con pelo en punta
+    const bg = ctx.createRadialGradient(x - r * 0.3, y - r * 0.4, r * 0.1, x, y, r * 1.15);
+    bg.addColorStop(0, "#ffffff"); bg.addColorStop(0.6, fur); bg.addColorStop(1, shade);
+    ctx.fillStyle = fl ? "#fff" : bg; ctx.beginPath();
+    for (let i = 0; i < 30; i++) { const a = i / 30 * Math.PI * 2, k = i % 2 ? 0.98 : 1.13 + Math.sin(t * 6 + i) * 0.03; ctx.lineTo(x + Math.cos(a) * r * k, y + Math.sin(a) * r * k); }
+    ctx.closePath(); ctx.fill();
+    if (!fl) {
+      ctx.strokeStyle = "rgba(120,150,180,0.55)"; ctx.lineWidth = 1;
+      for (let i = 0; i < 10; i++) { const a = i * 2.4, rr = r * (0.35 + (i % 3) * 0.18), px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr + r * 0.1; ctx.beginPath(); ctx.moveTo(px, py); ctx.quadraticCurveTo(px + 2, py + 3, px + 1, py + 6); ctx.stroke(); }
+    }
+    // cara azul con cuernos de carnero
+    for (const s of [-1, 1]) {
+      ctx.strokeStyle = fl ? "#fff" : "#c9b48a"; ctx.lineWidth = 4.5; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.arc(x + s * r * 0.55, y - r * 0.55, r * 0.28, s > 0 ? -2.2 : -0.9, s > 0 ? 1.4 : 2.6 + 1.6, s < 0); ctx.stroke();
+      ctx.strokeStyle = "rgba(90,70,40,0.5)"; ctx.lineWidth = 1; ctx.stroke();
+    }
+    const fg = ctx.createLinearGradient(x, y - r * 0.75, x, y + r * 0.1); fg.addColorStop(0, "#7a98b8"); fg.addColorStop(1, "#4a6684");
+    ctx.fillStyle = fl ? "#fff" : fg; ctx.beginPath(); ctx.ellipse(x, y - r * 0.3, r * 0.48, r * 0.42, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = fl ? "#fff" : "#36506c"; ctx.beginPath(); ctx.moveTo(x - r * 0.45, y - r * 0.5); ctx.quadraticCurveTo(x, y - r * 0.3, x + r * 0.45, y - r * 0.5); ctx.lineTo(x + r * 0.42, y - r * 0.38); ctx.quadraticCurveTo(x, y - r * 0.2, x - r * 0.42, y - r * 0.38); ctx.fill();
+    bossEyes(x, y - r * 0.33, r * 0.2, 2.6, hot ? "#ff5a5a" : "#9fe2ff", look);
+    const open = wind || charge ? 5 : 2.5;
+    ctx.fillStyle = "#1a1020"; ctx.beginPath(); ctx.ellipse(x, y - r * 0.05, r * 0.24, open, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = "#fff"; for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(x + s * r * 0.17, y - r * 0.05 - open); ctx.lineTo(x + s * r * 0.12, y - r * 0.05 + 2); ctx.lineTo(x + s * r * 0.07, y - r * 0.05 - open); ctx.fill(); }
+  } else if (L.kind === "salamander") {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(look);
+    const body = fl ? "#fff" : hot ? "#ff3a1a" : m.def.color, dark = fl ? "#fff" : "#8a2008", walk = m.t * 9;
+    // cola que se mueve como una serpiente, con fuego en la punta
+    let px = -r * 0.7, py = 0;
+    for (let i = 1; i <= 7; i++) {
+      const nx = -r * 0.7 - i * r * 0.28, ny = Math.sin(m.t * 5 - i * 0.7) * i * 1.4, w = r * 0.42 * (1 - i / 8.5);
+      ctx.strokeStyle = i % 2 ? body : dark; ctx.lineWidth = w * 2; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(nx, ny); ctx.stroke();
+      px = nx; py = ny;
+    }
+    if (!fl) { ctx.save(); ctx.translate(px, py); ctx.rotate(-Math.PI / 2 + Math.sin(m.t * 5) * 0.3); flame(0, 0, 4, 12 + Math.sin(t * 14) * 3, 0, "#ffb040"); flame(0, 0, 2.2, 7, 0, "#fff3a0"); ctx.restore(); }
+    // patas que caminan
+    ctx.strokeStyle = dark; ctx.lineWidth = 4; ctx.lineCap = "round";
+    for (const [lx, s, ph] of [[r * 0.45, 1, 0], [r * 0.45, -1, Math.PI], [-r * 0.45, 1, Math.PI], [-r * 0.45, -1, 0]]) {
+      const st = Math.sin(walk + ph) * 4, fx = lx + st, fy = s * (r * 0.95);
+      ctx.beginPath(); ctx.moveTo(lx, s * r * 0.4); ctx.quadraticCurveTo(lx + 2, s * r * 0.75, fx, fy); ctx.stroke();
+      ctx.fillStyle = dark; for (const d of [-3, 0, 3]) { ctx.beginPath(); ctx.arc(fx + d, fy + s * 2, 1.6, 0, 7); ctx.fill(); }
+    }
+    // cuerpo con manchas y cresta de púas
+    const bg = ctx.createLinearGradient(0, -r * 0.6, 0, r * 0.6); bg.addColorStop(0, fl ? "#fff" : "#ffb070"); bg.addColorStop(0.5, body); bg.addColorStop(1, dark);
+    ctx.fillStyle = bg; ctx.beginPath(); ctx.ellipse(0, 0, r * 0.95, r * 0.58, 0, 0, 7); ctx.fill();
+    if (!fl) {
+      ctx.fillStyle = "rgba(60,10,0,0.45)"; for (const [sx, sy, sr] of [[-r * 0.4, -r * 0.25, 3.5], [0, r * 0.28, 3], [r * 0.3, -r * 0.3, 2.6], [-r * 0.1, -r * 0.05, 2.2]]) { ctx.beginPath(); ctx.arc(sx, sy, sr, 0, 7); ctx.fill(); }
+      ctx.fillStyle = "#ffd23a"; for (let i = 0; i < 6; i++) { const sx = -r * 0.75 + i * r * 0.3; ctx.beginPath(); ctx.moveTo(sx - 3, -1.5); ctx.lineTo(sx, -6 - (i % 2) * 2); ctx.lineTo(sx + 3, -1.5); ctx.fill(); }
+      for (let i = 0; i < 3; i++) flame(-r * 0.5 + i * r * 0.4, -2, 2.5, 7 + Math.sin(t * 13 + i * 2) * 3, Math.sin(t * 6 + i) * 2, "rgba(255,150,40,0.85)");
+      gloss(0, 0, r * 0.8, 0.22);
+    }
+    // cabeza con ojos de reptil
+    const hx = r * 0.95;
+    ctx.fillStyle = bg; ctx.beginPath(); ctx.moveTo(hx - 4, -r * 0.42); ctx.quadraticCurveTo(hx + r * 0.75, -r * 0.4, hx + r * 0.78, 0); ctx.quadraticCurveTo(hx + r * 0.75, r * 0.4, hx - 4, r * 0.42); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = dark; ctx.lineWidth = 1.2; ctx.stroke();
+    if (wind || charge) { ctx.fillStyle = "#ffe06a"; ctx.beginPath(); ctx.arc(hx + r * 0.78, 0, 5 + Math.sin(t * 30), 0, 7); ctx.fill(); }
+    ctx.fillStyle = "#1a0800"; for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(hx + r * 0.62, s * 2.5, 1, 0, 7); ctx.fill(); }
+    for (const s of [-1, 1]) {
+      ctx.fillStyle = "#ffe24a"; ctx.beginPath(); ctx.arc(hx + r * 0.15, s * r * 0.32, 4, 0, 7); ctx.fill();
+      ctx.fillStyle = "#1a0800"; ctx.beginPath(); ctx.ellipse(hx + r * 0.17, s * r * 0.32, 1, 3, 0, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+  } else if (L.kind === "shadowking") {
+    const bob = Math.sin(t * 2.5) * 2.5, cy = y + bob;
+    // túnica que flota con el borde deshilachado
+    const rg = ctx.createLinearGradient(x, cy - r, x, cy + r * 1.1); rg.addColorStop(0, fl ? "#fff" : "#4a3478"); rg.addColorStop(1, fl ? "#fff" : "#120a20");
+    ctx.fillStyle = rg; ctx.beginPath(); ctx.moveTo(x - r * 0.5, cy - r * 0.55);
+    ctx.quadraticCurveTo(x - r * 1.1, cy + r * 0.2, x - r * 1.05, cy + r * 0.95);
+    for (let i = 0; i <= 8; i++) ctx.lineTo(x - r * 1.05 + i * r * 0.2625, cy + r * 0.95 + (i % 2 ? -r * 0.22 : Math.sin(t * 5 + i) * 3));
+    ctx.quadraticCurveTo(x + r * 1.1, cy + r * 0.2, x + r * 0.5, cy - r * 0.55); ctx.closePath(); ctx.fill();
+    if (!fl) {
+      ctx.strokeStyle = "rgba(190,140,255,0.35)"; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x, cy - r * 0.2); ctx.lineTo(x, cy + r * 0.8); ctx.moveTo(x - r * 0.45, cy - r * 0.05); ctx.lineTo(x - r * 0.65, cy + r * 0.75); ctx.moveTo(x + r * 0.45, cy - r * 0.05); ctx.lineTo(x + r * 0.65, cy + r * 0.75); ctx.stroke();
+      ctx.fillStyle = "#c9a0ff"; ctx.beginPath(); ctx.moveTo(x - r * 0.5, cy - r * 0.2); ctx.lineTo(x, cy + r * 0.15); ctx.lineTo(x + r * 0.5, cy - r * 0.2); ctx.lineTo(x + r * 0.5, cy - r * 0.08); ctx.lineTo(x, cy + r * 0.27); ctx.lineTo(x - r * 0.5, cy - r * 0.08); ctx.fill();
+    }
+    // manos fantasmales con orbes
+    for (const s of [-1, 1]) {
+      const a = look + s * 1.3, hx = x + Math.cos(a) * r * 1.15, hy = cy + Math.sin(a) * r * 0.9 + Math.sin(t * 3 + s) * 3;
+      ctx.fillStyle = fl ? "#fff" : "#d8c8f0"; ctx.beginPath(); ctx.arc(hx, hy, 4.5, 0, 7); ctx.fill();
+      for (let f = -1; f <= 1; f++) { ctx.beginPath(); ctx.ellipse(hx + Math.cos(a) * 5 + f * 2.5, hy + Math.sin(a) * 5, 1.4, 3, a + Math.PI / 2, 0, 7); ctx.fill(); }
+      const og = ctx.createRadialGradient(hx, hy - 9, 0, hx, hy - 9, 8); og.addColorStop(0, "#ffffff"); og.addColorStop(0.35, "#c08cff"); og.addColorStop(1, "rgba(120,60,255,0)");
+      ctx.fillStyle = og; ctx.beginPath(); ctx.arc(hx, hy - 9, 8, 0, 7); ctx.fill();
+    }
+    // capucha con el rostro oscuro y ojos brillantes
+    ctx.fillStyle = fl ? "#fff" : "#2a1a48"; ctx.beginPath(); ctx.moveTo(x, cy - r * 1.25); ctx.quadraticCurveTo(x + r * 0.75, cy - r * 0.9, x + r * 0.6, cy - r * 0.15); ctx.lineTo(x - r * 0.6, cy - r * 0.15); ctx.quadraticCurveTo(x - r * 0.75, cy - r * 0.9, x, cy - r * 1.25); ctx.fill();
+    ctx.fillStyle = "#05020a"; ctx.beginPath(); ctx.ellipse(x, cy - r * 0.55, r * 0.4, r * 0.38, 0, 0, 7); ctx.fill();
+    bossEyes(x + Math.cos(look) * 2, cy - r * 0.58 + Math.sin(look), r * 0.17, 2.4, hot ? "#ff4a6a" : "#d9b0ff", look, true);
+    // corona de púas
+    ctx.fillStyle = fl ? "#fff" : "#1a0e30"; ctx.beginPath(); ctx.moveTo(x - r * 0.55, cy - r * 1.0);
+    for (let i = 0; i <= 6; i++) ctx.lineTo(x - r * 0.55 + i * r * 0.183, cy - r * (i % 2 ? 1.05 : 1.5 - Math.abs(i - 3) * 0.08));
+    ctx.lineTo(x + r * 0.55, cy - r * 0.92); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "#8a6ac8"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = "#c08cff"; ctx.beginPath(); ctx.arc(x, cy - r * 1.1, 2.4, 0, 7); ctx.fill();
+  } else if (L.kind === "devourer") {
+    const open = wind || charge ? 1 : 0.45 + 0.15 * Math.sin(t * 3);
+    // esfera oscura con borde de estrellas
+    const bg = ctx.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.1, x, y, r * 1.05);
+    bg.addColorStop(0, fl ? "#fff" : "#5a2a9a"); bg.addColorStop(0.6, fl ? "#fff" : "#2a0e4a"); bg.addColorStop(1, fl ? "#fff" : "#08020f");
+    ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+    ctx.strokeStyle = fl ? "#fff" : `rgba(255,80,240,${0.5 + 0.3 * Math.sin(t * 4)})`; ctx.lineWidth = 2; ctx.stroke();
+    if (!fl) {
+      ctx.fillStyle = "rgba(255,255,255,0.8)"; for (let i = 0; i < 9; i++) { const a = i * 2.39 + t * 0.2, rr = r * (0.3 + (i * 0.37) % 0.6); ctx.fillRect(x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.5 - r * 0.45, 1.2, 1.2); }
+      // púas
+      ctx.fillStyle = "#1a0830"; for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 + 0.3; ctx.beginPath(); ctx.moveTo(x + Math.cos(a - 0.12) * r, y + Math.sin(a - 0.12) * r); ctx.lineTo(x + Math.cos(a) * (r + 8 + Math.sin(t * 4 + i) * 2), y + Math.sin(a) * (r + 8 + Math.sin(t * 4 + i) * 2)); ctx.lineTo(x + Math.cos(a + 0.12) * r, y + Math.sin(a + 0.12) * r); ctx.fill(); }
+      gloss(x, y, r, 0.25);
+    }
+    // muchos ojos que parpadean
+    for (let i = 0; i < 7; i++) {
+      const a = -Math.PI + 0.25 + i / 6 * (Math.PI - 0.5), ex = x + Math.cos(a) * r * 0.62, ey = y + Math.sin(a) * r * 0.55 - 2, er = i === 3 ? 4.5 : 2.6;
+      const blink = Math.sin(t * 1.3 + i * 1.7) > 0.93 ? 0.15 : 1;
+      ctx.fillStyle = "#ffe0ff"; ctx.beginPath(); ctx.ellipse(ex, ey, er, er * blink, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = hot ? "#ff1a3a" : "#c020c0"; ctx.beginPath(); ctx.ellipse(ex + Math.cos(look) * er * 0.4, ey + Math.sin(look) * er * 0.3, er * 0.5, er * 0.5 * blink, 0, 0, 7); ctx.fill();
+    }
+    // la boca enorme con dientes y un núcleo brillante dentro
+    const mw = r * 0.78, mh = r * 0.42 * open, my = y + r * 0.3;
+    ctx.fillStyle = "#0a0012"; ctx.beginPath(); ctx.ellipse(x, my, mw, mh + 2, 0, 0, 7); ctx.fill();
+    if (!fl) {
+      const cg = ctx.createRadialGradient(x, my, 0, x, my, mw * 0.7); cg.addColorStop(0, "#ffffff"); cg.addColorStop(0.25, "#ff3af0"); cg.addColorStop(1, "rgba(120,0,200,0)");
+      ctx.fillStyle = cg; ctx.beginPath(); ctx.ellipse(x, my, mw * 0.7, mh * 0.9 + 1, 0, 0, 7); ctx.fill();
+    }
+    ctx.fillStyle = "#f4ecff";
+    for (let i = 0; i < 9; i++) {
+      const tx = x - mw * 0.85 + i * mw * 0.2125, edge = Math.sqrt(Math.max(0, 1 - ((tx - x) / mw) ** 2));
+      ctx.beginPath(); ctx.moveTo(tx - 2.2, my - mh * edge - 1); ctx.lineTo(tx, my - mh * edge + 5 * edge); ctx.lineTo(tx + 2.2, my - mh * edge - 1); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(tx - 2.2, my + mh * edge + 1); ctx.lineTo(tx, my + mh * edge - 5 * edge); ctx.lineTo(tx + 2.2, my + mh * edge + 1); ctx.fill();
+    }
+  } else if (L.kind === "wraith") {
+    const bob = Math.sin(t * 2.2) * 3, cy = y - 2 + bob;
+    ctx.save(); if (!fl) ctx.globalAlpha *= 0.92;
+    // cuerpo de niebla que se deshace en jirones por abajo
+    const bg = ctx.createRadialGradient(x - r * 0.3, cy - r * 0.5, 1, x, cy, r * 1.3);
+    bg.addColorStop(0, fl ? "#fff" : "#ffffff"); bg.addColorStop(0.45, fl ? "#fff" : L.body); bg.addColorStop(1, fl ? "#fff" : hexA(L.edge, 0.2));
+    ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(x, cy - r * 0.2, r * 0.85, Math.PI, 0);
+    ctx.quadraticCurveTo(x + r * 1.1, cy + r * 0.6, x + r * 0.7, cy + r * 1.05);
+    for (let i = 0; i <= 7; i++) ctx.lineTo(x + r * 0.7 - i * r * 0.2, cy + r * (i % 2 ? 0.6 : 1.05 + 0.2 * Math.sin(t * 5 + i)));
+    ctx.quadraticCurveTo(x - r * 1.1, cy + r * 0.6, x - r * 0.85, cy - r * 0.2); ctx.closePath(); ctx.fill();
+    // brazos de niebla que se estiran hacia el jugador
+    for (const s of [-1, 1]) {
+      const a = look + s * 0.9, ex = x + Math.cos(a) * r * 1.35, ey = cy + Math.sin(a) * r * 1.1 + Math.sin(t * 4 + s) * 3;
+      ctx.strokeStyle = fl ? "#fff" : hexA(L.body, 0.85); ctx.lineWidth = 5; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(x + s * r * 0.5, cy); ctx.quadraticCurveTo(x + s * r * 1.1, cy - r * 0.3, ex, ey); ctx.stroke();
+      ctx.lineWidth = 1.5; for (let f = -1; f <= 1; f++) { ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex + Math.cos(a + f * 0.5) * 6, ey + Math.sin(a + f * 0.5) * 6); ctx.stroke(); }
+    }
+    ctx.restore();
+    // cara: cuencas oscuras con ojos brillantes y una boca que gime
+    ctx.fillStyle = L.ice ? "#1a3048" : "#05020a";
+    for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(x + s * r * 0.3, cy - r * 0.3, r * 0.2, r * 0.26, s * 0.3, 0, 7); ctx.fill(); }
+    bossEyes(x + Math.cos(look) * 1.5, cy - r * 0.3, r * 0.3, 2.3, hot ? "#ff4a6a" : L.eye, look);
+    ctx.fillStyle = L.ice ? "#1a3048" : "#05020a"; ctx.beginPath(); ctx.ellipse(x, cy + r * 0.2, r * 0.15, r * (wind || charge ? 0.3 : 0.18), 0, 0, 7); ctx.fill();
+    if (L.ice) {
+      // corona de carámbanos
+      for (let i = -2; i <= 2; i++) {
+        const bx = x + i * r * 0.28, h = r * (0.75 - Math.abs(i) * 0.15);
+        const ig = ctx.createLinearGradient(bx, cy - r * 0.9 - h, bx, cy - r * 0.85); ig.addColorStop(0, "#ffffff"); ig.addColorStop(1, "#7fc8f0");
+        ctx.fillStyle = fl ? "#fff" : ig; ctx.beginPath(); ctx.moveTo(bx - 3.5, cy - r * 0.8); ctx.lineTo(bx, cy - r * 0.85 - h); ctx.lineTo(bx + 3.5, cy - r * 0.8); ctx.closePath(); ctx.fill();
+      }
+    } else {
+      // cuernos retorcidos
+      ctx.fillStyle = fl ? "#fff" : "#1a1028";
+      for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(x + s * r * 0.35, cy - r * 0.85); ctx.quadraticCurveTo(x + s * r * 0.9, cy - r * 1.2, x + s * r * 0.75, cy - r * 1.6); ctx.quadraticCurveTo(x + s * r * 0.65, cy - r * 1.2, x + s * r * 0.15, cy - r * 0.95); ctx.fill(); }
+    }
+  }
 }
 function drawMonsterRaw(m) {
   const fl = m.flash > 0;
@@ -4420,6 +4727,8 @@ function drawMonsterRaw(m) {
     ctx.fillStyle = "#1a1410"; for (let i = 0; i < 4; i++) ctx.fillRect(m.x - 2.8 + i * 1.8, m.y - 0.5, 0.5, 2.2);
     ctx.fillStyle = "#1a1410"; ctx.beginPath(); ctx.moveTo(m.x, m.y - 3.5); ctx.lineTo(m.x - 0.9, m.y - 1.8); ctx.lineTo(m.x + 0.9, m.y - 1.8); ctx.fill();
     if (w) { ctx.save(); ctx.translate(m.x + Math.cos(look) * 12, m.y + Math.sin(look) * 12); ctx.rotate(time * 4); ctx.fillStyle = "#efe8d2"; ctx.fillRect(-4, -1, 8, 2); ctx.restore(); }
+  } else if (BOSS_LOOK[m.type]) {
+    drawBossBody(m, fl, look);
   } else if (m.type === "x" || m.type === "Q" || m.def.base === "Q") {
     const queen = m.type !== "x", k = queen ? 1.9 : 1;
     const crouch = (m.ph === "wind" || (queen && m.wind > 0)) ? 0.75 : 1, lunging = m.ph === "lunge" || (queen && m.charging > 0);
@@ -6865,6 +7174,10 @@ TR_ROWS.push(
 ["¡Has vencido al Devorador del Vacío!", "You defeated the Void Devourer!", "Você venceu o Devorador do Vazio!", "Tu as vaincu le Dévoreur du Néant !", "Du hast den Verschlinger der Leere besiegt!", "Hai sconfitto il Divoratore del Vuoto!"],
 ["Nivel secreto · Mundo {0} · {1}", "Secret level · World {0} · {1}", "Nível secreto · Mundo {0} · {1}", "Niveau secret · Monde {0} · {1}", "Geheimlevel · Welt {0} · {1}", "Livello segreto · Mondo {0} · {1}"],
 ["NIVEL SECRETO · DIFÍCIL", "SECRET LEVEL · HARD", "NÍVEL SECRETO · DIFÍCIL", "NIVEAU SECRET · DIFFICILE", "GEHEIMLEVEL · SCHWER", "LIVELLO SEGRETO · DIFFICILE"],
+["NIVEL SECRETO · DIFÍCIL · premio: {0} {1}", "SECRET LEVEL · HARD · reward: {0} {1}", "NÍVEL SECRETO · DIFÍCIL · prêmio: {0} {1}", "NIVEAU SECRET · DIFFICILE · récompense : {0} {1}", "GEHEIMLEVEL · SCHWER · Belohnung: {0} {1}", "LIVELLO SEGRETO · DIFFICILE · premio: {0} {1}"],
+["¡{0}! Dificultad: Difícil", "{0}! Difficulty: Hard", "{0}! Dificuldade: Difícil", "{0} ! Difficulté : Difficile", "{0}! Schwierigkeit: Schwer", "{0}! Difficoltà: Difficile"],
+["¡Nivel secreto superado! Ya tienes su poder", "Secret level cleared! You now have its power", "Nível secreto superado! Agora você tem o poder dele", "Niveau secret réussi ! Tu as maintenant son pouvoir", "Geheimlevel geschafft! Jetzt hast du seine Kraft", "Livello segreto superato! Ora hai il suo potere"],
+["Llega antes a su nivel para abrirlo", "Reach its level first to unlock it", "Chegue primeiro ao nível dele para abri-lo", "Atteins d'abord son niveau pour l'ouvrir", "Erreiche zuerst sein Level, um es freizuschalten", "Raggiungi prima il suo livello per sbloccarlo"],
 ["¡Has encontrado un nivel secreto! Aquí la dificultad es Difícil", "You found a secret level! Difficulty here is Hard", "Você encontrou um nível secreto! Aqui a dificuldade é Difícil", "Tu as trouvé un niveau secret ! Ici la difficulté est Difficile", "Du hast ein Geheimlevel gefunden! Hier ist es Schwer", "Hai trovato un livello segreto! Qui la difficoltà è Difficile"],
 ["¡Has vuelto del nivel secreto con un poder nuevo!", "You're back from the secret level with a new power!", "Você voltou do nível secreto com um novo poder!", "Tu reviens du niveau secret avec un nouveau pouvoir !", "Du bist mit einer neuen Kraft aus dem Geheimlevel zurück!", "Sei tornato dal livello segreto con un nuovo potere!"],
 ["En el nivel secreto no se puede guardar: tu partida se guardó al entrar", "You can't save in the secret level: your game was saved when you entered", "Não dá para salvar no nível secreto: seu jogo foi salvo ao entrar", "Impossible de sauvegarder ici : ta partie a été sauvegardée en entrant", "Im Geheimlevel kann man nicht speichern: Beim Betreten wurde gespeichert", "Nel livello segreto non si salva: la partita è stata salvata all'ingresso"],

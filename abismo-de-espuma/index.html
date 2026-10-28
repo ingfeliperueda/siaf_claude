@@ -1951,17 +1951,21 @@ function drawWorldCard() {
 
 // ---------- Mapa de los mundos (como en los juegos de plataformas) ----------
 let mapSel = 0, mapPage = 0, mapAv = null, mapMove = 0;
+// en el mapa, 0..39 son los niveles, 40 la Grieta del Vacío y 100+m el nivel secreto del mundo m (junto a su nivel 3)
+const SECRET_NODE = 100, isSecretNode = i => i >= SECRET_NODE, secretParent = i => (i - SECRET_NODE) * 10 + 2;
+const mapPageOf = i => isSecretNode(i) ? i - SECRET_NODE : i >= 40 ? 3 : Math.floor(i / 10);
 const MAP_BG = [["#3a2614", "#120a05"], ["#1e4a6a", "#071624"], ["#2a1640", "#08040f"], ["#5a1a08", "#160402"]];
 function openMap(sel) {
   if (secretIdx !== null || inTutorial) { secretIdx = null; secretRet = null; inTutorial = false; }
   gameDirty = false; exitDlg = null; saved = store.get(saveKey(), null);
   const top = mapTop();
-  mapSel = clamp(sel ?? (saved ? saved.level : 0), 0, top); mapPage = mapSel >= 40 ? 3 : Math.floor(mapSel / 10);
+  mapSel = sel != null && isSecretNode(sel) && canPlay(sel) ? sel : clamp(sel ?? (saved ? saved.level : 0), 0, top); mapPage = mapPageOf(mapSel);
   mapAv = null; state = "map"; uiSel = -1; SFX.uiGo();
 }
 const ultraOpen = () => !!(saved && saved.prog && saved.prog.beaten);
 const mapTop = () => Math.max(prog().unlocked || 0, saved ? saved.level : 0) + (ultraOpen() ? 1 : 0) * 0 ;
 function mapNode(i) {
+  if (isSecretNode(i)) { const b = mapNode(secretParent(i)); return { x: b.x + (VW < 760 ? 0 : VW * 0.02), y: b.y - (VW < 760 ? 64 : 88) }; }
   if (i === 40) return { x: VW * (VW < 760 ? 0.5 : 0.86), y: VH * (VW < 760 ? 0.2 : 0.22) };
   const n = i % 10, w = Math.floor(i / 10);
   if (VW < 760) {
@@ -1970,10 +1974,11 @@ function mapNode(i) {
   }
   return { x: VW * 0.08 + VW * 0.84 * n / 9, y: VH * 0.47 + Math.sin(n * 1.25 + w * 0.7) * VH * 0.15 };
 }
-function canPlay(i) { return i === 40 ? ultraOpen() : i <= Math.max(prog().unlocked || 0, saved ? saved.level : 0); }
+function canPlay(i) { if (isSecretNode(i)) return canPlay(secretParent(i)); return i === 40 ? ultraOpen() : i <= Math.max(prog().unlocked || 0, saved ? saved.level : 0); }
 function playFromMap(i) {
   if (!canPlay(i)) { SFX.ui(); showToast("Todavía no has llegado hasta aquí", 1.6); return; }
   if (i === 40) return playUltra();
+  if (isSecretNode(i)) return playSecretFromMap(i - SECRET_NODE);
   if (saved && saved.level === i && saved.full) { continueGame(); return; }
   loadRun(); loadLevel(i);
 }
@@ -1983,10 +1988,28 @@ function playUltra() {
   secretIdx = ULTRA; loadLevel(39);
   showToast("¡La Grieta del Vacío! Dificultad: Pesadilla", 3);
 }
+// los niveles secretos también se juegan desde el mapa, sin tener que buscar el muro agrietado
+function playSecretFromMap(si) {
+  loadRun(); const lv = secretParent(SECRET_NODE + si); levelIdx = lv;
+  secretRet = { fromMap: true, mapSel: SECRET_NODE + si, level: saved ? saved.level : lv, ck: null, heartBefore: hasPower("heart"), pStart: structuredClone({ hp: P.hp, maxHp: P.maxHp, weapons: P.weapons, cur: P.cur, ammo: P.ammo, res: P.res }) };
+  secretIdx = si; loadLevel(lv);
+  showToast(`¡${SECRETS[si].name}! Dificultad: Difícil`, 3);
+}
 function mapKey(e) {
   const top = Math.max(prog().unlocked || 0, saved ? saved.level : 0);
-  if (["ArrowRight", "KeyD"].includes(e.code)) { if (mapSel === 39 && ultraOpen()) mapSel = 40; else if (mapSel < 40 && mapSel + 1 <= top) mapSel++; else SFX.ui(); mapPage = mapSel >= 40 ? 3 : Math.floor(mapSel / 10); }
-  else if (["ArrowLeft", "KeyA"].includes(e.code)) { if (mapSel === 40) mapSel = 39; else if (mapSel > 0) mapSel--; mapPage = Math.floor(Math.min(39, mapSel) / 10); }
+  const sn = i => SECRET_NODE + Math.floor(i / 10); // nodo secreto del mundo del nivel i
+  if (["ArrowRight", "KeyD"].includes(e.code)) {
+    if (isSecretNode(mapSel)) { const nx = secretParent(mapSel) + 1; if (nx <= top) mapSel = nx; else SFX.ui(); }
+    else if (mapSel < 40 && mapSel % 10 === 2 && canPlay(sn(mapSel))) mapSel = sn(mapSel);
+    else if (mapSel === 39 && ultraOpen()) mapSel = 40; else if (mapSel < 40 && mapSel + 1 <= top) mapSel++; else SFX.ui();
+    mapPage = mapPageOf(mapSel);
+  }
+  else if (["ArrowLeft", "KeyA"].includes(e.code)) {
+    if (isSecretNode(mapSel)) mapSel = secretParent(mapSel);
+    else if (mapSel < 40 && mapSel % 10 === 3 && canPlay(sn(mapSel))) mapSel = sn(mapSel);
+    else if (mapSel === 40) mapSel = 39; else if (mapSel > 0) mapSel--;
+    mapPage = mapPageOf(mapSel);
+  }
   else if (["ArrowUp", "KeyW", "PageUp"].includes(e.code)) { const np = Math.min(3, mapPage + 1); if (np * 10 <= top) { mapPage = np; mapSel = Math.min(top, np * 10); } }
   else if (["ArrowDown", "KeyS", "PageDown"].includes(e.code)) { const np = Math.max(0, mapPage - 1); mapPage = np; mapSel = Math.min(top, np * 10 + 9); }
   else if (["Enter", "Space"].includes(e.code)) playFromMap(mapSel);
@@ -2026,7 +2049,25 @@ function drawMap() {
     ctx.strokeStyle = open ? "#e8c27a" : "rgba(160,150,140,0.35)"; ctx.lineWidth = 8; ctx.setLineDash(open ? [] : [6, 8]); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]);
   }
   if (w === 3 && ultraOpen()) { const a = nodes[9], b = mapNode(40); ctx.strokeStyle = `rgba(255,80,240,${0.5 + 0.3 * Math.sin(time * 4)})`; ctx.lineWidth = 5; ctx.setLineDash([4, 6]); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]); }
+  // camino morado hasta el nivel secreto, junto al nivel 3
+  const sNode = SECRET_NODE + w, sOpen = canPlay(sNode), sp = mapNode(sNode), sa = nodes[2];
+  ctx.strokeStyle = sOpen ? `rgba(200,120,255,${0.6 + 0.3 * Math.sin(time * 4)})` : "rgba(160,140,180,0.3)"; ctx.lineWidth = 5; ctx.setLineDash([4, 6]); ctx.beginPath(); ctx.moveTo(sa.x, sa.y); ctx.lineTo(sp.x, sp.y); ctx.stroke(); ctx.setLineDash([]);
   // nodos
+  const drawSecretNode = (i, pt) => {
+    const si = i - SECRET_NODE, open = canPlay(i), sel = mapSel === i, done = secretDone(si), r = 18, bob = sel && !A11().motion ? Math.sin(time * 5) * 3 : 0;
+    if (sel) { ctx.strokeStyle = "#e0b0ff"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(pt.x, pt.y, r + 9 + Math.sin(time * 6) * 2, 0, 7); ctx.stroke(); }
+    if (open) { const gg = ctx.createRadialGradient(pt.x, pt.y + bob, 4, pt.x, pt.y + bob, r * 2.2); gg.addColorStop(0, "rgba(190,110,255,0.45)"); gg.addColorStop(1, "rgba(190,110,255,0)"); ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(pt.x, pt.y + bob, r * 2.2, 0, 7); ctx.fill(); }
+    // un rombo morado (una gema), como el portal de los niveles secretos
+    ctx.save(); ctx.translate(pt.x, pt.y + bob); ctx.rotate(Math.PI / 4 + (open && !A11().motion ? Math.sin(time * 2) * 0.08 : 0));
+    const g = ctx.createLinearGradient(-r, -r, r, r), c = open ? (done ? "#c070ff" : "#8a3ad0") : "#5a5a60";
+    g.addColorStop(0, mixHex(c, "#ffffff", 0.45)); g.addColorStop(1, mixHex(c, "#000000", 0.4));
+    ctx.fillStyle = g; ctx.fillRect(-r * 0.8, -r * 0.8, r * 1.6, r * 1.6); ctx.strokeStyle = open ? "#f0d0ff" : "rgba(0,0,0,0.6)"; ctx.lineWidth = 2; ctx.strokeRect(-r * 0.8, -r * 0.8, r * 1.6, r * 1.6);
+    ctx.restore();
+    ctx.fillStyle = "#fff"; ctx.font = "bold 15px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(!open ? "🔒" : done ? "✓" : "?", pt.x, pt.y + bob + 1); ctx.textBaseline = "alphabetic";
+    if (open) { const pw0 = POWERS[si]; if (pw0) { ctx.font = "13px system-ui"; ctx.fillText(pw0.icon, pt.x + r + 4, pt.y - r + 4); } }
+    ui.push({ x: pt.x - r - 6, y: pt.y - r - 6, w: r * 2 + 12, h: r * 2 + 12, fn: () => { if (mapSel === i) playFromMap(i); else if (open) { mapSel = i; SFX.ui(); } else showToast("Llega antes a su nivel para abrirlo", 1.6); }, label: SECRETS[si].name });
+  };
   const drawNode = (i, pt) => {
     const n = i % 10, open = canPlay(i), sel = mapSel === i, boss = n === 4 || n === 9, ultra = i === 40, r = ultra ? 24 : boss ? 22 : 17;
     const bob = sel && !A11().motion ? Math.sin(time * 5) * 3 : 0;
@@ -2046,9 +2087,10 @@ function drawMap() {
     ui.push({ x: pt.x - r - 6, y: pt.y - r - 6, w: r * 2 + 12, h: r * 2 + 12, fn: () => { if (mapSel === i) playFromMap(i); else if (canPlay(i)) { mapSel = i; SFX.ui(); } else showToast("Todavía no has llegado hasta aquí", 1.6); }, label: ultra ? "La Grieta del Vacío" : LEVELS[i].name });
   };
   nodes.forEach((pt, n) => drawNode(w * 10 + n, pt));
+  drawSecretNode(sNode, sp);
   if (w === 3 && ultraOpen()) drawNode(40, mapNode(40));
   // tu personaje camina hasta el nivel elegido
-  const target = mapSel === 40 || Math.floor(mapSel / 10) === w ? mapNode(mapSel) : null;
+  const target = mapPageOf(mapSel) === w ? mapNode(mapSel) : null;
   if (target) {
     if (!mapAv) mapAv = { x: target.x, y: target.y, walk: 0 };
     const dx = target.x - mapAv.x, dy = target.y - mapAv.y, d = Math.hypot(dx, dy);
@@ -2059,9 +2101,10 @@ function drawMap() {
   // panel inferior
   const pw = Math.min(520, VW - 24), px = VW / 2 - pw / 2, py = VH - (s ? 150 : 128);
   panel(px, py, pw, s ? 138 : 116, 14);
-  const name = mapSel === 40 ? "La Grieta del Vacío" : LEVELS[mapSel].name;
-  ctx.textAlign = "center"; ctx.fillStyle = mapSel === 40 ? "#ff8af0" : "#e8a33d"; ctx.font = "bold 12px system-ui";
-  ctx.fillText(mapSel === 40 ? "NIVEL SUPERSECRETO · PESADILLA" : levelLabel(mapSel), VW / 2, py + 20);
+  const secSel = isSecretNode(mapSel) ? SECRETS[mapSel - SECRET_NODE] : null, secPow = secSel && POWERS[mapSel - SECRET_NODE];
+  const name = mapSel === 40 ? "La Grieta del Vacío" : secSel ? secSel.name : LEVELS[mapSel].name;
+  ctx.textAlign = "center"; ctx.fillStyle = mapSel === 40 ? "#ff8af0" : secSel ? "#d0a0ff" : "#e8a33d"; ctx.font = "bold 12px system-ui";
+  ctx.fillText(mapSel === 40 ? "NIVEL SUPERSECRETO · PESADILLA" : secSel ? `NIVEL SECRETO · DIFÍCIL${secPow ? " · premio: " + secPow.icon + " " + secPow.name : ""}` : levelLabel(mapSel), VW / 2, py + 20, pw - 16);
   ctx.fillStyle = "#fff3dc"; ctx.font = `900 ${s ? 18 : 22}px ${TITLE_FONT}`; ctx.fillText(name, VW / 2, py + 46, pw - 20);
   const bw = s ? (pw - 40) / 3 : 150, by = py + (s ? 66 : 62);
   button("‹ Mundo", px + 10, by, bw, 40, () => mapKey({ code: "ArrowDown" }), { size: 13 });
@@ -2104,7 +2147,7 @@ function enterSecret(si, portalIdx) {
 }
 function returnFromSecret() {
   const r = secretRet;
-  if (r && r.fromMap) { secretIdx = null; secretRet = null; JINGLES.win(); openMap(40); showToast("¡Has conquistado la Grieta del Vacío!", 3); return; }
+  if (r && r.fromMap) { const back = r.mapSel ?? 40; secretIdx = null; secretRet = null; JINGLES.win(); openMap(back); showToast(back === 40 ? "¡Has conquistado la Grieta del Vacío!" : "¡Nivel secreto superado! Ya tienes su poder", 3); return; }
   secretIdx = null; secretRet = null;
   const pNow = { weapons: P.weapons.slice(), ammo: { ...P.ammo }, res: { ...P.res } };
   suppressSave = true; loadLevel(r.level); suppressSave = false; worldCard = 0;
@@ -7118,6 +7161,10 @@ TR_ROWS.push(
 ["¡Has vencido al Devorador del Vacío!", "You defeated the Void Devourer!", "Você venceu o Devorador do Vazio!", "Tu as vaincu le Dévoreur du Néant !", "Du hast den Verschlinger der Leere besiegt!", "Hai sconfitto il Divoratore del Vuoto!"],
 ["Nivel secreto · Mundo {0} · {1}", "Secret level · World {0} · {1}", "Nível secreto · Mundo {0} · {1}", "Niveau secret · Monde {0} · {1}", "Geheimlevel · Welt {0} · {1}", "Livello segreto · Mondo {0} · {1}"],
 ["NIVEL SECRETO · DIFÍCIL", "SECRET LEVEL · HARD", "NÍVEL SECRETO · DIFÍCIL", "NIVEAU SECRET · DIFFICILE", "GEHEIMLEVEL · SCHWER", "LIVELLO SEGRETO · DIFFICILE"],
+["NIVEL SECRETO · DIFÍCIL · premio: {0} {1}", "SECRET LEVEL · HARD · reward: {0} {1}", "NÍVEL SECRETO · DIFÍCIL · prêmio: {0} {1}", "NIVEAU SECRET · DIFFICILE · récompense : {0} {1}", "GEHEIMLEVEL · SCHWER · Belohnung: {0} {1}", "LIVELLO SEGRETO · DIFFICILE · premio: {0} {1}"],
+["¡{0}! Dificultad: Difícil", "{0}! Difficulty: Hard", "{0}! Dificuldade: Difícil", "{0} ! Difficulté : Difficile", "{0}! Schwierigkeit: Schwer", "{0}! Difficoltà: Difficile"],
+["¡Nivel secreto superado! Ya tienes su poder", "Secret level cleared! You now have its power", "Nível secreto superado! Agora você tem o poder dele", "Niveau secret réussi ! Tu as maintenant son pouvoir", "Geheimlevel geschafft! Jetzt hast du seine Kraft", "Livello segreto superato! Ora hai il suo potere"],
+["Llega antes a su nivel para abrirlo", "Reach its level first to unlock it", "Chegue primeiro ao nível dele para abri-lo", "Atteins d'abord son niveau pour l'ouvrir", "Erreiche zuerst sein Level, um es freizuschalten", "Raggiungi prima il suo livello per sbloccarlo"],
 ["¡Has encontrado un nivel secreto! Aquí la dificultad es Difícil", "You found a secret level! Difficulty here is Hard", "Você encontrou um nível secreto! Aqui a dificuldade é Difícil", "Tu as trouvé un niveau secret ! Ici la difficulté est Difficile", "Du hast ein Geheimlevel gefunden! Hier ist es Schwer", "Hai trovato un livello segreto! Qui la difficoltà è Difficile"],
 ["¡Has vuelto del nivel secreto con un poder nuevo!", "You're back from the secret level with a new power!", "Você voltou do nível secreto com um novo poder!", "Tu reviens du niveau secret avec un nouveau pouvoir !", "Du bist mit einer neuen Kraft aus dem Geheimlevel zurück!", "Sei tornato dal livello segreto con un nuovo potere!"],
 ["En el nivel secreto no se puede guardar: tu partida se guardó al entrar", "You can't save in the secret level: your game was saved when you entered", "Não dá para salvar no nível secreto: seu jogo foi salvo ao entrar", "Impossible de sauvegarder ici : ta partie a été sauvegardée en entrant", "Im Geheimlevel kann man nicht speichern: Beim Betreten wurde gespeichert", "Nel livello segreto non si salva: la partita è stata salvata all'ingresso"],
