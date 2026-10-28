@@ -4303,7 +4303,7 @@ const hexA = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${
 function drawBossUnder(m, em) {
   const r = m.r, t = time, look = Math.atan2(P.y - m.y, P.x - m.x), ty = m.type;
   if (em > 0.6) return;
-  if (ty === "O" || ty === "a") {
+  if (ty === "O") {
     // capa real ondeando a la espalda
     ctx.save(); ctx.translate(m.x - Math.cos(look) * r * 0.5, m.y - Math.sin(look) * r * 0.5); ctx.rotate(look + Math.PI);
     const cg = ctx.createLinearGradient(0, -r, r * 1.6, r); cg.addColorStop(0, ty === "a" ? "#3a4a6a" : "#8a1020"); cg.addColorStop(1, ty === "a" ? "#1a2238" : "#3a0508");
@@ -4324,11 +4324,7 @@ function drawBossUnder(m, em) {
 // detalles delante del cuerpo (cuernos, coronas, ojos que brillan)
 function drawBossOver(m) {
   const r = m.r, ty = m.type, t = time;
-  if (ty === "Y") { ctx.fillStyle = "#e8f8ff"; for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(m.x + s * 8, m.y - r + 4); ctx.lineTo(m.x + s * 14, m.y - r - 14); ctx.lineTo(m.x + s * 15, m.y - r + 6); ctx.fill(); } }
-  if (ty === "X") { ctx.fillStyle = "#2a1a40"; ctx.beginPath(); ctx.moveTo(m.x - 12, m.y - r + 2); for (let i = 0; i <= 6; i++) ctx.lineTo(m.x - 12 + i * 4, m.y - r + (i % 2 ? 0 : -12)); ctx.lineTo(m.x + 12, m.y - r + 6); ctx.lineTo(m.x - 12, m.y - r + 6); ctx.fill(); ctx.fillStyle = "#c08cff"; ctx.beginPath(); ctx.arc(m.x, m.y - r - 2, 2.5, 0, 7); ctx.fill(); }
-  if (ty === "J") { ctx.strokeStyle = `rgba(255,200,60,${0.5 + 0.5 * Math.sin(t * 7)})`; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(m.x - r * 0.7, m.y + 6); ctx.lineTo(m.x - r * 0.3, m.y + r * 0.6); ctx.moveTo(m.x + r * 0.6, m.y - r * 0.4); ctx.lineTo(m.x + r * 0.2, m.y + r * 0.2); ctx.stroke(); }
-  if (ty === "K" || ty === "i") { ctx.fillStyle = "rgba(200,245,255,0.9)"; for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(m.x + i * 6 - 3, m.y - r * 0.6); ctx.lineTo(m.x + i * 6, m.y - r * 1.25 - Math.abs(i) * -3); ctx.lineTo(m.x + i * 6 + 3, m.y - r * 0.6); ctx.fill(); } }
-  if (ty === "2") { const g = ctx.createRadialGradient(m.x, m.y - 4, 1, m.x, m.y - 4, 12); g.addColorStop(0, "#fff"); g.addColorStop(0.3, "#ff3af0"); g.addColorStop(1, "rgba(120,0,200,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(m.x, m.y - 4, 12, 0, 7); ctx.fill(); }
+  if (ty === "K") { ctx.fillStyle = "rgba(200,245,255,0.9)"; for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(m.x + i * 6 - 3, m.y - r * 0.6); ctx.lineTo(m.x + i * 6, m.y - r * 1.25 - Math.abs(i) * -3); ctx.lineTo(m.x + i * 6 + 3, m.y - r * 0.6); ctx.fill(); } }
   if (ty === "z") { ctx.fillStyle = "#c8a0ff"; ctx.beginPath(); ctx.moveTo(m.x - 9, m.y - r - 2); for (let i = 0; i <= 4; i++) ctx.lineTo(m.x - 9 + i * 4.5, m.y - r + (i % 2 ? -2 : -12)); ctx.lineTo(m.x + 9, m.y - r + 2); ctx.closePath(); ctx.fill(); }
 }
 function drawMonsterBody(m) {
@@ -4340,6 +4336,269 @@ function drawMonsterBody(m) {
   rim.addColorStop(0, "rgba(255,255,255,0.22)"); rim.addColorStop(1, "rgba(255,255,255,0)");
   ctx.fillStyle = rim; ctx.beginPath(); ctx.arc(m.x - r * 0.3, m.y - r * 0.35, r * 0.75, 0, 7); ctx.fill();
   if (m.alert > 0 && !m.def.fly) { ctx.strokeStyle = hexA(m.def.color, 0.35 + 0.2 * Math.sin(time * 6 + m.x)); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(m.x, m.y + r * 0.85, r * 1.1, r * 0.34, 0, 0, 7); ctx.stroke(); }
+}
+// cuerpos propios de cada jefe (los que no son el Ogro, la Reina Araña ni el Dragón)
+const BOSS_LOOK = {
+  J: { kind: "golem", rock: "#4a3028", dark: "#1e120e", glow: "#ff8a2a", hot: "#ffe08a" },
+  H: { kind: "golem", rock: "#7fd8f0", dark: "#2a6a8a", glow: "#e8ffff", hot: "#ffffff", crystal: true },
+  a: { kind: "golem", rock: "#8a9bb0", dark: "#3a4454", glow: "#7fe8ff", hot: "#e0fbff", runes: true },
+  Y: { kind: "yeti" }, y: { kind: "salamander" }, X: { kind: "shadowking" }, 2: { kind: "devourer" },
+  i: { kind: "wraith", body: "#d8f6ff", edge: "#7fc8f0", eye: "#3ab8ff", ice: true },
+  j: { kind: "wraith", body: "#4a3a6a", edge: "#1a1028", eye: "#e0b0ff" },
+};
+// polígono irregular pero siempre igual (como una roca)
+function rockPath(x, y, rx, ry, n, seed) {
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2, k = 0.86 + 0.14 * Math.abs(Math.sin(seed * 12.9898 + i * 78.233)); ctx.lineTo(x + Math.cos(a) * rx * k, y + Math.sin(a) * ry * k); }
+  ctx.closePath();
+}
+function bossEyes(x, y, sep, rr, c, look, slit) {
+  for (const s of [-1, 1]) {
+    const ex = x + s * sep, ey = y;
+    ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = hexA(c, 0.35); ctx.beginPath(); ctx.arc(ex, ey, rr * 2.2, 0, 7); ctx.fill(); ctx.restore();
+    ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(ex, ey, rr, slit ? rr * 0.55 : rr, s * 0.25, 0, 7); ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(ex + Math.cos(look) * rr * 0.35, ey + Math.sin(look) * rr * 0.25, rr * 0.38, 0, 7); ctx.fill();
+  }
+}
+function drawBossBody(m, fl, look) {
+  const L = BOSS_LOOK[m.type], r = m.r, t = time + m.x * 0.01, x = m.x, y = m.y;
+  const wind = m.wind > 0 || m.ph === "wind", charge = m.charging > 0 || m.ph === "lunge", hot = m.enraged || m.desperate;
+  if (L.kind === "golem") {
+    const glow = hot ? L.hot : L.glow, pul = 0.6 + 0.4 * Math.sin(t * (hot ? 9 : 4));
+    // puños de piedra que flotan a los lados (se levantan para golpear el suelo)
+    for (const s of [-1, 1]) {
+      const a = look + s * 1.2, lift = wind ? 10 : charge ? -4 : Math.sin(t * 3 + s) * 2;
+      const fx = x + Math.cos(a) * (r + 7), fy = y + Math.sin(a) * (r + 7) - lift;
+      ctx.fillStyle = fl ? "#fff" : L.dark; rockPath(fx, fy + 2, 9, 8, 7, s + 3); ctx.fill();
+      ctx.fillStyle = fl ? "#fff" : L.rock; rockPath(fx, fy, 8.5, 7.5, 7, s + 3); ctx.fill();
+      if (!fl) { ctx.strokeStyle = hexA(glow, 0.5 * pul); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(fx - 4, fy - 2); ctx.lineTo(fx + 1, fy + 1); ctx.lineTo(fx + 4, fy - 3); ctx.stroke(); gloss(fx, fy, 8, 0.25); }
+    }
+    // cuerpo de bloques
+    const bg = ctx.createLinearGradient(x - r, y - r, x + r, y + r);
+    bg.addColorStop(0, fl ? "#fff" : mixHex(L.rock, "#ffffff", 0.25)); bg.addColorStop(0.5, fl ? "#fff" : L.rock); bg.addColorStop(1, fl ? "#fff" : L.dark);
+    ctx.fillStyle = bg; rockPath(x, y, r * 1.08, r, 10, m.type.charCodeAt(0)); ctx.fill();
+    ctx.strokeStyle = fl ? "#fff" : L.dark; ctx.lineWidth = 2; ctx.stroke();
+    if (!fl) {
+      if (L.crystal) ctx.globalAlpha *= 0.92;
+      // placas de roca o facetas de cristal
+      const plates = [[-0.45, -0.35, 0.42], [0.42, -0.3, 0.38], [-0.3, 0.42, 0.36], [0.38, 0.4, 0.34]];
+      plates.forEach(([px, py, pr], i) => {
+        ctx.fillStyle = L.crystal ? `rgba(230,255,255,${0.18 + 0.1 * i % 0.3})` : hexA(L.dark, 0.35);
+        rockPath(x + px * r, y + py * r, pr * r, pr * r * 0.8, 6, i + 7); ctx.fill();
+        ctx.strokeStyle = L.crystal ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.35)"; ctx.lineWidth = 1; ctx.stroke();
+      });
+      if (L.crystal) {
+        // brillos en las facetas y cristales en los hombros
+        ctx.strokeStyle = "rgba(255,255,255,0.85)"; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x - r * 0.7, y - r * 0.2); ctx.lineTo(x - r * 0.35, y - r * 0.75); ctx.moveTo(x + r * 0.15, y - r * 0.8); ctx.lineTo(x + r * 0.55, y - r * 0.45); ctx.stroke();
+        for (const s of [-1, 1]) for (let i = 0; i < 3; i++) {
+          const bx = x + s * (r * 0.55 + i * 5), by = y - r * 0.6 + i * 3, h = 14 - i * 3;
+          const cg = ctx.createLinearGradient(bx, by - h, bx, by); cg.addColorStop(0, "#ffffff"); cg.addColorStop(1, L.rock);
+          ctx.fillStyle = cg; ctx.beginPath(); ctx.moveTo(bx - 3, by); ctx.lineTo(bx + s * 2, by - h); ctx.lineTo(bx + 3, by); ctx.closePath(); ctx.fill();
+        }
+      }
+      // grietas que brillan
+      ctx.save(); ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = hexA(glow, 0.55 + 0.4 * pul); ctx.lineWidth = hot ? 2.4 : 1.8; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(x - r * 0.8, y + r * 0.1); ctx.lineTo(x - r * 0.4, y + r * 0.25); ctx.lineTo(x - r * 0.15, y + r * 0.05);
+      ctx.moveTo(x + r * 0.15, y + r * 0.1); ctx.lineTo(x + r * 0.45, y + r * 0.35); ctx.lineTo(x + r * 0.8, y + r * 0.25);
+      ctx.moveTo(x - r * 0.1, y + r * 0.45); ctx.lineTo(x + r * 0.05, y + r * 0.8); ctx.stroke();
+      // núcleo en el pecho
+      const cg = ctx.createRadialGradient(x, y + r * 0.2, 0, x, y + r * 0.2, r * 0.45);
+      cg.addColorStop(0, hexA(L.hot, 0.9)); cg.addColorStop(0.4, hexA(glow, 0.5 * pul)); cg.addColorStop(1, hexA(glow, 0));
+      ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(x, y + r * 0.2, r * 0.45, 0, 7); ctx.fill();
+      if (L.runes) {
+        // runas grabadas que se encienden una tras otra
+        ctx.lineWidth = 1.4;
+        for (let i = 0; i < 4; i++) {
+          const a = -2.6 + i * 0.75, rx = x + Math.cos(a) * r * 0.7, ry = y + Math.sin(a) * r * 0.62 + r * 0.15, on = 0.35 + 0.65 * Math.max(0, Math.sin(t * 3 - i));
+          ctx.strokeStyle = hexA(L.glow, on); ctx.beginPath(); ctx.moveTo(rx, ry - 4); ctx.lineTo(rx, ry + 4); ctx.moveTo(rx, ry - 3); ctx.lineTo(rx + 3, ry - 1); ctx.lineTo(rx, ry + 1); ctx.stroke();
+        }
+      }
+      ctx.restore();
+      gloss(x, y, r, 0.22);
+      if (L.crystal) ctx.globalAlpha /= 0.92;
+    }
+    // cabeza: un bloque con ojos de rendija
+    ctx.fillStyle = fl ? "#fff" : L.dark; rockPath(x, y - r * 0.62, r * 0.5, r * 0.36, 7, 11); ctx.fill();
+    ctx.fillStyle = fl ? "#fff" : mixHex(L.rock, "#000000", 0.15); rockPath(x, y - r * 0.68, r * 0.46, r * 0.32, 7, 11); ctx.fill();
+    if (!fl) {
+      ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = hexA(glow, 0.95);
+      for (const s of [-1, 1]) { const ex = x + s * r * 0.2 + Math.cos(look) * 1.5, ey = y - r * 0.7 + Math.sin(look); ctx.beginPath(); ctx.moveTo(ex - 4, ey - 1); ctx.lineTo(ex + 4, ey - s * 0.5 - 1.5); ctx.lineTo(ex + 3, ey + 1.5); ctx.lineTo(ex - 4, ey + 1.5); ctx.fill(); }
+      ctx.restore();
+    }
+    if (m.type === "J" && !fl) for (let i = 0; i < 3; i++) flame(x - r * 0.35 + i * r * 0.35, y - r * 0.85, 3.2, 9 + Math.sin(t * 12 + i) * 3, Math.sin(t * 5 + i) * 2, i % 2 ? "#ffb040" : "#ff6a1a");
+  } else if (L.kind === "yeti") {
+    const fur = fl ? "#fff" : hot ? "#ffe2dc" : "#eef6ff", shade = fl ? "#fff" : "#9fb4c8";
+    // brazos largos y peludos con garras
+    for (const s of [-1, 1]) {
+      const a = look + s * 1.15, sw = wind ? -0.5 * s : Math.sin(m.t * 4 + s) * 0.25, ax = x + Math.cos(a) * r * 0.8, ay = y + Math.sin(a) * r * 0.8;
+      ctx.save(); ctx.translate(ax, ay); ctx.rotate(a - s * 0.9 + sw);
+      ctx.fillStyle = shade; ctx.beginPath(); ctx.ellipse(r * 0.55, 0, r * 0.62, r * 0.32, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = fur; ctx.beginPath(); for (let i = 0; i <= 12; i++) { const q = i / 12 * Math.PI * 2, k = i % 2 ? 1 : 1.18; ctx.lineTo(r * 0.5 + Math.cos(q) * r * 0.55 * k, Math.sin(q) * r * 0.28 * k); } ctx.fill();
+      ctx.fillStyle = fl ? "#fff" : "#5a7088"; ctx.beginPath(); ctx.arc(r * 1.1, 0, r * 0.22, 0, 7); ctx.fill();
+      ctx.fillStyle = "#2a3040"; for (const c of [-1, 0, 1]) { ctx.beginPath(); ctx.moveTo(r * 1.22, c * 3.5 - 1.2); ctx.lineTo(r * 1.22 + 6, c * 4.5); ctx.lineTo(r * 1.22, c * 3.5 + 1.2); ctx.fill(); }
+      ctx.restore();
+    }
+    // cuerpo con pelo en punta
+    const bg = ctx.createRadialGradient(x - r * 0.3, y - r * 0.4, r * 0.1, x, y, r * 1.15);
+    bg.addColorStop(0, "#ffffff"); bg.addColorStop(0.6, fur); bg.addColorStop(1, shade);
+    ctx.fillStyle = fl ? "#fff" : bg; ctx.beginPath();
+    for (let i = 0; i < 30; i++) { const a = i / 30 * Math.PI * 2, k = i % 2 ? 0.98 : 1.13 + Math.sin(t * 6 + i) * 0.03; ctx.lineTo(x + Math.cos(a) * r * k, y + Math.sin(a) * r * k); }
+    ctx.closePath(); ctx.fill();
+    if (!fl) {
+      ctx.strokeStyle = "rgba(120,150,180,0.55)"; ctx.lineWidth = 1;
+      for (let i = 0; i < 10; i++) { const a = i * 2.4, rr = r * (0.35 + (i % 3) * 0.18), px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr + r * 0.1; ctx.beginPath(); ctx.moveTo(px, py); ctx.quadraticCurveTo(px + 2, py + 3, px + 1, py + 6); ctx.stroke(); }
+    }
+    // cara azul con cuernos de carnero
+    for (const s of [-1, 1]) {
+      ctx.strokeStyle = fl ? "#fff" : "#c9b48a"; ctx.lineWidth = 4.5; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.arc(x + s * r * 0.55, y - r * 0.55, r * 0.28, s > 0 ? -2.2 : -0.9, s > 0 ? 1.4 : 2.6 + 1.6, s < 0); ctx.stroke();
+      ctx.strokeStyle = "rgba(90,70,40,0.5)"; ctx.lineWidth = 1; ctx.stroke();
+    }
+    const fg = ctx.createLinearGradient(x, y - r * 0.75, x, y + r * 0.1); fg.addColorStop(0, "#7a98b8"); fg.addColorStop(1, "#4a6684");
+    ctx.fillStyle = fl ? "#fff" : fg; ctx.beginPath(); ctx.ellipse(x, y - r * 0.3, r * 0.48, r * 0.42, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = fl ? "#fff" : "#36506c"; ctx.beginPath(); ctx.moveTo(x - r * 0.45, y - r * 0.5); ctx.quadraticCurveTo(x, y - r * 0.3, x + r * 0.45, y - r * 0.5); ctx.lineTo(x + r * 0.42, y - r * 0.38); ctx.quadraticCurveTo(x, y - r * 0.2, x - r * 0.42, y - r * 0.38); ctx.fill();
+    bossEyes(x, y - r * 0.33, r * 0.2, 2.6, hot ? "#ff5a5a" : "#9fe2ff", look);
+    const open = wind || charge ? 5 : 2.5;
+    ctx.fillStyle = "#1a1020"; ctx.beginPath(); ctx.ellipse(x, y - r * 0.05, r * 0.24, open, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = "#fff"; for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(x + s * r * 0.17, y - r * 0.05 - open); ctx.lineTo(x + s * r * 0.12, y - r * 0.05 + 2); ctx.lineTo(x + s * r * 0.07, y - r * 0.05 - open); ctx.fill(); }
+  } else if (L.kind === "salamander") {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(look);
+    const body = fl ? "#fff" : hot ? "#ff3a1a" : m.def.color, dark = fl ? "#fff" : "#8a2008", walk = m.t * 9;
+    // cola que se mueve como una serpiente, con fuego en la punta
+    let px = -r * 0.7, py = 0;
+    for (let i = 1; i <= 7; i++) {
+      const nx = -r * 0.7 - i * r * 0.28, ny = Math.sin(m.t * 5 - i * 0.7) * i * 1.4, w = r * 0.42 * (1 - i / 8.5);
+      ctx.strokeStyle = i % 2 ? body : dark; ctx.lineWidth = w * 2; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(nx, ny); ctx.stroke();
+      px = nx; py = ny;
+    }
+    if (!fl) { ctx.save(); ctx.translate(px, py); ctx.rotate(-Math.PI / 2 + Math.sin(m.t * 5) * 0.3); flame(0, 0, 4, 12 + Math.sin(t * 14) * 3, 0, "#ffb040"); flame(0, 0, 2.2, 7, 0, "#fff3a0"); ctx.restore(); }
+    // patas que caminan
+    ctx.strokeStyle = dark; ctx.lineWidth = 4; ctx.lineCap = "round";
+    for (const [lx, s, ph] of [[r * 0.45, 1, 0], [r * 0.45, -1, Math.PI], [-r * 0.45, 1, Math.PI], [-r * 0.45, -1, 0]]) {
+      const st = Math.sin(walk + ph) * 4, fx = lx + st, fy = s * (r * 0.95);
+      ctx.beginPath(); ctx.moveTo(lx, s * r * 0.4); ctx.quadraticCurveTo(lx + 2, s * r * 0.75, fx, fy); ctx.stroke();
+      ctx.fillStyle = dark; for (const d of [-3, 0, 3]) { ctx.beginPath(); ctx.arc(fx + d, fy + s * 2, 1.6, 0, 7); ctx.fill(); }
+    }
+    // cuerpo con manchas y cresta de púas
+    const bg = ctx.createLinearGradient(0, -r * 0.6, 0, r * 0.6); bg.addColorStop(0, fl ? "#fff" : "#ffb070"); bg.addColorStop(0.5, body); bg.addColorStop(1, dark);
+    ctx.fillStyle = bg; ctx.beginPath(); ctx.ellipse(0, 0, r * 0.95, r * 0.58, 0, 0, 7); ctx.fill();
+    if (!fl) {
+      ctx.fillStyle = "rgba(60,10,0,0.45)"; for (const [sx, sy, sr] of [[-r * 0.4, -r * 0.25, 3.5], [0, r * 0.28, 3], [r * 0.3, -r * 0.3, 2.6], [-r * 0.1, -r * 0.05, 2.2]]) { ctx.beginPath(); ctx.arc(sx, sy, sr, 0, 7); ctx.fill(); }
+      ctx.fillStyle = "#ffd23a"; for (let i = 0; i < 6; i++) { const sx = -r * 0.75 + i * r * 0.3; ctx.beginPath(); ctx.moveTo(sx - 3, -1.5); ctx.lineTo(sx, -6 - (i % 2) * 2); ctx.lineTo(sx + 3, -1.5); ctx.fill(); }
+      for (let i = 0; i < 3; i++) flame(-r * 0.5 + i * r * 0.4, -2, 2.5, 7 + Math.sin(t * 13 + i * 2) * 3, Math.sin(t * 6 + i) * 2, "rgba(255,150,40,0.85)");
+      gloss(0, 0, r * 0.8, 0.22);
+    }
+    // cabeza con ojos de reptil
+    const hx = r * 0.95;
+    ctx.fillStyle = bg; ctx.beginPath(); ctx.moveTo(hx - 4, -r * 0.42); ctx.quadraticCurveTo(hx + r * 0.75, -r * 0.4, hx + r * 0.78, 0); ctx.quadraticCurveTo(hx + r * 0.75, r * 0.4, hx - 4, r * 0.42); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = dark; ctx.lineWidth = 1.2; ctx.stroke();
+    if (wind || charge) { ctx.fillStyle = "#ffe06a"; ctx.beginPath(); ctx.arc(hx + r * 0.78, 0, 5 + Math.sin(t * 30), 0, 7); ctx.fill(); }
+    ctx.fillStyle = "#1a0800"; for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(hx + r * 0.62, s * 2.5, 1, 0, 7); ctx.fill(); }
+    for (const s of [-1, 1]) {
+      ctx.fillStyle = "#ffe24a"; ctx.beginPath(); ctx.arc(hx + r * 0.15, s * r * 0.32, 4, 0, 7); ctx.fill();
+      ctx.fillStyle = "#1a0800"; ctx.beginPath(); ctx.ellipse(hx + r * 0.17, s * r * 0.32, 1, 3, 0, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+  } else if (L.kind === "shadowking") {
+    const bob = Math.sin(t * 2.5) * 2.5, cy = y + bob;
+    // túnica que flota con el borde deshilachado
+    const rg = ctx.createLinearGradient(x, cy - r, x, cy + r * 1.1); rg.addColorStop(0, fl ? "#fff" : "#4a3478"); rg.addColorStop(1, fl ? "#fff" : "#120a20");
+    ctx.fillStyle = rg; ctx.beginPath(); ctx.moveTo(x - r * 0.5, cy - r * 0.55);
+    ctx.quadraticCurveTo(x - r * 1.1, cy + r * 0.2, x - r * 1.05, cy + r * 0.95);
+    for (let i = 0; i <= 8; i++) ctx.lineTo(x - r * 1.05 + i * r * 0.2625, cy + r * 0.95 + (i % 2 ? -r * 0.22 : Math.sin(t * 5 + i) * 3));
+    ctx.quadraticCurveTo(x + r * 1.1, cy + r * 0.2, x + r * 0.5, cy - r * 0.55); ctx.closePath(); ctx.fill();
+    if (!fl) {
+      ctx.strokeStyle = "rgba(190,140,255,0.35)"; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x, cy - r * 0.2); ctx.lineTo(x, cy + r * 0.8); ctx.moveTo(x - r * 0.45, cy - r * 0.05); ctx.lineTo(x - r * 0.65, cy + r * 0.75); ctx.moveTo(x + r * 0.45, cy - r * 0.05); ctx.lineTo(x + r * 0.65, cy + r * 0.75); ctx.stroke();
+      ctx.fillStyle = "#c9a0ff"; ctx.beginPath(); ctx.moveTo(x - r * 0.5, cy - r * 0.2); ctx.lineTo(x, cy + r * 0.15); ctx.lineTo(x + r * 0.5, cy - r * 0.2); ctx.lineTo(x + r * 0.5, cy - r * 0.08); ctx.lineTo(x, cy + r * 0.27); ctx.lineTo(x - r * 0.5, cy - r * 0.08); ctx.fill();
+    }
+    // manos fantasmales con orbes
+    for (const s of [-1, 1]) {
+      const a = look + s * 1.3, hx = x + Math.cos(a) * r * 1.15, hy = cy + Math.sin(a) * r * 0.9 + Math.sin(t * 3 + s) * 3;
+      ctx.fillStyle = fl ? "#fff" : "#d8c8f0"; ctx.beginPath(); ctx.arc(hx, hy, 4.5, 0, 7); ctx.fill();
+      for (let f = -1; f <= 1; f++) { ctx.beginPath(); ctx.ellipse(hx + Math.cos(a) * 5 + f * 2.5, hy + Math.sin(a) * 5, 1.4, 3, a + Math.PI / 2, 0, 7); ctx.fill(); }
+      const og = ctx.createRadialGradient(hx, hy - 9, 0, hx, hy - 9, 8); og.addColorStop(0, "#ffffff"); og.addColorStop(0.35, "#c08cff"); og.addColorStop(1, "rgba(120,60,255,0)");
+      ctx.fillStyle = og; ctx.beginPath(); ctx.arc(hx, hy - 9, 8, 0, 7); ctx.fill();
+    }
+    // capucha con el rostro oscuro y ojos brillantes
+    ctx.fillStyle = fl ? "#fff" : "#2a1a48"; ctx.beginPath(); ctx.moveTo(x, cy - r * 1.25); ctx.quadraticCurveTo(x + r * 0.75, cy - r * 0.9, x + r * 0.6, cy - r * 0.15); ctx.lineTo(x - r * 0.6, cy - r * 0.15); ctx.quadraticCurveTo(x - r * 0.75, cy - r * 0.9, x, cy - r * 1.25); ctx.fill();
+    ctx.fillStyle = "#05020a"; ctx.beginPath(); ctx.ellipse(x, cy - r * 0.55, r * 0.4, r * 0.38, 0, 0, 7); ctx.fill();
+    bossEyes(x + Math.cos(look) * 2, cy - r * 0.58 + Math.sin(look), r * 0.17, 2.4, hot ? "#ff4a6a" : "#d9b0ff", look, true);
+    // corona de púas
+    ctx.fillStyle = fl ? "#fff" : "#1a0e30"; ctx.beginPath(); ctx.moveTo(x - r * 0.55, cy - r * 1.0);
+    for (let i = 0; i <= 6; i++) ctx.lineTo(x - r * 0.55 + i * r * 0.183, cy - r * (i % 2 ? 1.05 : 1.5 - Math.abs(i - 3) * 0.08));
+    ctx.lineTo(x + r * 0.55, cy - r * 0.92); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "#8a6ac8"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = "#c08cff"; ctx.beginPath(); ctx.arc(x, cy - r * 1.1, 2.4, 0, 7); ctx.fill();
+  } else if (L.kind === "devourer") {
+    const open = wind || charge ? 1 : 0.45 + 0.15 * Math.sin(t * 3);
+    // esfera oscura con borde de estrellas
+    const bg = ctx.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.1, x, y, r * 1.05);
+    bg.addColorStop(0, fl ? "#fff" : "#5a2a9a"); bg.addColorStop(0.6, fl ? "#fff" : "#2a0e4a"); bg.addColorStop(1, fl ? "#fff" : "#08020f");
+    ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+    ctx.strokeStyle = fl ? "#fff" : `rgba(255,80,240,${0.5 + 0.3 * Math.sin(t * 4)})`; ctx.lineWidth = 2; ctx.stroke();
+    if (!fl) {
+      ctx.fillStyle = "rgba(255,255,255,0.8)"; for (let i = 0; i < 9; i++) { const a = i * 2.39 + t * 0.2, rr = r * (0.3 + (i * 0.37) % 0.6); ctx.fillRect(x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.5 - r * 0.45, 1.2, 1.2); }
+      // púas
+      ctx.fillStyle = "#1a0830"; for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 + 0.3; ctx.beginPath(); ctx.moveTo(x + Math.cos(a - 0.12) * r, y + Math.sin(a - 0.12) * r); ctx.lineTo(x + Math.cos(a) * (r + 8 + Math.sin(t * 4 + i) * 2), y + Math.sin(a) * (r + 8 + Math.sin(t * 4 + i) * 2)); ctx.lineTo(x + Math.cos(a + 0.12) * r, y + Math.sin(a + 0.12) * r); ctx.fill(); }
+      gloss(x, y, r, 0.25);
+    }
+    // muchos ojos que parpadean
+    for (let i = 0; i < 7; i++) {
+      const a = -Math.PI + 0.25 + i / 6 * (Math.PI - 0.5), ex = x + Math.cos(a) * r * 0.62, ey = y + Math.sin(a) * r * 0.55 - 2, er = i === 3 ? 4.5 : 2.6;
+      const blink = Math.sin(t * 1.3 + i * 1.7) > 0.93 ? 0.15 : 1;
+      ctx.fillStyle = "#ffe0ff"; ctx.beginPath(); ctx.ellipse(ex, ey, er, er * blink, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = hot ? "#ff1a3a" : "#c020c0"; ctx.beginPath(); ctx.ellipse(ex + Math.cos(look) * er * 0.4, ey + Math.sin(look) * er * 0.3, er * 0.5, er * 0.5 * blink, 0, 0, 7); ctx.fill();
+    }
+    // la boca enorme con dientes y un núcleo brillante dentro
+    const mw = r * 0.78, mh = r * 0.42 * open, my = y + r * 0.3;
+    ctx.fillStyle = "#0a0012"; ctx.beginPath(); ctx.ellipse(x, my, mw, mh + 2, 0, 0, 7); ctx.fill();
+    if (!fl) {
+      const cg = ctx.createRadialGradient(x, my, 0, x, my, mw * 0.7); cg.addColorStop(0, "#ffffff"); cg.addColorStop(0.25, "#ff3af0"); cg.addColorStop(1, "rgba(120,0,200,0)");
+      ctx.fillStyle = cg; ctx.beginPath(); ctx.ellipse(x, my, mw * 0.7, mh * 0.9 + 1, 0, 0, 7); ctx.fill();
+    }
+    ctx.fillStyle = "#f4ecff";
+    for (let i = 0; i < 9; i++) {
+      const tx = x - mw * 0.85 + i * mw * 0.2125, edge = Math.sqrt(Math.max(0, 1 - ((tx - x) / mw) ** 2));
+      ctx.beginPath(); ctx.moveTo(tx - 2.2, my - mh * edge - 1); ctx.lineTo(tx, my - mh * edge + 5 * edge); ctx.lineTo(tx + 2.2, my - mh * edge - 1); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(tx - 2.2, my + mh * edge + 1); ctx.lineTo(tx, my + mh * edge - 5 * edge); ctx.lineTo(tx + 2.2, my + mh * edge + 1); ctx.fill();
+    }
+  } else if (L.kind === "wraith") {
+    const bob = Math.sin(t * 2.2) * 3, cy = y - 2 + bob;
+    ctx.save(); if (!fl) ctx.globalAlpha *= 0.92;
+    // cuerpo de niebla que se deshace en jirones por abajo
+    const bg = ctx.createRadialGradient(x - r * 0.3, cy - r * 0.5, 1, x, cy, r * 1.3);
+    bg.addColorStop(0, fl ? "#fff" : "#ffffff"); bg.addColorStop(0.45, fl ? "#fff" : L.body); bg.addColorStop(1, fl ? "#fff" : hexA(L.edge, 0.2));
+    ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(x, cy - r * 0.2, r * 0.85, Math.PI, 0);
+    ctx.quadraticCurveTo(x + r * 1.1, cy + r * 0.6, x + r * 0.7, cy + r * 1.05);
+    for (let i = 0; i <= 7; i++) ctx.lineTo(x + r * 0.7 - i * r * 0.2, cy + r * (i % 2 ? 0.6 : 1.05 + 0.2 * Math.sin(t * 5 + i)));
+    ctx.quadraticCurveTo(x - r * 1.1, cy + r * 0.6, x - r * 0.85, cy - r * 0.2); ctx.closePath(); ctx.fill();
+    // brazos de niebla que se estiran hacia el jugador
+    for (const s of [-1, 1]) {
+      const a = look + s * 0.9, ex = x + Math.cos(a) * r * 1.35, ey = cy + Math.sin(a) * r * 1.1 + Math.sin(t * 4 + s) * 3;
+      ctx.strokeStyle = fl ? "#fff" : hexA(L.body, 0.85); ctx.lineWidth = 5; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(x + s * r * 0.5, cy); ctx.quadraticCurveTo(x + s * r * 1.1, cy - r * 0.3, ex, ey); ctx.stroke();
+      ctx.lineWidth = 1.5; for (let f = -1; f <= 1; f++) { ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex + Math.cos(a + f * 0.5) * 6, ey + Math.sin(a + f * 0.5) * 6); ctx.stroke(); }
+    }
+    ctx.restore();
+    // cara: cuencas oscuras con ojos brillantes y una boca que gime
+    ctx.fillStyle = L.ice ? "#1a3048" : "#05020a";
+    for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(x + s * r * 0.3, cy - r * 0.3, r * 0.2, r * 0.26, s * 0.3, 0, 7); ctx.fill(); }
+    bossEyes(x + Math.cos(look) * 1.5, cy - r * 0.3, r * 0.3, 2.3, hot ? "#ff4a6a" : L.eye, look);
+    ctx.fillStyle = L.ice ? "#1a3048" : "#05020a"; ctx.beginPath(); ctx.ellipse(x, cy + r * 0.2, r * 0.15, r * (wind || charge ? 0.3 : 0.18), 0, 0, 7); ctx.fill();
+    if (L.ice) {
+      // corona de carámbanos
+      for (let i = -2; i <= 2; i++) {
+        const bx = x + i * r * 0.28, h = r * (0.75 - Math.abs(i) * 0.15);
+        const ig = ctx.createLinearGradient(bx, cy - r * 0.9 - h, bx, cy - r * 0.85); ig.addColorStop(0, "#ffffff"); ig.addColorStop(1, "#7fc8f0");
+        ctx.fillStyle = fl ? "#fff" : ig; ctx.beginPath(); ctx.moveTo(bx - 3.5, cy - r * 0.8); ctx.lineTo(bx, cy - r * 0.85 - h); ctx.lineTo(bx + 3.5, cy - r * 0.8); ctx.closePath(); ctx.fill();
+      }
+    } else {
+      // cuernos retorcidos
+      ctx.fillStyle = fl ? "#fff" : "#1a1028";
+      for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(x + s * r * 0.35, cy - r * 0.85); ctx.quadraticCurveTo(x + s * r * 0.9, cy - r * 1.2, x + s * r * 0.75, cy - r * 1.6); ctx.quadraticCurveTo(x + s * r * 0.65, cy - r * 1.2, x + s * r * 0.15, cy - r * 0.95); ctx.fill(); }
+    }
+  }
 }
 function drawMonsterRaw(m) {
   const fl = m.flash > 0;
@@ -4407,6 +4666,8 @@ function drawMonsterRaw(m) {
     ctx.fillStyle = "#1a1410"; for (let i = 0; i < 4; i++) ctx.fillRect(m.x - 2.8 + i * 1.8, m.y - 0.5, 0.5, 2.2);
     ctx.fillStyle = "#1a1410"; ctx.beginPath(); ctx.moveTo(m.x, m.y - 3.5); ctx.lineTo(m.x - 0.9, m.y - 1.8); ctx.lineTo(m.x + 0.9, m.y - 1.8); ctx.fill();
     if (w) { ctx.save(); ctx.translate(m.x + Math.cos(look) * 12, m.y + Math.sin(look) * 12); ctx.rotate(time * 4); ctx.fillStyle = "#efe8d2"; ctx.fillRect(-4, -1, 8, 2); ctx.restore(); }
+  } else if (BOSS_LOOK[m.type]) {
+    drawBossBody(m, fl, look);
   } else if (m.type === "x" || m.type === "Q" || m.def.base === "Q") {
     const queen = m.type !== "x", k = queen ? 1.9 : 1;
     const crouch = (m.ph === "wind" || (queen && m.wind > 0)) ? 0.75 : 1, lunging = m.ph === "lunge" || (queen && m.charging > 0);
