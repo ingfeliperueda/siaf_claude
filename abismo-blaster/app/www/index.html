@@ -1867,7 +1867,7 @@ settings.btn = [0, 1, 2].includes(store.get("btn", 1)) ? store.get("btn", 1) : 1
 function btns() {
   // celular: según el lado corto de la pantalla; tableta: más grandes pero sin pasarse; y el tamaño elegido en Opciones
   const tab = settings.device === "tablet", short = Math.min(VW, VH);
-  const s = (tab ? clamp(short / 620, 1, 1.3) : clamp(short / 400, 0.8, 1.05)) * BTN_SIZES[settings.btn];
+  const s = (tab ? clamp(short / 720, 0.95, 1.15) : clamp(short / 460, 0.72, 0.92)) * BTN_SIZES[settings.btn];
   const mx = 12 + (land() ? 18 : 0), my = 12 + (land() ? 4 : 0); // en horizontal, separados del borde (muescas y bordes curvos)
   return {
     fire:   { x: VW - 82 * s - mx, y: VH - 96 * s - my, r: 50 * s },
@@ -1876,7 +1876,7 @@ function btns() {
     reload: { x: VW - 136 * s - mx, y: VH - 222 * s - my, r: 24 * s },
     abil:   { x: VW - 196 * s - mx, y: VH - 150 * s - my, r: 30 * s },
     // en pantallas estrechas la pausa baja bajo los corazones para no tapar nada
-    pause:  VW < 480 ? { x: 32, y: 100, r: 20 } : land() ? { x: hudL() + 22, y: 34, r: 20 } : { x: VW / 2, y: 34, r: 22 },
+    pause:  VW < 480 ? { x: 32, y: 97, r: 17 } : land() ? { x: hudL() + 20, y: 31, r: 17 } : { x: VW / 2, y: 31, r: 18 },
   };
 }
 const inBtn = (b, x, y) => Math.hypot(x - b.x, y - b.y) < b.r + 10;
@@ -2832,7 +2832,8 @@ function fire() {
   P.ammo[id]--; P.cd = w.cd * (P.turbo > 0 ? 0.5 : 1); P.recoil = 1; P.muzzle = 0.06;
   camKick.x -= Math.cos(P.aim) * (w.rocket ? 6 : w.darts > 1 ? 4 : 1.5); camKick.y -= Math.sin(P.aim) * (w.rocket ? 6 : w.darts > 1 ? 4 : 1.5);
   const a = P.aim;
-  const mx = P.x + Math.cos(a) * 18, my = P.y + Math.sin(a) * 18 + 2;
+  // los dardos salen de la boquilla del lanzador que llevas
+  const mz = muzzle(3), mx = mz.x, my = mz.y;
   const nd = w.darts + (hasPower("double") && w.darts === 1 && !w.water && !w.rocket && Math.random() < 0.35 ? 1 : 0);
   for (let i = 0; i < nd; i++) {
     const s = w.darts > 1 ? (i / (w.darts - 1) - 0.5) * w.spread + rand(-0.05, 0.05) : rand(-w.spread, w.spread);
@@ -3963,7 +3964,7 @@ function drawMain() {
     if (!inView(d.x, d.y)) continue;
     if (d.kind === "splat") { ctx.globalAlpha = 0.35; ctx.fillStyle = d.c; blob(d.x, d.y, d.r, d.a); }
     else if (d.kind === "trail") { ctx.globalAlpha = 0.25 * Math.min(1, d.life / 2); ctx.fillStyle = d.c; ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, 7); ctx.fill(); }
-    else { ctx.save(); ctx.globalAlpha = Math.min(1, d.life / 2); ctx.translate(d.x, d.y); ctx.rotate(d.a); drawDartShape(d.c, d.tip); ctx.restore(); }
+    else { ctx.save(); ctx.globalAlpha = Math.min(1, d.life / 2); ctx.translate(d.x, d.y); ctx.rotate(d.a); ctx.scale(0.7, 0.7); drawDartShape(d.c, d.tip); ctx.restore(); }
   }
   ctx.globalAlpha = 1;
   for (const it of items) if (inView(it.x, it.y)) drawItem(it);
@@ -3974,7 +3975,7 @@ function drawMain() {
   }
   for (const b of bouncers) {
     ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.beginPath(); ctx.ellipse(b.x, b.y + 1, 4, 1.5, 0, 0, 7); ctx.fill();
-    ctx.save(); ctx.translate(b.x, b.y - b.z); ctx.rotate(b.rot); drawDartShape(b.c, b.tip); ctx.restore();
+    ctx.save(); ctx.translate(b.x, b.y - b.z); ctx.rotate(b.rot); ctx.scale(0.7, 0.7); drawDartShape(b.c, b.tip); ctx.restore();
   }
   // avisos de ataque
   for (const m of monsters) {
@@ -4074,7 +4075,7 @@ function drawMain() {
   if (puzzle) for (const o of puzzle.objs) light(o.x, o.y, puzzle.type === "lights" && o.on ? 80 : 40, puzzle.type === "lights" && o.on ? 0.9 : 0.45);
   for (const e of exits) light(e.x, e.y, 85, 0.75);
   for (const l of emiLights) if (inView(l.x, l.y, l.r)) light(l.x, l.y, l.r * (l.flick ? 0.92 + 0.08 * Math.sin(time * 11 + l.x) : 1), l.k);
-  if (P.muzzle > 0) light(P.x + Math.cos(P.aim) * 20, P.y + Math.sin(P.aim) * 20, 90, 0.8);
+  if (P.muzzle > 0) { const mz = muzzle(); light(mz.x, mz.y, 90, 0.8); }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.drawImage(lc, 0, 0, cv.width, cv.height);
 
@@ -4112,7 +4113,7 @@ function drawMain() {
   for (const m of monsters) if (m.def.ghost) glow(m.x, m.y, 26, "170,215,255", 0.12 * (m.vis ?? 1));
   for (const p of parts) if (p.glow) glow(p.x, p.y, 8, "255,210,120", 0.25 * p.life / p.max);
   for (const g of glints) { ctx.fillStyle = `rgba(255,255,220,${g.life * 2})`; ctx.fillRect(g.x - 0.5, g.y - 2, 1, 4); ctx.fillRect(g.x - 2, g.y - 0.5, 4, 1); }
-  if (P.muzzle > 0) glow(P.x + Math.cos(P.aim) * 20, P.y + Math.sin(P.aim) * 20, 26, "255,230,150", 0.6);
+  if (P.muzzle > 0) { const mz = muzzle(); glow(mz.x, mz.y, 26, "255,230,150", 0.6); }
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(gcv, 0, 0, cv.width, cv.height); ctx.restore();
   ctx.globalCompositeOperation = "source-over";
 
@@ -4179,7 +4180,7 @@ function postFX(sx, sy) {
   for (const f of flashes) dot(f.x, f.y, f.r * 0.5, "255,210,140", Math.min(1, f.life * 3));
   for (const p of parts) if (p.glow) dot(p.x, p.y, 5, "255,200,110", p.life / p.max * 0.7);
   for (const it of items) if (it.kind === "key") dot(it.x, it.y, 9, "255,240,190", 0.35);
-  if (P.muzzle > 0) dot(P.x + Math.cos(P.aim) * 20, P.y + Math.sin(P.aim) * 20, 16, "255,230,160", 0.9);
+  if (P.muzzle > 0) { const mz = muzzle(); dot(mz.x, mz.y, 16, "255,230,160", 0.9); }
   // nada brilla en las zonas no exploradas
   b1.globalCompositeOperation = "source-over"; b1.fillStyle = "#000";
   const tx0 = Math.max(0, Math.floor(camX / TS) - 2), tx1 = Math.min(W - 1, Math.ceil((camX + vw) / TS) + 2), ty0 = Math.max(0, Math.floor(camY / TS) - 2), ty1 = Math.min(H - 1, Math.ceil((camY + vh) / TS) + 2);
@@ -4730,6 +4731,21 @@ function gunSprite(id) {
   return (GUN_SPR[id] = cv);
 }
 const GUN_IDLE = { recoil: 0, spin: 0, reload: 0, t: 0 };
+// dónde está la boquilla de cada lanzador: la columna más a la derecha con dibujo (se mide una vez)
+const GUN_TIP = {};
+function gunTip(id) {
+  if (GUN_TIP[id]) return GUN_TIP[id];
+  const c = gunSprite(id), g = c.getContext("2d"), d = g.getImageData(0, 0, c.width, c.height).data;
+  let tx = c.width - 1, ys = 0, yn = 0;
+  for (; tx > 0; tx--) { ys = 0; yn = 0; for (let y = 0; y < c.height; y++) if (d[(y * c.width + tx) * 4 + 3] > 120) { ys += y; yn++; } if (yn >= 2) break; }
+  return (GUN_TIP[id] = { x: tx / GUN_K + GUN_BX, y: (yn ? ys / yn : c.height / 2) / GUN_K + GUN_BY });
+}
+// boquilla del arma que llevas, en el mundo (igual que se dibuja en la mano)
+function muzzle(extra = 0) {
+  const a = P.aim, t = gunTip(curId()), fy = Math.abs(a) > Math.PI / 2 ? -t.y : t.y, ox = P.x + Math.cos(a) * 9, oy = P.y + Math.sin(a) * 9 + 2;
+  const lx = t.x + extra - P.recoil * 3;
+  return { x: ox + Math.cos(a) * lx - Math.sin(a) * fy, y: oy + Math.sin(a) * lx + Math.cos(a) * fy };
+}
 function drawGun(id, s = 1, an) {
   const art = GUN_ART[id]; if (!art) return;
   const a = an || GUN_IDLE;
@@ -5569,7 +5585,7 @@ function drawProj(p) {
     return;
   }
   ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(Math.atan2(p.vy, p.vx));
-  if (p.kind === "dart") drawDartShape(p.color, p.tip);
+  if (p.kind === "dart") { ctx.scale(0.7, 0.7); drawDartShape(p.color, p.tip); }
   else if (p.kind === "shuriken") {
     ctx.rotate(p.t * 30); ctx.fillStyle = p.color;
     ctx.beginPath(); for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2, r = i % 2 ? 2 : 6.5; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); } ctx.closePath(); ctx.fill();
@@ -6045,49 +6061,52 @@ function drawTitle() {
     ctx.save(); ctx.translate(e.x * VW + Math.sin(time + e.p) * 10, e.y * VH); ctx.rotate(Math.sin(time + e.p)); ctx.fillRect(-e.s * 1.5, -e.s / 2, e.s * 3, e.s); ctx.restore();
   }
   ctx.globalAlpha = 1;
-  const s = sm();
-  const ty = VH * (s ? 0.14 : 0.17);
+  // tres diseños con el mismo aspecto: ancho (computador y tableta), celular en vertical y aparato en horizontal
+  const s = sm(), ld = land(), phone = s && !ld;
+  // en horizontal: título, armas y desfile a la izquierda; menú a la derecha
+  const cx = ld ? VW * 0.31 : VW / 2, colW = ld ? VW * 0.58 : VW;
+  const ty = ld ? 56 : VH * (s ? 0.11 : 0.15);
   ctx.textAlign = "center"; ctx.fillStyle = "#ff8a1f"; ctx.font = `bold ${s ? 12 : 15}px system-ui`;
-  ctx.fillText("· UNA AVENTURA BAJO TIERRA ·", VW / 2, ty);
+  ctx.fillText("· UNA AVENTURA BAJO TIERRA ·", cx, ty);
   // el título con su resplandor se dibuja una sola vez y se guarda (la sombra difuminada es cara)
-  const tk = [LANG, VW, DPR, s, document.fonts ? document.fonts.status : ""].join("|"), th = s ? 96 : 150, tb = s ? 70 : 112;
+  const tk = [LANG, VW, DPR, s, ld, document.fonts ? document.fonts.status : ""].join("|"), th = s ? 96 : 150, tb = s ? 70 : 112;
   if (!titleCache || titleCache.key !== tk) {
     const c = document.createElement("canvas"); c.width = Math.ceil(VW * DPR); c.height = Math.ceil(th * DPR);
     const g = c.getContext("2d"); g.setTransform(DPR, 0, 0, DPR, 0, 0); g.textAlign = "center";
     const tg = g.createLinearGradient(0, tb - (s ? 42 : 74), 0, tb + (s ? 8 : 6)); tg.addColorStop(0, "#fff1cf"); tg.addColorStop(1, "#e8a33d");
     g.font = `900 ${s ? 42 : 78}px ${TITLE_FONT}`; g.fillStyle = tg; g.shadowColor = "rgba(255,138,31,0.5)"; g.shadowBlur = 30;
-    g.fillText("ABISMO BLASTER", VW / 2, tb, VW - 24);
+    g.fillText("ABISMO BLASTER", cx, tb, colW - 24);
     titleCache = { key: tk, c };
   }
   ctx.drawImage(titleCache.c, 0, ty + (s ? 52 : 84) - tb, VW, th);
   ctx.font = `900 ${s ? 42 : 78}px ${TITLE_FONT}`;
   if (!A11().motion) {
-    const tw = Math.min(VW - 24, ctx.measureText("ABISMO BLASTER").width), sx0 = VW / 2 - tw / 2, ph = (time * 0.35) % 1.6 - 0.3;
+    const tw = Math.min(colW - 24, ctx.measureText("ABISMO BLASTER").width), sx0 = cx - tw / 2, ph = (time * 0.35) % 1.6 - 0.3;
     const sg = ctx.createLinearGradient(sx0 + tw * ph - 60, 0, sx0 + tw * ph + 60, 0);
     sg.addColorStop(0, "rgba(255,255,255,0)"); sg.addColorStop(0.5, "rgba(255,255,255,0.75)"); sg.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = sg; ctx.fillText("ABISMO BLASTER", VW / 2, ty + (s ? 52 : 84), VW - 24); ctx.restore();
+    ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = sg; ctx.fillText("ABISMO BLASTER", cx, ty + (s ? 52 : 84), colW - 24); ctx.restore();
   }
-  const ld = land();
-  ctx.fillStyle = A11().contrast ? "#fff" : "rgba(243,230,200,0.75)"; ctx.font = `${s ? 13 : 16}px system-ui`;
-  if (!ld) ctx.fillText("5 mundos y 75 niveles: rescata a Chispa y descubre qué esconde el Corazón del Abismo.", VW / 2, ty + (s ? 80 : 120), VW - 24);
+  ctx.fillStyle = A11().contrast ? "#fff" : "rgba(243,230,200,0.75)"; ctx.font = `${s ? 12 : 16}px system-ui`;
+  const desc = "5 mundos y 75 niveles: rescata a Chispa y descubre qué esconde el Corazón del Abismo.";
+  let yy = ty + (s ? 78 : 120);
+  // en pantallas estrechas la frase va en dos líneas
+  for (const l of wrapText(tr(desc), colW - 28).slice(0, 2)) { ctx.fillText(l, cx, yy, colW - 24); yy += s ? 16 : 20; }
 
-  // lanzadores girando
-  if (!ld) {
-  const gsp = s ? Math.min(42, (VW - 40) / ORDER.length) : 62;
-  ctx.save(); ctx.translate(VW / 2 - gsp * (ORDER.length - 1) / 2, ty + (s ? 112 : 168));
-  const mt = A11().motion ? 0 : time;
-  const gx0 = VW / 2 - gsp * (ORDER.length - 1) / 2, gy0 = ty + (s ? 112 : 168);
+  // los 20 lanzadores girando: en una fila si caben y si no en dos
+  const mt = A11().motion ? 0 : time, perRow = (colW - 30) / ORDER.length >= 30 ? ORDER.length : Math.ceil(ORDER.length / 2);
+  const gsp = Math.min(s ? 44 : 62, (colW - 30) / perRow), gsc = clamp(gsp / 36, 0.9, 1.7), gRows = Math.ceil(ORDER.length / perRow), gy0 = yy + (s ? 14 : 22), rowH = s ? 30 : 40;
   ORDER.forEach((id, i) => {
-    const hov = Math.abs(mouse.x - (gx0 + i * gsp)) < gsp / 2 && Math.abs(mouse.y - gy0) < 22 && time - mouse.last < 3;
+    const r = Math.floor(i / perRow), c = i % perRow, nInRow = Math.min(perRow, ORDER.length - r * perRow);
+    const gx = cx - gsp * (nInRow - 1) / 2 + c * gsp, gy = gy0 + r * rowH;
+    const hov = Math.abs(mouse.x - gx) < gsp / 2 && Math.abs(mouse.y - gy) < 16 && time - mouse.last < 3;
     gunHov[i] = (gunHov[i] || 0) + ((hov ? 1 : 0) - (gunHov[i] || 0)) * Math.min(1, frameDt * 10);
     const h = gunHov[i], wave = Math.sin(mt * 2.4 + i * 0.8) * 3;
-    ctx.save(); ctx.translate(i * gsp, wave - h * 6); ctx.rotate(Math.sin(mt * 2 + i) * 0.15 * (1 - h) + Math.sin(time * 9) * 0.12 * h);
+    ctx.save(); ctx.translate(gx, gy + wave - h * 6); ctx.rotate(Math.sin(mt * 2 + i) * 0.15 * (1 - h) + Math.sin(time * 9) * 0.12 * h);
     if (h > 0.05) { ctx.shadowColor = WEAPONS[id].color; ctx.shadowBlur = 16 * h; }
-    drawGun(id, (s ? 1.15 : 1.7) * (1 + h * 0.35)); ctx.restore();
-    if (h > 0.3) { ctx.save(); ctx.globalAlpha = h; ctx.fillStyle = "#ffe2a8"; ctx.font = "bold 11px system-ui"; ctx.textAlign = "center"; ctx.fillText(WEAPONS[id].name, i * gsp, 26); ctx.restore(); }
+    drawGun(id, gsc * (1 + h * 0.35)); ctx.restore();
+    if (h > 0.3) { ctx.save(); ctx.globalAlpha = h; ctx.fillStyle = "#ffe2a8"; ctx.font = "bold 11px system-ui"; ctx.textAlign = "center"; ctx.fillText(WEAPONS[id].name, gx, gy + 26); ctx.restore(); }
   });
-  ctx.restore();
-  }
+  const gunsEnd = gy0 + (gRows - 1) * rowH + 18;
 
   const items = [];
   if (saved && (saved.level > 0 || (saved.prog && saved.prog.unlocked > 0))) items.push({ label: `🗺️ Continuar · ${levelLabel(saved.level)}`, fn: () => openMap() });
@@ -6098,20 +6117,62 @@ function drawTitle() {
   items.push({ label: "Opciones", fn: () => openSub("options") });
   items.push({ label: "Accesibilidad", fn: () => openSub("access") });
   items.push({ label: exitAsk > 0 ? "¿Seguro? Pulsa otra vez para salir" : "Salir del juego", fn: askExit, danger: true });
-  const y0 = ld ? ty + 72 : ty + (s ? 140 : 205), room = VH - y0 - (s ? 70 : 80);
-  const bh = Math.max(40, Math.min((s ? 40 : 46) * UIK(), room / items.length - 8));
-  if (ld) menuGrid(items, VW / 2, y0, VH - 12, Math.min(320, (VW - 60) / 2), 44, 8);
-  else menuList(items, VW / 2, y0, Math.min(340 * Math.min(UIK(), 1.15), VW - 40), bh, 8);
+  // menú: una columna centrada con botones más bajos en celular y tableta
+  const touchy = isTouch(), gap = ld ? 5 : s ? 6 : 8;
+  const mW = ld ? Math.min(250, VW * 0.36) : Math.min((phone ? 250 : touchy ? 290 : 340) * Math.min(UIK(), 1.15), VW - 80);
+  const mX = ld ? VW * 0.79 : VW / 2, y0 = ld ? 66 : gunsEnd + (s ? 12 : 18);
+  const room = (ld ? VH - 14 : VH - (s ? 120 : 90)) - y0;
+  const bh = clamp(room / items.length - gap, ld ? 28 : 32, (phone ? 36 : touchy ? 40 : 46) * UIK());
+  const fs = (ld || phone ? 13 : touchy ? 14 : 16) / UIK() * Math.min(UIK(), 1.25);
+  items.forEach(it => it.size = fs);
+  menuList(items, mX, y0, mW, bh, gap);
+  const menuEnd = y0 + items.length * (bh + gap);
 
-  const yb = ld ? VH + 99 : y0 + items.length * (bh + 8) + 18; // en horizontal no hay sitio para la ayuda
-  ctx.textAlign = "center"; ctx.fillStyle = A11().contrast ? "#fff" : "rgba(243,230,200,0.55)"; ctx.font = `${(s ? 12 : 14) * Math.min(UIK(), 1.2)}px system-ui`;
-  const lines = touch.on || isTouch()
-    ? ["Joystick a la izquierda · DISPARA a la derecha", "(arrastra DISPARA para apuntar) · ESQUIVA · HABILIDAD · ARMA"]
-    : ["F o clic: disparar  ·  ESPACIO: habilidad  ·  WASD: moverse  ·  SHIFT: esquivar",
-       "Ratón: apuntar y disparar  ·  1-9, 0, -: cambiar arma  ·  R: recargar  ·  P: pausa"];
-  lines.forEach((l, i) => ctx.fillText(l, VW / 2, yb + i * 20 * Math.min(UIK(), 1.2), VW - 24));
-  if (best > 0) { ctx.fillStyle = "#f5c542"; ctx.font = `bold ${s ? 12 : 14}px system-ui`; ctx.fillText(`Récord: ${best} puntos`, VW / 2, yb + 50); }
+  // ayuda de controles (en horizontal no hay sitio)
+  const yb = ld ? VH + 99 : menuEnd + 14;
+  if (!ld) {
+    ctx.textAlign = "center"; ctx.fillStyle = A11().contrast ? "#fff" : "rgba(243,230,200,0.55)"; ctx.font = `${(s ? 11 : 13) * Math.min(UIK(), 1.2)}px system-ui`;
+    const lines = touch.on || touchy
+      ? ["Joystick a la izquierda · DISPARA a la derecha", "(arrastra DISPARA para apuntar) · ESQUIVA · HABILIDAD · ARMA"]
+      : ["F o clic: disparar  ·  ESPACIO: habilidad  ·  WASD: moverse  ·  SHIFT: esquivar",
+         "Ratón: apuntar y disparar  ·  1-9, 0, -: cambiar arma  ·  R: recargar  ·  P: pausa"];
+    lines.forEach((l, i) => ctx.fillText(l, VW / 2, yb + i * 17 * Math.min(UIK(), 1.2), VW - 24));
+  }
+  // monstruos: a los lados del menú si hay sitio y desfilando abajo
+  const side = (VW - mW) / 2 - 30;
+  if (!ld && side >= 130) titleGuards(mX - mW / 2 - side / 2 - 15, mX + mW / 2 + side / 2 + 15, y0 + 20, menuEnd - 10, Math.min(1.6, side / 110));
+  const paradeY = ld ? VH - 22 : VH - 20, paradeTop = ld ? gunsEnd + 20 : yb + 44;
+  if (paradeY - paradeTop >= 34) titleParade(ld ? 10 : 0, ld ? VW * 0.6 : VW, paradeY, clamp((paradeY - paradeTop) / 36, 0.9, s ? 1.4 : 1.7));
   if (picker.open) drawPicker();
+}
+
+// monstruos de la pantalla de inicio: un desfile que camina por el suelo de la cueva
+const PARADE = ["s", "3", "t", "k", "x", "4", "e", "5", "o", "6", "f", "7", "q", "8", "n", "p"];
+function titleParade(x0, x1, yG, k) {
+  const span = x1 - x0, gapX = 62 * k, n = Math.ceil(span / gapX) + 1, mt = A11().motion ? 0 : time;
+  const px = P.x, py = P.y; P.x = x1 + 500; P.y = yG;
+  ctx.save(); ctx.beginPath(); ctx.rect(x0, yG - 70 * k, span, 80 * k); ctx.clip();
+  ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.fillRect(x0, yG + 4 * k, span, 3);
+  for (let i = 0; i < n; i++) {
+    const off = (mt * 34 * k + i * gapX) % (n * gapX), x = x0 - gapX + off, ty = PARADE[i % PARADE.length];
+    const m = fakeMon(ty, 0, 0, mt * 1.3 + i), d = MON[ty];
+    ctx.save(); ctx.translate(x, yG - d.r * k * (d.fly ? 2 : 0.9)); ctx.scale(k, k); m.alert = 1; drawMonsterRaw(m); ctx.restore();
+  }
+  ctx.restore(); P.x = px; P.y = py;
+}
+// a los lados del menú, en pantallas anchas: jefes y monstruos que vigilan
+const GUARDS_L = ["O", "k", "4", "6"], GUARDS_R = ["Q", "5", "7", "8"];
+function titleGuards(xl, xr, ya, yb, k) {
+  const mt = A11().motion ? 0 : time, px = P.x, py = P.y;
+  for (const [x, list] of [[xl, GUARDS_L], [xr, GUARDS_R]]) {
+    const step = (yb - ya) / list.length;
+    list.forEach((ty, i) => {
+      const y = ya + step * (i + 0.5) + Math.sin(mt * 1.6 + i + x) * 3, m = fakeMon(ty, 0, 0, mt + i * 0.7), kk = k * (MON[ty].boss ? 0.8 : 1.15);
+      P.x = VW / 2; P.y = y; // miran hacia el menú
+      ctx.save(); ctx.translate(x + Math.sin(mt * 0.8 + i * 2) * 10, y); ctx.scale(kk, kk); P.x = (VW / 2 - x) / kk; P.y = 0; m.alert = 1; drawMonsterRaw(m); ctx.restore();
+    });
+  }
+  P.x = px; P.y = py;
 }
 
 // ---------- Historieta del inicio y editor del personaje ----------
@@ -7705,7 +7766,7 @@ function navHit(x, y) {
 const homeHit = navHit;
 function navRects() {
   if (!showNav()) return [];
-  const ask = homeAsk > 0, h = 40, inGame = state === "play" || state === "pause";
+  const inGame = state === "play" || state === "pause", ask = homeAsk > 0, h = inGame && isTouch() ? 34 : 40;
   if (state === "title") {
     const kinds = ["sound", "lang", "access", ...(showFull() ? ["full"] : [])], bw = 44, gap = 8;
     const out = [{ kind: "back", x: 16, y: 16, w: VW < 360 ? 44 : 104, h, label: VW >= 360 }]; // en el título hay sitio para el texto
@@ -7714,25 +7775,25 @@ function navRects() {
   }
   if (inGame) {
     // en partida: arriba al centro; en pantallas táctiles el botón de pausa ya hace de «Volver»
-    const hw = ask ? 158 : 44, sv = inTutorial ? [] : ["save"];
+    const hw = ask ? 158 : h + 4, sv = inTutorial ? [] : ["save"];
     const fu = isTouch() && showFull();
     if (isTouch() && VW < 480) {
       const out = [{ kind: "home", x: 62, y: 80, w: hw, h, ask }];
-      if (sv.length && !ask) out.push({ kind: "save", x: 62 + hw + 8, y: 80, w: 44, h });
-      if (fu && !ask) out.push({ kind: "full", x: 62 + hw + 8 + (sv.length ? 52 : 0), y: 80, w: 44, h });
+      if (sv.length && !ask) out.push({ kind: "save", x: 62 + hw + 8, y: 80, w: h + 4, h });
+      if (fu && !ask) out.push({ kind: "full", x: 62 + hw + 8 + (sv.length ? h + 12 : 0), y: 80, w: h + 4, h });
       return out;
     }
     if (isTouch() && land()) {
       // en horizontal: todo en fila junto al panel de vida, después del botón de pausa
       let x = hudL() + 50; const out = [{ kind: "home", x, y: 14, w: hw, h, ask }]; x += hw + 8;
-      if (sv.length) { out.push({ kind: "save", x, y: 14, w: 44, h }); x += 52; }
-      if (fu) out.push({ kind: "full", x, y: 14, w: 44, h });
+      if (sv.length) { out.push({ kind: "save", x, y: 14, w: h + 4, h }); x += h + 12; }
+      if (fu) out.push({ kind: "full", x, y: 14, w: h + 4, h });
       return out;
     }
     if (isTouch()) {
       const out = [{ kind: "home", x: Math.max(8, VW / 2 - 30 - hw), y: 14, w: hw, h, ask }];
-      if (sv.length) out.push({ kind: "save", x: VW / 2 - 30 - hw - 52, y: 14, w: 44, h });
-      if (fu) out.push({ kind: "full", x: VW / 2 + 30, y: 14, w: 44, h });
+      if (sv.length) out.push({ kind: "save", x: VW / 2 - 30 - hw - h - 12, y: 14, w: h + 4, h });
+      if (fu) out.push({ kind: "full", x: VW / 2 + 30, y: 14, w: h + 4, h });
       return out.filter(b => b.x >= 6);
     }
     const bw = 44, n = 2 + sv.length, x0 = VW / 2 - (bw * (n - 1) + 8 * (n - 1) + hw) / 2;
@@ -7757,7 +7818,7 @@ function drawNavBtns() {
     ctx.fillStyle = b.ask ? "rgba(150,40,30,0.9)" : hc ? "#000" : hov ? "rgba(232,163,61,0.3)" : "rgba(20,16,24,0.78)";
     ctx.strokeStyle = b.ask ? "#ff8a6a" : hc ? "#fff" : hov ? "#e8a33d" : "rgba(243,230,200,0.28)"; ctx.lineWidth = hc ? 2 : 1.5;
     ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, b.h / 2); ctx.fill(); ctx.stroke();
-    const cx = b.x + 22, cy = b.y + b.h / 2 + 1;
+    const cx = b.label || b.ask ? b.x + 22 : b.x + b.w / 2, cy = b.y + b.h / 2 + 1;
     ctx.strokeStyle = ctx.fillStyle = "#fff3dc"; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.lineCap = "round";
     if (b.kind === "home") {
       // casita
