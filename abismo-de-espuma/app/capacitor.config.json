@@ -1,8 +1,0 @@
-{
-  "appId": "com.abismodeespuma.juego",
-  "appName": "Abismo de Espuma",
-  "webDir": "www",
-  "backgroundColor": "#1a0c06",
-  "android": { "backgroundColor": "#1a0c06" },
-  "ios": { "backgroundColor": "#1a0c06", "contentInset": "never" }
-}
