@@ -21,6 +21,8 @@ Dispara dardos de espuma, abre puertas y vence jefes en 4 mundos subterráneos.
 • El Bosque de las Sombras: casi no hay luz; sigue las setas brillantes.
 • El Corazón de Lava: la lava quema y los terremotos hacen caer rocas.
 
+👾 MONSTRUOS: babosas, ratas gigantes, armadillos que ruedan, muñecos de nieve, plantas carnívoras, diablillos que se teletransportan, slimes de magma que se dividen y muchos más.
+
 👹 JEFES ÉPICOS
 Llega al centro de su sala y el jefe saldrá del suelo. La puerta se cierra: ¡solo saldrás si lo vences! Cada uno tiene sus propios ataques: ondas de choque, lluvias de rocas, fuego, hielo y teletransporte.
 
@@ -63,6 +65,8 @@ Sparky, your puppy, has fallen through a crack into the abyss! Grab your foam da
 • The Ice Caverns: the floor is slippery, brake before the turns!
 • The Shadow Forest: there's hardly any light; follow the glowing mushrooms.
 • The Lava Heart: lava burns and earthquakes make rocks fall.
+
+👾 MONSTERS: slimes, giant rats, rolling armadillos, snowmen, carnivorous plants, teleporting imps, splitting magma slimes and many more.
 
 👹 EPIC BOSSES
 Reach the center of their room and the boss bursts out of the ground. The door slams shut: you only get out if you win! Each boss has its own attacks: shockwaves, rock rain, fire, ice and teleports.

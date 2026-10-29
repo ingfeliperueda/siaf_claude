@@ -37,6 +37,7 @@ const TS = 32;
 //  s babosa  t murciélago  k esqueleto  x araña  q gólem
 //  Q Reina Araña y O Rey Ogro (jefes: sueltan la llave dorada)      = agua profunda
 //  f fantasma  e escarabajo explosivo  o ojo vigía  n hongo venenoso  p topo excavador
+//  3 rata gigante  4 armadillo  5 muñeco de nieve  6 planta carnívora  7 diablillo  8 slime de magma
 //  S escopeta  M semiautomática  I rifle  A ametralladora  L ballesta  D lanzadiscos  W lanzaagua
 //  N lanzagranadas  C cañón lanza dardos  F lanzacohetes   + montón de balas
 //  h corazón  $ oro  m caja de dardos (+1 corazón máx.)
@@ -312,7 +313,7 @@ const WORLD_LEVEL_NAMES = [
   ["Las Grietas Ardientes", "El Río de Lava", "La Fragua Antigua", "Los Géiseres", "La Forja del Gólem",
    "Las Cenizas Eternas", "El Puente de Obsidiana", "La Cámara del Magma", "Las Puertas del Núcleo", "El Corazón del Abismo"],
 ];
-const WORLD_POOLS = ["tkqosp", "fnoxtke", "eqpkoxt"];
+const WORLD_POOLS = ["t5kqo5sp", "f6noxt6ke", "e7q8pk7o8xt"];
 const WORLD_BOSSES = [["Y", "K"], ["U", "X"], ["J", "Z"]];
 function genWorldLevel(w, n) {
   const PICKS = "SMIALDWNCF", boss = n === 4 || n === 9 ? WORLD_BOSSES[w][n === 4 ? 0 : 1] : null;
@@ -614,6 +615,12 @@ const MON = {
   o: { name: "Ojo vigía",  hp: 6,  speed: 28,  r: 12, dmg: 1, sight: 360, color: "#d9d2ff", pts: 30, fly: true },
   n: { name: "Hongo venenoso", hp: 4, speed: 0, r: 12, dmg: 0, sight: 150, color: "#9a4fd0", pts: 20, rooted: true, heavy: true },
   p: { name: "Topo excavador", hp: 5, speed: 90, r: 11, dmg: 1, sight: 280, color: "#8a6a4a", pts: 25 },
+  3: { name: "Rata gigante",  hp: 2,  speed: 135, r: 9,  dmg: 1, sight: 300, color: "#8a7a6a", pts: 12 },
+  4: { name: "Armadillo",     hp: 7,  speed: 55,  r: 12, dmg: 1, sight: 300, color: "#b08a5a", pts: 30 },
+  5: { name: "Muñeco de nieve", hp: 6, speed: 34, r: 12, dmg: 1, sight: 340, color: "#f4fbff", pts: 25 },
+  6: { name: "Planta carnívora", hp: 6, speed: 0, r: 13, dmg: 1, sight: 320, color: "#3fae4a", pts: 30, rooted: true, heavy: true },
+  7: { name: "Diablillo",     hp: 4,  speed: 85,  r: 10, dmg: 1, sight: 340, color: "#e0402a", pts: 30, fly: true },
+  8: { name: "Slime de magma", hp: 6, speed: 55,  r: 13, dmg: 1, sight: 260, color: "#ff6a1a", pts: 25 },
   Q: { name: "Reina Araña", specials: ["leap", "webring"], minion: "xxt", orb: "#e0c8ff",  hp: 45, speed: 78, r: 18, dmg: 2, sight: 420, color: "#7a1f3d", pts: 300, heavy: true, boss: true, fem: true,
        title: "REINA ARAÑA · MADRE DEL NIDO", intro: "¡La Reina Araña defiende su nido!", defeat: "¡Has derrotado a la Reina Araña! Ha soltado la llave dorada." },
   H: { name: "Gólem de Cristal", specials: ["slam", "spiral", "meteor"], orb: "#9fe8ff", hp: 140, speed: 64, r: 22, dmg: 2, sight: 480, color: "#7fd8f0", pts: 1500, heavy: true, boss: true, base: "O", minion: "qo", noKey: true,
@@ -990,7 +997,7 @@ function loadLevel(i, retry) {
   lv = { kills: 0, monTotal: 0, goldGot: 0, goldTotal: 0, secrets: 0, secretTotal: 0, time: 0 };
   const D = DIFF();
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const c = map[y][x], cx = x * TS + TS / 2, cy = y * TS + TS / 2, idx = y * W + x;
+    let c = map[y][x]; const cx = x * TS + TS / 2, cy = y * TS + TS / 2, idx = y * W + x;
     if (isWallChar(c)) { tiles[idx] = WALL; if (c === "T") torches.push({ x: cx, y: cy, ph: Math.random() * 9 }); continue; }
     if (c === "%") { tiles[idx] = CRACK; thp[idx] = 5; lv.secretTotal++; continue; }
     if (DOORS[c]) { tiles[idx] = DOOR; doorCol[idx] = DOORS[c]; continue; }
@@ -1011,6 +1018,10 @@ function loadLevel(i, retry) {
     if (c === "*") { decor.push({ kind: "crystal", x: cx, y: cy, ph: Math.random() * 6, hue: [275, 190, 320][(x + y) % 3] }); continue; }
     if (c === "P") { P.x = cx; P.y = cy; }
     else if (MON[c]) {
+      if (i < 10 && secretIdx === null && !inTutorial) {
+        if (c === "s" && i >= 1 && (x + y) % 3 === 0) c = "3";
+        else if (c === "x" && i >= 3 && (x + y) % 2 === 0) c = "4";
+      }
       const d = MON[c], hp = Math.max(1, Math.round(d.hp * D.mhp * 2) / 2);
       lv.monTotal++;
       monsters.push({ type: c, def: d, x: cx, y: cy, r: d.r, hp, maxHp: hp, t: Math.random() * 10, flash: 0, cd: rand(0.5, 1.5), alert: 0,
@@ -2599,6 +2610,7 @@ function damageMon(m, d, ang, silent, quiet, critC = 0.08) {
   let crit = false;
   if (!silent && Math.random() < critC) { d *= 2; crit = true; }
   if (m.stun > 0) d *= 1.5;
+  if (m.roll) { d *= 0.25; if (!silent && Math.random() < 0.5) floatText(m.x, m.y - m.r, "¡clink!", "#e8d8b0", 10); }
   if (m.tired > 0) { d *= 1.6; if (Math.random() < 0.3) floatText(m.x + rand(-10, 10), m.y - m.r, "¡x1.6!", "#ffe27a", 12); }
   m.hp -= d; m.flash = 0.1; m.sq = m.def.boss ? 0.18 : 0.4;
   if (hasPower("ice") && !m.def.boss) { m.stun = Math.max(m.stun || 0, 0.35); if (Math.random() < 0.5) parts.push({ x: m.x + rand(-6, 6), y: m.y + rand(-6, 6), vx: rand(-20, 20), vy: rand(-30, 0), life: 0.4, max: 0.4, c: "#cfefff", s: 2, glow: true }); }
@@ -2617,6 +2629,10 @@ const fmt = d => (Math.round(d * 10) / 10).toString().replace(".", ",");
 function killMon(m) {
   gameDirty = true;
   if (m.type === "e" && !m.boomed) beetleBoom(m);
+  if (m.type === "8" && !m.mini) for (const s0 of [-1, 1]) {
+    spawnMon("8", m.x + s0 * 10, m.y, s0 * 160, 0); const c = monsters[monsters.length - 1];
+    Object.assign(c, { mini: true, r: 8, hp: 1.5, maxHp: 1.5, alert: 5, cd: 0.5 });
+  }
   dying.push({ m: Object.assign({}, m, { hp: 1, exclaim: 0, stun: 0, sq: 0.5 }), t: 0, dur: m.def.boss ? 1.1 : 0.38, spin: Math.random() < 0.5 ? -1 : 1 });
   if (m.def.boss) {
     zoomPunch = Math.max(zoomPunch, 0.14); slowmo = 1.4;
@@ -3051,6 +3067,57 @@ function updateMonsters(dt) {
           }
         } else { chase(1); if (d < 72 && m.cd <= 0) { m.slam = 0.7; m.cd = 2.4 / D.rate; } }
       } else wander(0.2);
+    } else if (m.type === "3") {
+      // rata: corre en zigzag y acelera al final
+      if (m.alert > 0) { chase(d < 120 ? 1.45 : 1); const j = Math.sin(m.t * 11) * 0.55, a = vx, b = vy; vx = a - b * j; vy = b + a * j; } else wander(0.7);
+    } else if (m.type === "4") {
+      // armadillo: se hace una bola y rueda hacia ti rebotando en las paredes (enrollado, los dardos casi no le hacen nada)
+      if (m.alert > 0) {
+        if (m.ph === "roll") { m.pt -= dt; vx = m.cvx; vy = m.cvy; if (Math.random() < dt * 20) parts.push({ x: m.x, y: m.y + 8, vx: rand(-30, 30), vy: rand(-30, -5), life: 0.3, max: 0.3, c: "rgba(150,120,90,0.6)", s: 2 }); if (m.pt <= 0) { m.ph = "rest"; m.pt = 0.9; m.roll = false; } }
+        else if (m.ph === "wind") { m.pt -= dt; m.sq = 0.35; if (m.pt <= 0) { m.ph = "roll"; m.pt = 1.3; m.roll = true; const ls = 300 * D.spd; m.cvx = ux * ls; m.cvy = uy * ls; m.bnc = 3; SFX.whirr(); } }
+        else if (m.ph === "rest") { m.pt -= dt; if (m.pt <= 0) m.ph = "idle"; }
+        else { chase(0.8); if (m.sees && d < 240 && m.cd <= 0) { m.ph = "wind"; m.pt = 0.55; m.cd = 2.6 / D.rate; } }
+      } else wander(0.3);
+    } else if (m.type === "5" || m.type === "6") {
+      // muñeco de nieve (bolas de nieve) y planta carnívora (tres semillas en abanico): disparan de lejos
+      const snow = m.type === "5";
+      if (m.alert > 0) {
+        if (m.wind > 0) {
+          m.wind -= dt; m.sq = 0.2;
+          if (m.wind <= 0) {
+            const ps = (snow ? 190 : 230) * D.proj, a0 = Math.atan2(dy, dx);
+            for (const o of snow ? [0] : [-0.28, 0, 0.28]) projs.push({ x: m.x, y: m.y - 4, vx: Math.cos(a0 + o) * ps, vy: Math.sin(a0 + o) * ps, r: snow ? 5 : 3.5, dmg: 1, owner: "m", kind: snow ? "snow" : "seed", life: 2.4, t: 0 });
+            snow ? SFX.thunk() : SFX.puff(m);
+          }
+        } else {
+          if (snow) { if (!m.sees) chase(1); else if (d < 150) { vx = -ux * sp; vy = -uy * sp; } else if (d > 260) chase(1); }
+          if (m.sees && m.cd <= 0) { m.wind = snow ? 0.5 : 0.4; m.cd = rand(snow ? 1.8 : 1.6, 2.6) / D.rate; }
+        }
+      } else if (snow) wander(0.25);
+    } else if (m.type === "7") {
+      // diablillo: desaparece y aparece a tu lado, y te lanza una bola de fuego
+      if (m.alert > 0) {
+        if (m.wind > 0) {
+          m.wind -= dt;
+          if (m.wind <= 0) { const ps = 240 * D.proj; projs.push({ x: m.x, y: m.y, vx: ux * ps, vy: uy * ps, r: 5, dmg: 1, owner: "m", kind: "orb", col: "#ff5a2a", life: 2.2, t: 0 }); SFX.puff(m); }
+        } else {
+          vx = -uy * sp * 0.8 * Math.sign(Math.sin(m.t * 0.9) || 1); vy = ux * sp * 0.8 * Math.sign(Math.sin(m.t * 0.9) || 1);
+          if (m.cd <= 0) {
+            for (let k = 0; k < 12; k++) {
+              const a = Math.random() * 7, rr = rand(90, 150), nx = P.x + Math.cos(a) * rr, ny = P.y + Math.sin(a) * rr;
+              if (!solid(Math.floor(nx / TS), Math.floor(ny / TS)) && T(Math.floor(nx / TS), Math.floor(ny / TS)) !== LAVA && los(nx, ny, P.x, P.y)) {
+                for (let i = 0; i < 10; i++) parts.push({ x: m.x + rand(-8, 8), y: m.y + rand(-8, 8), vx: rand(-40, 40), vy: rand(-60, 0), life: 0.4, max: 0.4, c: "#ff8a3a", s: 2, glow: true });
+                m.x = nx; m.y = ny; m.spawnT = 0.3; m.wind = 0.45; break;
+              }
+            }
+            m.cd = rand(2.4, 3.4) / D.rate;
+          }
+        }
+      } else wander(0.4);
+    } else if (m.type === "8") {
+      // slime de magma: salta hacia ti; al morir se parte en dos más pequeños
+      if (m.alert > 0) { const k = 0.5 + 0.5 * Math.max(0, Math.sin(m.t * (m.mini ? 7 : 4.5))); chase(k * (m.mini ? 1.6 : 1.25)); } else wander(0.3);
+      if (Math.random() < dt * 3) parts.push({ x: m.x + rand(-m.r, m.r) * 0.5, y: m.y - m.r * 0.5, vx: 0, vy: -30, life: 0.4, max: 0.4, c: "#ffb040", s: 1.6, glow: true });
     } else if ((m.def.base || m.type) === "O") updateBoss(m, dt, d, dx, dy, ux, uy, sp, D, chase, (a, b) => { vx = a; vy = b; });
     else if ((m.def.base || m.type) === "Q") updateQueen(m, dt, d, dx, dy, sp, D, chase, (a, b) => { vx = a; vy = b; });
 
@@ -3066,6 +3133,11 @@ function updateMonsters(dt) {
       showToast(`¡${m.def.fem ? "La" : "El"} ${m.def.name} está aturdid${m.def.fem ? "a" : "o"}! ¡Ataca!`, 2);
     }
     if (m.type === "x" && m.ph === "lunge" && blocked) { m.ph = "rest"; m.pt = 0.6; }
+    if (m.type === "4" && m.ph === "roll" && blocked) {
+      // la bola rebota contra la pared
+      if (--m.bnc < 0) { m.ph = "rest"; m.pt = 1.2; m.roll = false; m.stun = 0.6; }
+      else { const a = Math.atan2(P.y - m.y, P.x - m.x) + rand(-0.5, 0.5), v = Math.hypot(m.cvx, m.cvy); m.cvx = Math.cos(a) * v; m.cvy = Math.sin(a) * v; SFX.bounce(); shake = Math.max(shake, 2 * near(m.x, m.y)); }
+    }
     m.kx *= Math.pow(0.001, dt); m.ky *= Math.pow(0.001, dt);
     if (!m.def.fly && mt === SPIKE && spikeUp(mtx, mty) && m.spikeCd <= 0 && canHit(m)) { m.spikeCd = 0.8; damageMon(m, 1, rand(0, 6), true); }
     if (d < m.r + P.r && m.stun <= 0 && m.def.dmg > 0 && canHit(m)) hurtPlayer(m.def.dmg, m.x, m.y);
@@ -4835,6 +4907,95 @@ function drawBossBody(m, fl, look) {
     }
   }
 }
+// dibujos de los enemigos nuevos
+const MON_ART = {
+  3(m, fl, look, eyes) { // rata gigante
+    ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(look);
+    const run = Math.sin(m.t * 22) * 2;
+    ctx.strokeStyle = fl ? "#fff" : "#d8a0a0"; ctx.lineWidth = 1.6; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(-9, 0); ctx.quadraticCurveTo(-15, Math.sin(m.t * 8) * 5, -20, Math.sin(m.t * 8 + 1) * 3); ctx.stroke();
+    ctx.fillStyle = fl ? "#fff" : "#4a3a30"; for (const [lx, ly] of [[4, -6], [4, 6], [-4, -6], [-4, 6]]) { ctx.beginPath(); ctx.arc(lx + (ly > 0 ? run : -run), ly, 2, 0, 7); ctx.fill(); }
+    const g = ctx.createRadialGradient(-2, -3, 1, 0, 0, 11); g.addColorStop(0, fl ? "#fff" : "#a89888"); g.addColorStop(1, fl ? "#fff" : "#5a4a3a");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(-1, 0, 10, 6.5, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(6, -4.5); ctx.quadraticCurveTo(14, -1.5, 15, 0); ctx.quadraticCurveTo(14, 1.5, 6, 4.5); ctx.fill();
+    ctx.fillStyle = "#e8a0a8"; for (const sy of [-1, 1]) { ctx.beginPath(); ctx.arc(5, sy * 5.5, 2.6, 0, 7); ctx.fill(); }
+    ctx.fillStyle = "#ff3a3a"; for (const sy of [-1, 1]) { ctx.beginPath(); ctx.arc(9.5, sy * 2.4, 1.3, 0, 7); ctx.fill(); }
+    ctx.fillStyle = "#1a1010"; ctx.beginPath(); ctx.arc(15, 0, 1.3, 0, 7); ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.fillRect(13, -1.4, 1.2, 1); ctx.fillRect(13, 0.4, 1.2, 1);
+    ctx.restore();
+  },
+  4(m, fl, look, eyes) { // armadillo: de pie o hecho una bola que gira
+    if (m.roll || m.ph === "wind") {
+      const k = m.ph === "wind" ? 0.9 : 1;
+      ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(m.roll ? m.t * 18 : Math.sin(m.t * 30) * 0.2);
+      const g = ctx.createRadialGradient(-3, -4, 1, 0, 0, 12 * k); g.addColorStop(0, fl ? "#fff" : "#e0c090"); g.addColorStop(1, fl ? "#fff" : "#7a5a30");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 12 * k, 0, 7); ctx.fill();
+      ctx.strokeStyle = "rgba(60,40,20,0.7)"; ctx.lineWidth = 1.3; for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.arc(0, 0, 12 * k, -1.2 + i * 0.12, 1.2 + i * 0.12); ctx.stroke(); ctx.beginPath(); ctx.moveTo(i * 4.5, -11 * k); ctx.quadraticCurveTo(i * 5.5, 0, i * 4.5, 11 * k); ctx.stroke(); }
+      gloss(0, 0, 12 * k, 0.3); ctx.restore(); return;
+    }
+    ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(look);
+    ctx.fillStyle = fl ? "#fff" : "#6a4a2a"; for (const [lx, ly] of [[5, -9], [5, 9], [-5, -9], [-5, 9]]) { ctx.beginPath(); ctx.arc(lx + Math.sin(m.t * 10 + lx) * 1.5, ly, 2.4, 0, 7); ctx.fill(); }
+    ctx.beginPath(); ctx.moveTo(-10, -2); ctx.lineTo(-16, 0); ctx.lineTo(-10, 2); ctx.fill();
+    const g = ctx.createLinearGradient(0, -10, 0, 10); g.addColorStop(0, fl ? "#fff" : "#e0c090"); g.addColorStop(1, fl ? "#fff" : "#8a6a3a");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(-1, 0, 11, 9.5, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = "rgba(60,40,20,0.6)"; ctx.lineWidth = 1.1; for (const bx of [-6, -2, 2, 6]) { ctx.beginPath(); ctx.moveTo(bx, -9); ctx.quadraticCurveTo(bx + 1.5, 0, bx, 9); ctx.stroke(); }
+    ctx.fillStyle = fl ? "#fff" : "#c8a070"; ctx.beginPath(); ctx.moveTo(8, -5); ctx.quadraticCurveTo(17, -2, 18, 0); ctx.quadraticCurveTo(17, 2, 8, 5); ctx.fill();
+    ctx.fillStyle = "#c8a070"; for (const sy of [-1, 1]) { ctx.beginPath(); ctx.ellipse(9, sy * 5.5, 1.6, 3, sy * 0.5, 0, 7); ctx.fill(); }
+    ctx.fillStyle = "#1a1010"; for (const sy of [-1, 1]) { ctx.beginPath(); ctx.arc(12.5, sy * 2.6, 1.2, 0, 7); ctx.fill(); }
+    gloss(-1, 0, 10, 0.2); ctx.restore();
+  },
+  5(m, fl, look, eyes) { // muñeco de nieve con bufanda y sombrero
+    const b = Math.sin(m.t * 3) * 0.8;
+    const ball = (y, r) => { const g = ctx.createRadialGradient(m.x - r * 0.35, y - r * 0.4, 1, m.x, y, r); g.addColorStop(0, "#ffffff"); g.addColorStop(1, fl ? "#fff" : "#b8d0e8"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(m.x, y, r, 0, 7); ctx.fill(); };
+    ball(m.y + 4, 11); ball(m.y - 7 + b, 8);
+    ctx.fillStyle = "#3a3a4a"; for (const yy of [m.y + 1, m.y + 6]) { ctx.beginPath(); ctx.arc(m.x, yy, 1.3, 0, 7); ctx.fill(); }
+    // brazos de rama, uno con la bola de nieve preparada
+    ctx.strokeStyle = "#6a4a2a"; ctx.lineWidth = 1.6; ctx.lineCap = "round";
+    const up = m.wind > 0 ? -6 : 0;
+    ctx.beginPath(); ctx.moveTo(m.x - 9, m.y); ctx.lineTo(m.x - 17, m.y - 6); ctx.moveTo(m.x + 9, m.y); ctx.lineTo(m.x + 17, m.y - 6 + up); ctx.stroke();
+    if (m.wind > 0) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(m.x + 18, m.y - 8 + up, 4, 0, 7); ctx.fill(); }
+    ctx.fillStyle = fl ? "#fff" : "#e5484d"; ctx.fillRect(m.x - 8, m.y - 1 + b, 16, 3); ctx.fillRect(m.x + 3, m.y + 1 + b, 3, 6);
+    ctx.fillStyle = "#1a1a24"; ctx.fillRect(m.x - 6, m.y - 15 + b, 12, 2); ctx.fillRect(m.x - 4, m.y - 22 + b, 8, 7);
+    eyes(Math.cos(look) * 1.2, -8 + b, 2.8, 1.4, "#1a1a24", "#1a1a24");
+    ctx.fillStyle = "#ff8a1f"; ctx.beginPath(); ctx.moveTo(m.x, m.y - 6 + b); ctx.lineTo(m.x + Math.cos(look) * 7, m.y - 5 + b + Math.sin(look) * 2); ctx.lineTo(m.x, m.y - 4 + b); ctx.fill();
+  },
+  6(m, fl, look, eyes) { // planta carnívora: tallo, hojas y una cabeza con dientes que se abre
+    const open = m.wind > 0 ? 0.9 : 0.3 + 0.15 * Math.sin(m.t * 3);
+    ctx.fillStyle = fl ? "#fff" : "#2a7a30";
+    for (const s0 of [-1, 1]) { ctx.beginPath(); ctx.ellipse(m.x + s0 * 9, m.y + 7, 9, 3.5, s0 * 0.4, 0, 7); ctx.fill(); }
+    ctx.strokeStyle = fl ? "#fff" : "#2a7a30"; ctx.lineWidth = 3.5; ctx.beginPath(); ctx.moveTo(m.x, m.y + 8); ctx.quadraticCurveTo(m.x - 4 + Math.sin(m.t * 2) * 2, m.y, m.x, m.y - 4); ctx.stroke();
+    ctx.save(); ctx.translate(m.x, m.y - 6); ctx.rotate(look);
+    for (const s0 of [-1, 1]) {
+      ctx.save(); ctx.rotate(s0 * open * 0.6);
+      const g = ctx.createLinearGradient(0, 0, 0, s0 * 9); g.addColorStop(0, fl ? "#fff" : "#e5484d"); g.addColorStop(1, fl ? "#fff" : "#8a1a2a");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(-3, 0); ctx.quadraticCurveTo(6, s0 * 11, 14, 0); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#ffe8b0"; for (let i = 0; i < 4; i++) { const tx = 1 + i * 3.2; ctx.beginPath(); ctx.moveTo(tx, 0); ctx.lineTo(tx + 1.2, s0 * -2.6); ctx.lineTo(tx + 2.4, 0); ctx.fill(); }
+      ctx.fillStyle = "rgba(255,255,255,0.7)"; for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(3 + i * 3.5, s0 * 4.5, 0.9, 0, 7); ctx.fill(); }
+      ctx.restore();
+    }
+    ctx.restore();
+  },
+  7(m, fl, look, eyes) { // diablillo con cuernos, alas y cola en punta
+    const fy = Math.sin(m.t * 5) * 2, y = m.y + fy;
+    ctx.fillStyle = fl ? "#fff" : "#7a1a12";
+    for (const s0 of [-1, 1]) { ctx.beginPath(); ctx.moveTo(m.x + s0 * 5, y - 2); ctx.quadraticCurveTo(m.x + s0 * 16, y - 12 - Math.sin(m.t * 18) * 4, m.x + s0 * 18, y + 1); ctx.quadraticCurveTo(m.x + s0 * 12, y - 2, m.x + s0 * 5, y + 3); ctx.fill(); }
+    ctx.strokeStyle = fl ? "#fff" : "#a0201a"; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(m.x, y + 8); ctx.quadraticCurveTo(m.x - 8, y + 14, m.x - 4 + Math.sin(m.t * 4) * 3, y + 17); ctx.stroke();
+    ctx.fillStyle = fl ? "#fff" : "#a0201a"; ctx.beginPath(); ctx.moveTo(m.x - 6 + Math.sin(m.t * 4) * 3, y + 15); ctx.lineTo(m.x - 2 + Math.sin(m.t * 4) * 3, y + 19); ctx.lineTo(m.x - 1 + Math.sin(m.t * 4) * 3, y + 15); ctx.fill();
+    const g = ctx.createRadialGradient(m.x - 3, y - 3, 1, m.x, y, 10); g.addColorStop(0, fl ? "#fff" : "#ff7a5a"); g.addColorStop(1, fl ? "#fff" : "#a0201a");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(m.x, y, 9, 0, 7); ctx.fill();
+    ctx.fillStyle = "#2a0a08"; for (const s0 of [-1, 1]) { ctx.beginPath(); ctx.moveTo(m.x + s0 * 4, y - 7); ctx.quadraticCurveTo(m.x + s0 * 8, y - 13, m.x + s0 * 6, y - 16); ctx.quadraticCurveTo(m.x + s0 * 5, y - 11, m.x + s0 * 1.5, y - 8); ctx.fill(); }
+    eyes(Math.cos(look) * 1.5, -2 + fy, 3.2, 2.2, "#ffe24a", "#1a0800");
+    ctx.strokeStyle = "#2a0a08"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(m.x, y + 2, 4, 0.3, Math.PI - 0.3); ctx.stroke();
+    if (m.wind > 0) { ctx.fillStyle = "#ffb040"; ctx.beginPath(); ctx.arc(m.x + Math.cos(look) * 12, y + Math.sin(look) * 12, 3 + (0.45 - m.wind) * 8, 0, 7); ctx.fill(); }
+  },
+  8(m, fl, look, eyes) { // slime de magma: gota brillante con corteza y burbujas
+    const r = m.r, sq = Math.sin(m.t * (m.mini ? 7 : 4.5)) * 0.12, rx = r * (1 + sq), ry = r * (0.9 - sq);
+    const g = ctx.createRadialGradient(m.x - rx * 0.3, m.y - ry * 0.4, 1, m.x, m.y, r * 1.1); g.addColorStop(0, fl ? "#fff" : "#fff0a0"); g.addColorStop(0.45, fl ? "#fff" : "#ff8a1a"); g.addColorStop(1, fl ? "#fff" : "#a02a08");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(m.x, m.y + 2, rx, ry, 0, Math.PI, 0); ctx.lineTo(m.x + rx, m.y + 5);
+    for (let i = 0; i <= 5; i++) ctx.lineTo(m.x + rx - i * rx * 0.4, m.y + 5 + (i % 2 ? 2 : 0)); ctx.closePath(); ctx.fill();
+    if (!fl) { ctx.fillStyle = "rgba(50,20,10,0.55)"; for (const [cx, cy, cr] of [[-0.4, -0.3, 0.22], [0.35, -0.45, 0.18], [0.1, 0.1, 0.15]]) { ctx.beginPath(); ctx.arc(m.x + cx * r, m.y + cy * r, cr * r, 0, 7); ctx.fill(); } gloss(m.x, m.y, r, 0.25); }
+    eyes(Math.cos(look) * 1.5, -r * 0.15, r * 0.3, Math.max(1.6, r * 0.18), "#fff6c0", "#3a0a00");
+  },
+};
 function drawMonsterRaw(m) {
   const fl = m.flash > 0;
   const hop = m.type === "s" ? Math.max(0, Math.sin(m.t * 5)) * (m.alert > 0 ? 5 : 1.5) : (m.type === "k" || m.type === "q") ? Math.abs(Math.sin(m.t * (m.type === "q" ? 4 : 7))) * 1.5 : 0;
@@ -5007,6 +5168,8 @@ function drawMonsterRaw(m) {
     for (const sx of [-3.5, 3.5]) { ctx.beginPath(); ctx.ellipse(m.x + sx + Math.cos(look) * 0.8, m.y - 4 + fy, 2, 3, 0, 0, 7); ctx.fill(); }
     ctx.beginPath(); ctx.ellipse(m.x, m.y + 1.5 + fy, 1.8, 2.4 + Math.sin(m.t * 4) * 0.6, 0, 0, 7); ctx.fill();
     ctx.restore();
+  } else if (MON_ART[m.type]) {
+    MON_ART[m.type](m, fl, look, eyes);
   } else if (m.type === "e") {
     const lw = Math.sin(m.t * 30) * 1.5;
     ctx.strokeStyle = "#2a1408"; ctx.lineWidth = 1.2;
@@ -5149,6 +5312,12 @@ function drawProj(p) {
     ctx.rotate(time * 6); ctx.strokeStyle = "rgba(240,240,250,0.85)"; ctx.lineWidth = 1;
     ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * 8, Math.sin(a) * 8); } ctx.stroke();
     ctx.fillStyle = "rgba(240,240,250,0.9)"; ctx.beginPath(); ctx.arc(0, 0, 4, 0, 7); ctx.fill();
+  } else if (p.kind === "snow") {
+    const g = ctx.createRadialGradient(-1.5, -1.5, 0.5, 0, 0, 5); g.addColorStop(0, "#ffffff"); g.addColorStop(1, "#b8d8f0");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 5, 0, 7); ctx.fill();
+  } else if (p.kind === "seed") {
+    ctx.fillStyle = "#6a3a1a"; ctx.beginPath(); ctx.ellipse(0, 0, 4.5, 2.6, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = "#9be15d"; ctx.beginPath(); ctx.ellipse(-1, -0.8, 2, 1, 0, 0, 7); ctx.fill();
   } else if (p.kind === "bone") {
     ctx.rotate(time * 15); ctx.fillStyle = "#efe8d2"; ctx.fillRect(-5, -1.5, 10, 3);
     ctx.beginPath(); ctx.arc(-5, 0, 2.5, 0, 7); ctx.arc(5, 0, 2.5, 0, 7); ctx.fill();
@@ -6699,6 +6868,13 @@ const TR_ROWS = [
 ["Bumerán", "Boomerang", "Bumerangue", "Boomerang", "Bumerang", "Boomerang"],
 ["Lanzaburbujas", "Bubble blaster", "Lança-bolhas", "Lance-bulles", "Blasenwerfer", "Lanciabolle"],
 ["Rayo", "Lightning", "Raio", "Éclair", "Blitz", "Fulmine"],
+["Rata gigante", "Giant rat", "Rato gigante", "Rat géant", "Riesenratte", "Ratto gigante"],
+["Armadillo", "Armadillo", "Tatu", "Tatou", "Gürteltier", "Armadillo"],
+["Muñeco de nieve", "Snowman", "Boneco de neve", "Bonhomme de neige", "Schneemann", "Pupazzo di neve"],
+["Planta carnívora", "Carnivorous plant", "Planta carnívora", "Plante carnivore", "Fleischfressende Pflanze", "Pianta carnivora"],
+["Diablillo", "Imp", "Diabinho", "Diablotin", "Teufelchen", "Diavoletto"],
+["Slime de magma", "Magma slime", "Gosma de magma", "Slime de magma", "Magmaschleim", "Slime di magma"],
+["¡clink!", "clink!", "clink!", "cling !", "kling!", "clink!"],
 ["Lanzagranadas", "Grenade launcher", "Lança-granadas", "Lance-grenades", "Granatwerfer", "Lanciagranate"],
 ["Cañón lanza dardos", "Dart cannon", "Canhão de dardos", "Canon à fléchettes", "Pfeilkanone", "Cannone lanciadardi"],
 ["Lanzacohetes", "Rocket launcher", "Lança-foguetes", "Lance-roquettes", "Raketenwerfer", "Lanciarazzi"],
