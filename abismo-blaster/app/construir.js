@@ -48,7 +48,7 @@ fs.copyFileSync(path.join(dir, "privacidad.html"), path.join(www, "privacidad.ht
 fs.writeFileSync(path.join(www, "manifest.webmanifest"), JSON.stringify({
   name: NOMBRE, short_name: CORTO, lang: "es", start_url: "./index.html", scope: "./",
   display: "fullscreen", orientation: "any", background_color: COLOR, theme_color: COLOR,
-  description: "Aventura bajo tierra con lanzadores de dardos de espuma: 4 mundos, 40 niveles, jefes y secretos.",
+  description: "Aventura bajo tierra con lanzadores de dardos de espuma: 5 mundos, 75 niveles, jefes y 10 niveles secretos.",
   categories: ["games", "kids"],
   icons: [
     { src: "iconos/icono-192.png", sizes: "192x192", type: "image/png" },

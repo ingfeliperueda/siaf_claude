@@ -9,17 +9,18 @@ Textos listos para copiar en Google Play, App Store o itch.io. Los límites de c
 **Nombre de la app** (máx. 30): Abismo Blaster
 
 **Descripción breve** (máx. 80):
-Dispara dardos de espuma, abre puertas y vence jefes en 4 mundos subterráneos.
+Dispara dardos de espuma, abre puertas y vence jefes en 5 mundos subterráneos.
 
 **Descripción completa** (máx. 4000):
 
 ¡Chispa, tu perrita, ha caído por una grieta hacia el abismo! Coge tu lanzador de dardos de espuma, ponte el casco de minero y baja a rescatarla.
 
-🌍 4 MUNDOS, 40 NIVELES
+🌍 5 MUNDOS, 75 NIVELES
 • Las Profundidades: encuentra las llaves de colores y abre las puertas.
 • Las Cavernas de Hielo: el suelo resbala, ¡frena antes de las curvas!
 • El Bosque de las Sombras: casi no hay luz; sigue las setas brillantes.
 • El Corazón de Lava: la lava quema y los terremotos hacen caer rocas.
+• La Fábrica Olvidada: cintas transportadoras, robots y una Gran Máquina.
 
 👾 MONSTRUOS: babosas, ratas gigantes, armadillos que ruedan, muñecos de nieve, plantas carnívoras, diablillos que se teletransportan, slimes de magma que se dividen y muchos más.
 
@@ -30,7 +31,7 @@ Llega al centro de su sala y el jefe saldrá del suelo. La puerta se cierra: ¡s
 Pistola, pistola doble, abanico, rebotador, congelador, ráfaga, francotirador, bumerán, lanzaburbujas, rayo, escopeta de bombeo, ametralladora de cañones giratorios, ballesta, lanzadiscos, lanzaagua, lanzagranadas, cañón, lanzacohetes y más. Cada uno con su munición y su recarga.
 
 🗝️ NIVELES SECRETOS
-Rompe las paredes agrietadas para encontrar salas de escape con retos, minijefes y poderes especiales. ¿Te atreves con el nivel supersecreto en dificultad Pesadilla?
+Dos por mundo: rompe las paredes agrietadas (o elígelos en el mapa) y resuelve puzles de memoria, engranajes, luces y dianas. Cada uno tiene un minijefe y un poder especial. ¿Te atreves con el nivel supersecreto en dificultad Pesadilla?
 
 🗺️ MAPA DE LOS MUNDOS
 Vuelve a cualquier nivel para conseguir las 3 estrellas.
@@ -54,17 +55,18 @@ El juego no recoge ningún dato personal y funciona sin internet.
 **App name** (max 30): Abyss Blaster
 
 **Short description** (max 80):
-Fire foam darts, open doors and beat bosses across 4 underground worlds.
+Fire foam darts, open doors and beat bosses across 5 underground worlds.
 
 **Full description** (max 4000):
 
 Sparky, your puppy, has fallen through a crack into the abyss! Grab your foam dart blaster, put on your miner's helmet and go down to rescue her.
 
-🌍 4 WORLDS, 40 LEVELS
+🌍 5 WORLDS, 75 LEVELS
 • The Depths: find the colored keys and open the doors.
 • The Ice Caverns: the floor is slippery, brake before the turns!
 • The Shadow Forest: there's hardly any light; follow the glowing mushrooms.
 • The Lava Heart: lava burns and earthquakes make rocks fall.
+• The Forgotten Factory: conveyor belts, robots and a Great Machine.
 
 👾 MONSTERS: slimes, giant rats, rolling armadillos, snowmen, carnivorous plants, teleporting imps, splitting magma slimes and many more.
 
@@ -75,7 +77,7 @@ Reach the center of their room and the boss bursts out of the ground. The door s
 Pistol, double pistol, fan blaster, ricochet blaster, freezer, burst blaster, sniper, boomerang, bubble blaster, lightning, pump shotgun, spinning-barrel machine gun, crossbow, disc launcher, water blaster, grenade launcher, cannon, rocket launcher and more, each with its own ammo and reload.
 
 🗝️ SECRET LEVELS
-Break cracked walls to find escape rooms with puzzles, mini-bosses and special powers. Do you dare try the super secret level on Nightmare difficulty?
+Two per world: break cracked walls (or pick them on the map) and solve memory, gear, light and target puzzles. Each has a mini-boss and a special power. Do you dare try the super secret level on Nightmare difficulty?
 
 🗺️ WORLD MAP
 Replay any level to earn all 3 stars.

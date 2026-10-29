@@ -55,7 +55,7 @@ const TS = 32;
 //  N lanzagranadas  C cañón lanza dardos  F lanzacohetes   + montón de balas
 //  h corazón  $ oro  m caja de dardos (+1 corazón máx.)
 //  c caja rompible   ^ pinchos   w telaraña (frena)   ~ charco   u seta luminosa   * cristal
-const LEVELS = [
+const HAND_LEVELS = [
   {
     name: "Las Galerías Olvidadas",
     map: [
@@ -325,13 +325,27 @@ const WORLD_LEVEL_NAMES = [
    "El Pantano Negro", "Las Ruinas Olvidadas", "El Laberinto de Sombras", "La Puerta Oscura", "El Trono de las Sombras"],
   ["Las Grietas Ardientes", "El Río de Lava", "La Fragua Antigua", "Los Géiseres", "La Forja del Gólem",
    "Las Cenizas Eternas", "El Puente de Obsidiana", "La Cámara del Magma", "Las Puertas del Núcleo", "El Corazón del Abismo"],
+  ["La Puerta Oxidada", "Las Cintas Ruidosas", "El Almacén de Engranajes", "Los Tubos de Vapor", "El Taller del Robot",
+   "La Sala de Calderas", "Las Vías de la Mina", "El Montacargas", "Los Hornos Fríos", "El Nido de Acero",
+   "La Cadena de Montaje", "El Laboratorio Perdido", "Las Turbinas", "La Sala de Control", "El Corazón de la Fábrica"],
 ];
-const WORLD_POOLS = ["t5kqo5sp", "f6noxt6ke", "e7q8pk7o8xt"];
+const WORLD_POOLS = ["t5kqo5sp", "f6noxt6ke", "e7q8pk7o8xt", "34ko87qe6x"];
+WORLD_POOLS[-1] = "s3xkt4"; // niveles nuevos del mundo 1
 const WORLD_BOSSES = [["Y", "K"], ["U", "X"], ["J", "Z"]];
-function genWorldLevel(w, n) {
-  const PICKS = "SMIALDWNCF", boss = n === 4 || n === 9 ? WORLD_BOSSES[w][n === 4 ? 0 : 1] : null;
+// los 5 niveles nuevos de cada mundo van en medio (6-10), con su propio jefe en el 10
+const MID_NAMES = [
+  ["Los Túneles del Eco", "La Mina Abandonada", "El Pozo de las Raíces", "La Galería de Huesos", "La Guarida del Gólem de Roca"],
+  ["Las Estalactitas", "El Río Helado", "La Cueva del Viento", "Los Espejos de Hielo", "El Santuario Glacial"],
+  ["El Claro Maldito", "Los Árboles Huecos", "La Ciénaga Brillante", "El Templo Hundido", "El Corazón del Pantano"],
+  ["Los Ríos de Fuego", "Las Columnas de Basalto", "El Horno del Volcán", "La Isla de Ceniza", "El Nido de la Salamandra"],
+];
+const MID_BOSSES = ["Γ", "Λ", "Δ", "Θ"];
+// w: -1 Profundidades, 0 hielo, 1 sombras, 2 lava, 3 fábrica · n: dificultad 0-9
+// cfg: seedN (semilla distinta para los niveles nuevos), boss, name y secret (pasaje secreto)
+function genWorldLevel(w, n, cfg = {}) {
+  const PICKS = "SMIALDWNCF", boss = cfg.boss !== undefined ? cfg.boss : n === 4 || n === 9 ? WORLD_BOSSES[w][n === 4 ? 0 : 1] : null;
   for (let attempt = 0; attempt < 60; attempt++) {
-    let seed = 7919 * (w + 2) + 104729 * n + attempt * 31337 + 17;
+    let seed = 7919 * (w + 2) + 104729 * (cfg.seedN ?? n) + attempt * 31337 + 17;
     const rnd = () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
     const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1)), pick = a => a[Math.floor(rnd() * a.length)];
     const cols = 4, rows = 3, cw = 11, ch = 9, W = cols * cw + 1, H = rows * ch + 1;
@@ -419,21 +433,29 @@ function genWorldLevel(w, n) {
     // objetos y monstruos
     const place = (ch2, rs, avoidMid = true) => { for (let k = 0; k < 10; k++) { const r = pick(rs), t = freeTile(r, avoidMid); if (t) { m[t[1]][t[0]] = ch2; return true; } } return false; };
     const others = rooms.filter(r => r.c !== start && !(boss && r.c === exitC));
-    const nMon = Math.round((6 + n * 1.1 + w * 1.6) * (boss ? 0.6 : 1)), mp = WORLD_POOLS[w];
+    const nMon = Math.round((6 + n * 1.1 + Math.max(0, w) * 1.6) * (boss ? 0.6 : 1)), mp = WORLD_POOLS[w];
     for (let k = 0; k < nMon; k++) place(mp[Math.min(mp.length - 1, Math.floor(rnd() * Math.min(mp.length, 3 + n / 2)))], others, false);
     for (let k = 0; k < 6 + ri(0, 3); k++) place("$", rooms.filter(r => r.c !== exitC));
     for (let k = 0; k < 2; k++) place("h", others);
     for (let k = 0; k < 3; k++) place("+", rooms.filter(r => !(boss && r.c === exitC)));
     for (let k = 0; k < 4; k++) place("c", others);
     if (n % 3 === 2 || boss) place("m", others);
-    place(PICKS[(w * 3 + n) % PICKS.length], others);
-    if (w === 1) for (let k = 0; k < 14; k++) place("u", rooms, false);
+    place(PICKS[((w * 3 + n) % PICKS.length + PICKS.length) % PICKS.length], others);
+    if (w === 3) {
+      // la fábrica: cintas transportadoras que te empujan (horizontales y verticales)
+      for (const r of others) {
+        if (r.c === exitC || rnd() < 0.35) continue;
+        if (rnd() < 0.6) { const ch3 = rnd() < 0.5 ? "}" : "{"; for (let x = r.x; x < r.x + r.w; x++) if (m[r.my][x] === ".") m[r.my][x] = ch3; }
+        else { const ch3 = rnd() < 0.5 ? "]" : "["; for (let y = r.y; y < r.y + r.h; y++) if (m[y][r.mx] === ".") m[y][r.mx] = ch3; }
+      }
+      for (let k = 0; k < 8; k++) place("~", rooms);
+    } else if (w === 1) for (let k = 0; k < 14; k++) place("u", rooms, false);
     else if (w === 0) for (let k = 0; k < 6; k++) place("*", rooms);
     else for (let k = 0; k < 4; k++) place("~", rooms);
     if (boss) { const A = rooms[exitC]; for (let k = 0; k < 3; k++) { const t = freeTile(A, true); if (t) m[t[1]][t[0]] = k ? "+" : "h"; } }
     // antorchas en los muros que dan a las salas (pocas en el mundo oscuro)
     for (const r of rooms) if (rnd() < (w === 1 ? 0.25 : 0.8)) { const x = ri(r.x, r.x + r.w - 1); if (m[r.y - 1][x] === "#") m[r.y - 1][x] = "T"; }
-    if (n === 2) {
+    if (cfg.secret ?? n === 2) {
       // pasaje secreto: grieta en el muro de una sala y, detrás, el portal
       let done = false;
       for (const r of rooms.filter(r => r.c !== start && r.c !== exitC)) {
@@ -447,7 +469,7 @@ function genWorldLevel(w, n) {
     }
     const map = m.map(r => r.join(""));
     if (!genSolvable(map)) continue;
-    return { name: WORLD_LEVEL_NAMES[w][n], map, world: w + 1 };
+    return { name: cfg.name ?? WORLD_LEVEL_NAMES[w][n], map, world: w + 2, gen: true };
   }
   throw new Error("no se pudo generar el nivel " + w + "-" + n);
 }
@@ -473,20 +495,45 @@ function genSolvable(m) {
   }
   return false;
 }
-for (let w = 0; w < 3; w++) for (let n = 0; n < 10; n++) LEVELS.push(genWorldLevel(w, n));
+// 5 mundos de 15 niveles: los niveles de siempre en 1-5 y 11-15, los nuevos en 6-10; la fábrica, 15 nuevos
+const LEVELS = [];
+for (let gw = 0; gw < 5; gw++) for (let slot = 0; slot < 15; slot++) {
+  const w = gw - 1, mid = slot >= 5 && slot < 10, k = slot - 5;
+  if (gw === 4) LEVELS.push(genWorldLevel(3, Math.round(slot * 9 / 14), { seedN: 200 + slot, name: WORLD_LEVEL_NAMES[3][slot], boss: slot % 5 === 4 ? ["Φ", "Ψ", "Ω"][Math.floor(slot / 5)] : null, secret: slot === 2 || slot === 7 }));
+  else if (mid) LEVELS.push(genWorldLevel(w, k + 2, { seedN: 100 + slot, name: MID_NAMES[gw][k], boss: k === 4 ? MID_BOSSES[gw] : null, secret: k === 2 }));
+  else if (gw === 0) LEVELS.push(HAND_LEVELS[slot < 5 ? slot : slot - 5]);
+  else LEVELS.push(genWorldLevel(w, slot < 5 ? slot : slot - 5));
+}
 // ---------- Niveles secretos: 2 por mundo ----------
 //  1 objeto del reto   !  puerta del reto (se abre al resolverlo)   &  aquí aparece la salida al vencer al minijefe
 //  a Guardián Rúnico · i Espíritu de Hielo · j Sombra Menor · y Salamandra de Fuego (minijefes)
+// w: mundo (0-4) · lv: nivel donde está el muro agrietado (en el mapa, el secreto aparece a su lado)
 const SECRET_DEFS = [
-  { name: "La Cámara de las Runas", puzzle: "runes", len: 5 }, { name: "La Cripta de Hielo", puzzle: "plates" },
-  { name: "El Asedio de las Sombras", puzzle: "survive", time: 35 }, { name: "La Forja Apagada", puzzle: "braziers", dur: 5 },
+  { name: "La Cámara de las Runas", puzzle: "runes", len: 5, w: 0, lv: 2 }, { name: "La Cripta de Hielo", puzzle: "plates", w: 1, lv: 17 },
+  { name: "El Asedio de las Sombras", puzzle: "survive", time: 35, w: 2, lv: 32 }, { name: "La Forja Apagada", puzzle: "braziers", dur: 5, w: 3, lv: 47 },
 ];
-const SECRETS = SECRET_DEFS.map((d, si) => {
-  const w = si, W = 29, H = 17, m = Array.from({ length: H }, (_, y) => Array.from({ length: W }, (_, x) => x === 0 || y === 0 || x === W - 1 || y === H - 1 || x === 13 ? "#" : "."));
+// los segundos secretos de cada mundo: puzles más complejos
+const SECRET_DEFS2 = [
+  { name: "La Galería de la Memoria", puzzle: "pairs", n: 8, w: 0, lv: 7 },
+  { name: "La Sala de los Engranajes", puzzle: "gears", n: 4, w: 1, lv: 22 },
+  { name: "El Jardín de las Luces", puzzle: "lights", w: 2, lv: 37 },
+  { name: "El Campo de Tiro de Fuego", puzzle: "order", n: 8, time: 10, w: 3, lv: 52 },
+  { name: "El Archivo de las Máquinas", puzzle: "pairs", n: 12, w: 4, lv: 62 },
+  { name: "La Caja de Cambios", puzzle: "gears", n: 6, w: 4, lv: 67 },
+];
+function buildSecret(d, si) {
+  const w = d.w, W = 29, H = 17, m = Array.from({ length: H }, (_, y) => Array.from({ length: W }, (_, x) => x === 0 || y === 0 || x === W - 1 || y === H - 1 || x === 13 ? "#" : "."));
   for (const x of [3, 9, 17, 24]) m[0][x] = "T";
-  m[8][13] = "!"; m[8][3] = "P"; m[8][21] = "aijy"[w]; m[8][26] = "&";
+  m[8][13] = "!"; m[8][3] = "P"; m[8][21] = "aijya"[w]; m[8][26] = "&";
+  const grid = (xs, ys) => ys.flatMap(y => xs.map(x => [x, y]));
   const objs = d.puzzle === "runes" ? [[3, 3], [9, 3], [3, 13], [9, 13], [6, 5], [6, 11]].slice(0, 4)
-    : d.puzzle === "braziers" ? [[2, 2], [10, 2], [10, 14], [2, 14], [7, 8]] : d.puzzle === "plates" ? [[1, 1], [11, 1], [11, 15], [1, 15]] : [];
+    : d.puzzle === "braziers" ? [[2, 2], [10, 2], [10, 14], [2, 14], [7, 8]] : d.puzzle === "plates" ? [[1, 1], [11, 1], [11, 15], [1, 15]]
+    : d.puzzle === "pairs" ? (d.n > 8 ? grid([2, 5, 8, 11], [3, 7, 13]) : grid([2, 5, 8, 11], [4, 12]))
+    : d.puzzle === "gears" ? (d.n > 4 ? grid([3, 7, 11], [4, 12]) : grid([4, 9], [4, 12]))
+    : d.puzzle === "lights" ? grid([3, 6, 9], [4, 8, 12])
+    : d.puzzle === "order" ? [[2, 2], [11, 3], [6, 6], [2, 9], [10, 9], [5, 13], [11, 14], [8, 11]] : [];
+  if (d.puzzle !== "runes" && d.puzzle !== "plates" && d.puzzle !== "braziers") m[8][3] = "."; // el jugador entra por abajo para no tapar el puzle
+  if (m[8][3] === ".") m[15][6] = "P";
   for (const [x, y] of objs) m[y][x] = "1";
   m[14][6] = "h"; m[2][6] = "+"; m[3][24] = "+"; m[13][24] = "h";
   // el peligro del mundo también en la arena
@@ -495,8 +542,9 @@ const SECRETS = SECRET_DEFS.map((d, si) => {
     if (w === 1 && (x + y) % 3 === 0 && m[y][x] === ".") m[y][x] = ":";
     if (w === 3 && edge && (x * 7 + y * 3) % 5 === 0 && m[y][x] === ".") m[y][x] = "l";
   }
-  return { name: d.name, map: m.map(r => r.join("")), secret: si, puzzle: d.puzzle, len: d.len, dur: d.dur, time: d.time };
-});
+  return { name: d.name, map: m.map(r => r.join("")), secret: si, puzzle: d.puzzle, len: d.len, dur: d.dur, time: d.time, n: d.n, lv: d.lv, w };
+}
+const SECRETS = SECRET_DEFS.map((d, si) => buildSecret(d, si));
 //  H Gólem de Cristal · z Reina del Vacío · 2 Devorador del Vacío (jefes del nivel supersecreto)
 SECRETS.push((() => {
   const W = 60, H = 17, m = Array.from({ length: H }, (_, y) => Array.from({ length: W }, (_, x) => x === 0 || y === 0 || x === W - 1 || y === H - 1 || x === 11 || x === 26 || x === 42 ? "#" : "."));
@@ -507,6 +555,7 @@ SECRETS.push((() => {
   for (let y = 2; y < H - 2; y++) for (let x = 43; x < W - 1; x++) if ((x * 5 + y * 7) % 11 === 0 && Math.abs(y - 8) > 2) m[y][x] = "l";
   return { name: "La Grieta del Vacío", map: m.map(r => r.join("")), secret: 4, ultra: true };
 })());
+SECRET_DEFS2.forEach(d => SECRETS.push(buildSecret(d, SECRETS.length)));
 /*LEVELS_END*/
 
 // ---------- Tutorial ----------
@@ -537,15 +586,20 @@ const TUT_STEPS = [
   { t: "Baja por la escalera para empezar la aventura", ok: () => false },
 ];
 const curDef = () => inTutorial ? TUTORIAL : secretIdx !== null ? SECRETS[secretIdx] : LEVELS[levelIdx];
-// cada mundo tiene 10 niveles y algo que lo hace distinto
+// cada mundo tiene 15 niveles y algo que lo hace distinto
 const WORLDS = [
   { name: "Las Profundidades", twist: "Busca las llaves de colores para abrir las puertas", color: "#e8a33d" },
   { name: "Las Cavernas de Hielo", twist: "¡El suelo helado resbala! Frena antes de las curvas", color: "#8fd8ff" },
   { name: "El Bosque de las Sombras", twist: "Casi no hay luz: sigue las setas brillantes", color: "#b58cff" },
   { name: "El Corazón de Lava", twist: "La lava quema y los terremotos hacen caer rocas", color: "#ff7a2a" },
+  { name: "La Fábrica Olvidada", twist: "Las cintas transportadoras te empujan: ¡úsalas o lucha contra ellas!", color: "#ffcc33" },
 ];
-const curWorld = () => inTutorial ? 0 : Math.floor(levelIdx / 10);
-const levelLabel = i => `Mundo ${Math.floor(i / 10) + 1} · Nivel ${i % 10 + 1}/10`;
+// 5 mundos de 15 niveles; el último del mundo 4 cierra la historia y la fábrica es la continuación
+const WSTART = [0, 15, 30, 45, 60], WSIZE = [15, 15, 15, 15, 15], MAIN_END = 59;
+const worldOf = i => Math.min(4, Math.floor(i / 15)), numIn = i => i - WSTART[worldOf(i)];
+const isBossLevel = i => numIn(i) % 5 === 4;
+const curWorld = () => inTutorial ? 0 : worldOf(levelIdx);
+const levelLabel = i => `Mundo ${worldOf(i) + 1} · Nivel ${numIn(i) + 1}/${WSIZE[worldOf(i)]}`;
 function startTutorial() {
   freshRun(); inTutorial = true; tutStep = 0; tutDone = 0;
   tut = { moved: false, dummies: 0, crate: false, switched: false, reloaded: false, dashed: false, ability: false, door: false, slime: false, sx: 0, sy: 0 };
@@ -658,6 +712,20 @@ const MON = {
        title: "ARAÑA SOMBRA · LA QUE ACECHA", intro: "¡Algo se mueve en la oscuridad!", rage: "¡La Araña Sombra está furiosa!", defeat: "¡Has derrotado a la Araña Sombra!" },
   X: { name: "Rey de las Sombras", specials: ["teleport", "spiral"], orb: "#c08cff",  hp: 110, speed: 66, r: 22, dmg: 2, sight: 480, color: "#6b4fa8", pts: 900, heavy: true, boss: true, base: "O", minion: "f", noKey: true,
        title: "REY DE LAS SOMBRAS · SEÑOR DE LA OSCURIDAD", intro: "¡El Rey de las Sombras se alza!", rage: "¡El Rey de las Sombras está furioso!", defeat: "¡El Rey de las Sombras ha huido!" },
+  "Γ": { name: "Gólem de Roca", specials: ["slam", "meteor"], orb: "#ffb040", hp: 70, speed: 60, r: 22, dmg: 2, sight: 460, color: "#7a6048", pts: 600, heavy: true, boss: true, base: "O", minion: "s", noKey: true,
+       title: "GÓLEM DE ROCA · GUARDIÁN DE LA MINA", intro: "¡Las rocas se juntan y forman un gólem!", rage: "¡El Gólem de Roca retumba de furia!", defeat: "¡El Gólem de Roca se ha desmoronado!" },
+  "Λ": { name: "Espectro Glacial", specials: ["icefan", "teleport"], orb: "#cff4ff", hp: 85, speed: 88, r: 18, dmg: 2, sight: 470, color: "#bfefff", pts: 750, heavy: true, boss: true, fem: false, base: "Q", minion: "t", noKey: true,
+       title: "ESPECTRO GLACIAL · ALMA DEL HIELO", intro: "¡Un frío mortal llena la sala!", rage: "¡El Espectro Glacial aúlla de rabia!", defeat: "¡El Espectro Glacial se ha desvanecido!" },
+  "Δ": { name: "Espectro del Pantano", specials: ["teleport", "webring", "spiral"], orb: "#c08cff", hp: 105, speed: 90, r: 18, dmg: 2, sight: 470, color: "#4a3a6a", pts: 900, heavy: true, boss: true, base: "Q", minion: "f", noKey: true,
+       title: "ESPECTRO DEL PANTANO · SEÑOR DE LA NIEBLA", intro: "¡Algo surge de la ciénaga!", rage: "¡El Espectro del Pantano se enfurece!", defeat: "¡El Espectro del Pantano se ha hundido!" },
+  "Θ": { name: "Gran Salamandra", specials: ["breath", "meteor"], orb: "#ffb040", hp: 140, speed: 72, r: 22, dmg: 2, sight: 480, color: "#ff6a2a", pts: 1100, heavy: true, boss: true, base: "O", minion: "e", noKey: true,
+       title: "GRAN SALAMANDRA · REINA DEL VOLCÁN", intro: "¡La Gran Salamandra sale de la lava!", rage: "¡La Gran Salamandra arde de furia!", defeat: "¡La Gran Salamandra se ha apagado!" },
+  "Φ": { name: "Robot Minero", specials: ["slam", "meteor"], orb: "#ffcc33", hp: 130, speed: 64, r: 22, dmg: 2, sight: 470, color: "#8a96a8", pts: 1200, heavy: true, boss: true, base: "O", minion: "3", noKey: true,
+       title: "ROBOT MINERO · CAPATAZ DE LA FÁBRICA", intro: "¡El Robot Minero se pone en marcha!", rage: "¡El Robot Minero echa humo de rabia!", defeat: "¡El Robot Minero se ha apagado!" },
+  "Ψ": { name: "Araña Mecánica", specials: ["leap", "webring", "spiral"], orb: "#ffcc33", hp: 140, speed: 92, r: 18, dmg: 2, sight: 470, color: "#9aa8b8", pts: 1500, heavy: true, boss: true, base: "Q", minion: "4", noKey: true,
+       title: "ARAÑA MECÁNICA · TEJEDORA DE ACERO", intro: "¡Una Araña Mecánica baja del techo!", rage: "¡La Araña Mecánica chirría furiosa!", defeat: "¡La Araña Mecánica se ha desmontado!" },
+  "Ω": { name: "Gran Máquina", specials: ["slam", "meteor", "spiral", "breath"], orb: "#ff5a3a", hp: 240, speed: 60, r: 26, dmg: 2, sight: 540, color: "#5a6070", pts: 3500, heavy: true, boss: true, base: "O", minion: "8", noKey: true,
+       title: "GRAN MÁQUINA · EL CORAZÓN DE LA FÁBRICA", intro: "¡La Gran Máquina despierta con un estruendo!", rage: "¡La Gran Máquina se sobrecalienta!", defeat: "¡Has parado la Gran Máquina!" },
   J: { name: "Gólem de Magma", specials: ["meteor", "slam"],  hp: 120, speed: 58, r: 22, dmg: 2, sight: 460, color: "#e0582a", pts: 1000, heavy: true, boss: true, base: "O", minion: "e", noKey: true,
        title: "GÓLEM DE MAGMA · GUARDIÁN DE LA FRAGUA", intro: "¡El Gólem de Magma despierta!", rage: "¡El Gólem de Magma arde de furia!", defeat: "¡El Gólem de Magma se ha enfriado!" },
   Z: { name: "Dragón del Núcleo", specials: ["breath", "meteor", "slam"],  hp: 170, speed: 70, r: 24, dmg: 2, sight: 520, color: "#c0303a", pts: 2000, heavy: true, boss: true, base: "O", minion: "t", noKey: true,
@@ -688,7 +756,9 @@ const TIPS = [
 ];
 
 // Tipos de casilla
-const FLOOR = 0, WALL = 1, DOOR = 2, EXIT = 3, CRACK = 4, SPIKE = 5, WEB = 6, CRATE = 7, WATER = 8, ICE = 9, LAVA = 10, GATE = 11, PORTAL = 12;
+const FLOOR = 0, WALL = 1, DOOR = 2, EXIT = 3, CRACK = 4, SPIKE = 5, WEB = 6, CRATE = 7, WATER = 8, ICE = 9, LAVA = 10, GATE = 11, PORTAL = 12, CONV = 13;
+// cintas transportadoras: } derecha  { izquierda  ] abajo  [ arriba
+const CONV_DIR = { "}": [1, 0], "{": [-1, 0], "]": [0, 1], "[": [0, -1] };
 
 // ---------- Utilidades ----------
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -749,7 +819,9 @@ function resize() {
   VW = innerWidth; VH = innerHeight;
   cv.width = Math.round(VW * DPR); cv.height = Math.round(VH * DPR);
   gcv.width = lc.width = Math.max(1, Math.round(VW * DPR * LS)); gcv.height = lc.height = Math.max(1, Math.round(VH * DPR * LS));
-  ZOOM = Math.max(1, Math.min(2.2, Math.min(VW / (TS * 15), VH / (TS * 10))));
+  // con el celular o la tableta en horizontal se acerca la cámara: todo se ve más grande
+  const wide = VW > VH && matchMedia("(pointer: coarse)").matches;
+  ZOOM = Math.max(1, Math.min(2.2, Math.min(VW / (TS * (wide ? 13 : 15)), VH / (TS * (wide ? 8.5 : 10)))));
   bl1.width = Math.max(1, Math.ceil(VW / 5)); bl1.height = Math.max(1, Math.ceil(VH / 5));
   bl2.width = Math.max(1, Math.ceil(VW / 14)); bl2.height = Math.max(1, Math.ceil(VH / 14));
   vignette = ctx.createRadialGradient(VW / 2, VH / 2, Math.min(VW, VH) * 0.35, VW / 2, VH / 2, Math.max(VW, VH) * 0.75);
@@ -889,7 +961,7 @@ let levelIdx = 0, W = 0, H = 0;
 let suppressSave = false;
 let arenas = [], gateSealAt = {}, waves = [], bossIntro = null, slowmo = 0;
 let gateMarks = [], arena = null, quakeT = 0, rocks = [], puzzleDoor = [], puzzleObjs = [], exitMark = -1, puzzle = null, secretIdx = null, secretRet = null;
-let tiles = [], thp = [], doorCol = {}, seen = [], flow = null, flowFrom = -1, flowDirty = true;
+let tiles = [], thp = [], doorCol = {}, convDir = {}, seen = [], flow = null, flowFrom = -1, flowDirty = true;
 let torches = [], decor = [], exits = [], tileCache = null, mini = null, miniCtx = null;
 let monsters = [], items = [], projs = [], parts = [], texts = [], decals = [], rings = [], ghosts = [], flashes = [], doorAnims = [], glints = [];
 // animaciones: muertes, objetos recogidos, dardos rebotando, motas de polvo y gotas del techo
@@ -906,7 +978,7 @@ const P = {
 };
 
 const T = (tx, ty) => (tx < 0 || ty < 0 || tx >= W || ty >= H) ? WALL : tiles[ty * W + tx];
-const walkable = t => t === FLOOR || t === EXIT || t === SPIKE || t === WEB || t === ICE || t === LAVA || t === PORTAL;
+const walkable = t => t === FLOOR || t === EXIT || t === SPIKE || t === WEB || t === ICE || t === LAVA || t === PORTAL || t === CONV;
 const solid = (tx, ty) => !walkable(T(tx, ty));
 // el agua frena a los que caminan, pero los dardos y la luz pasan por encima
 const projSolid = (tx, ty) => { const t = T(tx, ty); return !walkable(t) && t !== WATER; };
@@ -915,6 +987,17 @@ function drawLava(px, py, x, y) {
   ctx.fillStyle = `rgba(255,230,120,${0.5 * Math.sin(k * Math.PI)})`; ctx.beginPath(); ctx.arc(px + 6 + hash(x * 3, y) * 20, py + 6 + hash(x, y * 3) * 20, 1.5 + k * 3, 0, 7); ctx.fill();
   ctx.fillStyle = `rgba(255,160,40,${0.2 + 0.12 * Math.sin(gameT * 3 + x + y)})`; ctx.fillRect(px + 2, py + 2, TS - 4, TS - 4);
   if (Math.random() < 0.01) parts.push({ x: px + 16 + rand(-10, 10), y: py + 16, vx: rand(-10, 10), vy: rand(-60, -30), life: 0.6, max: 0.6, c: "#ffb040", s: 2, glow: true });
+}
+// cinta: base oscura con bordes y flechas que avanzan
+function drawConv(px, py, d) {
+  ctx.fillStyle = "#24262e"; ctx.fillRect(px + 1, py + 1, TS - 2, TS - 2);
+  ctx.fillStyle = "#4a4e5a"; if (d[0]) { ctx.fillRect(px, py + 2, TS, 3); ctx.fillRect(px, py + TS - 5, TS, 3); } else { ctx.fillRect(px + 2, py, 3, TS); ctx.fillRect(px + TS - 5, py, 3, TS); }
+  ctx.save(); ctx.beginPath(); ctx.rect(px + 5, py + 5, TS - 10, TS - 10); ctx.clip();
+  ctx.translate(px + 16, py + 16); ctx.rotate(Math.atan2(d[1], d[0]));
+  const off = A11().motion ? 0 : (gameT * 40) % 12;
+  ctx.strokeStyle = "rgba(255,204,51,0.75)"; ctx.lineWidth = 2.4; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  for (let k = -2; k <= 2; k++) { const x = k * 12 + off - 6; ctx.beginPath(); ctx.moveTo(x - 3, -6); ctx.lineTo(x + 3, 0); ctx.lineTo(x - 3, 6); ctx.stroke(); }
+  ctx.restore();
 }
 function drawPortal(px, py) {
   const cx = px + 16, cy = py + 16;
@@ -952,6 +1035,15 @@ function carryProg(i) {
   const o = (saved && saved.prog) || { unlocked: 0, stars: {}, beaten: false };
   return { unlocked: Math.max(o.unlocked || 0, i), stars: { ...(o.stars || {}) }, beaten: !!o.beaten };
 }
+// las partidas de antes tenían 4 mundos de 10 niveles: se pasan a la numeración de 5 mundos de 15
+function migrateSave(sv) {
+  if (!sv || sv.v >= 2) return sv;
+  const mp = i => { const w = Math.floor(i / 10), n = i % 10; return w * 15 + (n < 5 ? n : n + 5); };
+  if (typeof sv.level === "number") sv.level = mp(sv.level);
+  if (sv.prog) { sv.prog.unlocked = mp(sv.prog.unlocked || 0); const st = {}; for (const k in sv.prog.stars || {}) st[mp(+k)] = sv.prog.stars[k]; sv.prog.stars = st; }
+  sv.v = 2; return sv;
+}
+const loadSave = () => { const sv = store.get(saveKey(), null); if (sv && !(sv.v >= 2)) { migrateSave(sv); store.set(saveKey(), sv); } return sv; };
 const prog = () => (saved && saved.prog) || { unlocked: saved ? saved.level : 0, stars: {}, beaten: false };
 function newGame() { saved = null; freshRun(); store.set("diff", settings.diff); loadLevel(0); }
 function loadRun() {
@@ -991,7 +1083,7 @@ function loadLevel(i, retry) {
     if (retry && secretRet) Object.assign(P, structuredClone(secretRet.pStart));
   } else if (!retry) {
     snapshot = { weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
-    if (!inTutorial && !suppressSave) saved = { prog: carryProg(i), level: i, diff: settings.diff, weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
+    if (!inTutorial && !suppressSave) saved = { v: 2, prog: carryProg(i), level: i, diff: settings.diff, weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
     if (!suppressSave) { store.set(saveKey(), saved); if (!inTutorial) { saveIcon = 1.8; gameDirty = false; } }
   } else {
     P.weapons = snapshot.weapons.slice(); P.maxHp = snapshot.maxHp; P.hp = Math.max(Math.ceil(P.maxHp * 0.67), snapshot.hp);
@@ -1004,7 +1096,7 @@ function loadLevel(i, retry) {
   Object.assign(P, { reloading: 0, keys: noKeys(), inv: 1.2, cd: 0.3, kx: 0, ky: 0, dash: 0, dashCd: 0, muzzle: 0, abilCd: 0, turbo: 0, shield: 0 });
   const map = curDef().map; H = map.length; W = map[0].length;
   tiles = new Array(W * H).fill(FLOOR); thp = new Array(W * H).fill(0); seen = new Array(W * H).fill(false);
-  doorCol = {}; torches = []; decor = []; exits = []; gateMarks = []; arena = null; arenas = []; waves = []; P.phoenix = false; puzzleDoor = []; puzzleObjs = []; exitMark = -1; puzzle = null; quakeT = rand(10, 16); rocks = [];
+  doorCol = {}; convDir = {}; torches = []; decor = []; exits = []; gateMarks = []; arena = null; arenas = []; waves = []; P.phoenix = false; puzzleDoor = []; puzzleObjs = []; exitMark = -1; puzzle = null; quakeT = rand(10, 16); rocks = [];
   monsters = []; items = []; projs = []; parts = []; texts = []; decals = []; rings = []; ghosts = []; flashes = []; doorAnims = []; glints = [];
   dying = []; pops = []; bouncers = []; drops = []; motes = []; clouds = []; P.exiting = 0; zoomPunch = 0;
   lv = { kills: 0, monTotal: 0, goldGot: 0, goldTotal: 0, secrets: 0, secretTotal: 0, time: 0 };
@@ -1019,6 +1111,7 @@ function loadLevel(i, retry) {
     if (c === "w") { tiles[idx] = WEB; continue; }
     if (c === "=") { tiles[idx] = WATER; continue; }
     if (c === ":") { tiles[idx] = ICE; continue; }
+    if (CONV_DIR[c]) { tiles[idx] = CONV; convDir[idx] = CONV_DIR[c]; continue; }
     if (c === "l") { tiles[idx] = LAVA; continue; }
     if (c === "|") { gateMarks.push(idx); continue; }
     if (c === "@") { if (secretFor(i) !== null && !secretDone(secretFor(i)) && secretIdx === null) tiles[idx] = PORTAL; continue; }
@@ -1031,7 +1124,7 @@ function loadLevel(i, retry) {
     if (c === "*") { decor.push({ kind: "crystal", x: cx, y: cy, ph: Math.random() * 6, hue: [275, 190, 320][(x + y) % 3] }); continue; }
     if (c === "P") { P.x = cx; P.y = cy; }
     else if (MON[c]) {
-      if (i < 10 && secretIdx === null && !inTutorial) {
+      if (worldOf(i) === 0 && !LEVELS[i].gen && secretIdx === null && !inTutorial) {
         if (c === "s" && i >= 1 && (x + y) % 3 === 0) c = "3";
         else if (c === "x" && i >= 3 && (x + y) % 2 === 0) c = "4";
       }
@@ -1056,7 +1149,7 @@ function loadLevel(i, retry) {
   if (AC) JINGLES.start(); fade = 1; shake = 0; hitstop = 0; hurtFlash = 0; gameT = 0;
   toast.t = 0;
   state = "play";
-  if (i % 10 === 0 && !retry && !inTutorial && secretIdx === null && !suppressSave) worldCard = 4.5;
+  if (numIn(i) === 0 && !retry && !inTutorial && secretIdx === null && !suppressSave) worldCard = 4.5;
   if (secretIdx !== null) { worldCard = 5; banner = 0; setupPuzzle(); }
   if (i === 0 && !retry && !inTutorial && secretIdx === null) {
     hint("start", isTouch() ? "Desliza a la izquierda para moverte y mantén DISPARA a la derecha" : `¡Adelante, ${look.name}! Muévete con WASD, dispara con F o clic y usa tu habilidad con ESPACIO`, 4.5);
@@ -1089,6 +1182,9 @@ const WORLD_THEMES = [
   [{ f: [12, 24, 10], w: [6, 22, 12], moss: "255,110,40", mossT: 0.6, deco: "lava", wetT: 0.75 },
    { f: [20, 20, 9], w: [14, 22, 11], moss: "255,140,50", mossT: 0.6, deco: "lava", wetT: 0.75 },
    { f: [4, 26, 9], w: [0, 24, 11], moss: "255,90,30", mossT: 0.55, deco: "banners", wetT: 0.75 }],
+  [{ f: [32, 12, 15], w: [28, 10, 19], moss: "255,190,80", mossT: 0.35, deco: "niches", wetT: 0.6 },
+   { f: [210, 8, 15], w: [215, 10, 19], moss: "255,200,90", mossT: 0.3, deco: "banners", wetT: 0.6 },
+   { f: [24, 16, 13], w: [20, 14, 17], moss: "255,160,60", mossT: 0.4, deco: "niches", wetT: 0.65 }],
 ];
 let TH = THEMES[0];
 const CS = 2; // resolución del pre-render de la cueva (más nitidez al hacer zoom)
@@ -1275,7 +1371,7 @@ function paintFloorDeco(g, x, y, px, py, t) {
 }
 
 function buildTileCache() {
-  TH = secretIdx === ULTRA ? { f: [268, 22, 7], w: [272, 26, 10], moss: "200,110,255", mossT: 0.4, deco: "crystals", wetT: 0.5 } : levelIdx < 10 || inTutorial ? THEMES[levelIdx % THEMES.length] : WORLD_THEMES[curWorld() - 1][levelIdx % 3];
+  TH = secretIdx === ULTRA ? { f: [268, 22, 7], w: [272, 26, 10], moss: "200,110,255", mossT: 0.4, deco: "crystals", wetT: 0.5 } : curWorld() === 0 || inTutorial ? THEMES[levelIdx % THEMES.length] : WORLD_THEMES[curWorld() - 1][levelIdx % 3];
   tileCache = document.createElement("canvas");
   tileCache.width = W * TS * CS; tileCache.height = H * TS * CS;
   const g = tileCache.getContext("2d", { willReadFrequently: true });
@@ -1622,7 +1718,7 @@ function makeExit() {
 function paintMini(x, y) {
   const t = T(x, y);
   miniCtx.fillStyle = t === CRACK ? "#c070ff" : t === WALL ? "#6b5a4b" : t === DOOR ? KEYS[doorCol[y * W + x]].c : t === EXIT ? "#7fd8ff" :
-    t === SPIKE ? "#5a4a3a" : t === WATER ? "#1d4c78" : t === ICE ? "#5d8fae" : t === LAVA ? "#c4481a" : t === GATE ? "#8a8a96" : t === PORTAL ? "#c070ff" : t === CRATE ? "#7a5a34" : t === WEB ? "#4a4550" : "#2a231e";
+    t === SPIKE ? "#5a4a3a" : t === WATER ? "#1d4c78" : t === ICE ? "#5d8fae" : t === LAVA ? "#c4481a" : t === GATE ? "#8a8a96" : t === PORTAL ? "#c070ff" : t === CONV ? "#5a5440" : t === CRATE ? "#7a5a34" : t === WEB ? "#4a4550" : "#2a231e";
   miniCtx.fillRect(x * 4, y * 4, 4, 4);
 }
 function markSeen(tx, ty) {
@@ -1766,21 +1862,30 @@ function drawPresses() {
   presses = presses.filter(p => p.t < 0.45);
 }
 
+const BTN_SIZES = [0.82, 1, 1.2], BTN_NAMES = ["Pequeños", "Normales", "Grandes"];
+settings.btn = [0, 1, 2].includes(store.get("btn", 1)) ? store.get("btn", 1) : 1;
 function btns() {
-  const s = clamp(Math.min(VW, VH) / 420, 0.75, 1.15) * (settings.device === "tablet" ? 1.25 : 1);
+  // celular: según el lado corto de la pantalla; tableta: más grandes pero sin pasarse; y el tamaño elegido en Opciones
+  const tab = settings.device === "tablet", short = Math.min(VW, VH);
+  const s = (tab ? clamp(short / 620, 1, 1.3) : clamp(short / 400, 0.8, 1.05)) * BTN_SIZES[settings.btn];
+  const mx = 12 + (land() ? 18 : 0), my = 12 + (land() ? 4 : 0); // en horizontal, separados del borde (muescas y bordes curvos)
   return {
-    fire:   { x: VW - 82 * s - 12, y: VH - 96 * s - 12, r: 50 * s },
-    dash:   { x: VW - 196 * s - 12, y: VH - 58 * s - 12, r: 33 * s },
-    swap:   { x: VW - 62 * s - 12, y: VH - 214 * s - 12, r: 28 * s },
-    reload: { x: VW - 136 * s - 12, y: VH - 222 * s - 12, r: 24 * s },
-    abil:   { x: VW - 196 * s - 12, y: VH - 150 * s - 12, r: 30 * s },
+    fire:   { x: VW - 82 * s - mx, y: VH - 96 * s - my, r: 50 * s },
+    dash:   { x: VW - 196 * s - mx, y: VH - 58 * s - my, r: 33 * s },
+    swap:   { x: VW - 62 * s - mx, y: VH - 214 * s - my, r: 28 * s },
+    reload: { x: VW - 136 * s - mx, y: VH - 222 * s - my, r: 24 * s },
+    abil:   { x: VW - 196 * s - mx, y: VH - 150 * s - my, r: 30 * s },
     // en pantallas estrechas la pausa baja bajo los corazones para no tapar nada
     pause:  VW < 480 ? { x: 32, y: 100, r: 20 } : land() ? { x: hudL() + 22, y: 34, r: 20 } : { x: VW / 2, y: 34, r: 22 },
   };
 }
 const inBtn = (b, x, y) => Math.hypot(x - b.x, y - b.y) < b.r + 10;
+let autoFullDone = false;
+addEventListener("orientationchange", () => { setTimeout(() => { if (innerHeight > innerWidth) autoFullDone = false; }, 300); });
 cv.addEventListener("touchstart", e => {
   e.preventDefault(); audio(); touch.on = true;
+  // al girar el celular o la tableta en horizontal, el primer toque pone el juego a pantalla completa
+  if (!autoFullDone && VW > VH && canFull() && !standalone() && !(document.fullscreenElement || document.webkitFullscreenElement)) { autoFullDone = true; toggleFull(); }
   if (homeHit(e.changedTouches[0].clientX, e.changedTouches[0].clientY)) return;
   if (picker.open) { const t = e.changedTouches[0]; picker.drag = { x: t.clientX, y: t.clientY, s0: picker.scroll, moved: false }; return; }
   if (state !== "play") { const t = e.changedTouches[0]; if (state === "custom") nameInput.blur(); if (!clickUI(t.clientX, t.clientY) && state === "story") storyNext(1); return; }
@@ -1998,15 +2103,16 @@ function drawWorldCard() {
 
 // ---------- Mapa de los mundos (como en los juegos de plataformas) ----------
 let mapSel = 0, mapPage = 0, mapAv = null, mapMove = 0;
-// en el mapa, 0..39 son los niveles, 40 la Grieta del Vacío y 100+m el nivel secreto del mundo m (junto a su nivel 3)
-const SECRET_NODE = 100, isSecretNode = i => i >= SECRET_NODE, secretParent = i => (i - SECRET_NODE) * 10 + 2;
-const mapPageOf = i => isSecretNode(i) ? i - SECRET_NODE : i >= 40 ? 3 : Math.floor(i / 10);
-const MAP_BG = [["#3a2614", "#120a05"], ["#1e4a6a", "#071624"], ["#2a1640", "#08040f"], ["#5a1a08", "#160402"]];
+// en el mapa, 0..74 son los niveles, 90 la Grieta del Vacío y 100+s el nivel secreto s (junto a su nivel)
+const ULTRA_NODE = 90, SECRET_NODE = 100, isSecretNode = i => i >= SECRET_NODE, secretParent = i => SECRETS[i - SECRET_NODE].lv;
+const mapPageOf = i => isSecretNode(i) ? worldOf(secretParent(i)) : i === ULTRA_NODE ? 3 : worldOf(i);
+const secretNodeAt = i => { const si = secretFor(i); return si === null ? null : SECRET_NODE + si; };
+const MAP_BG = [["#3a2614", "#120a05"], ["#1e4a6a", "#071624"], ["#2a1640", "#08040f"], ["#5a1a08", "#160402"], ["#3a3a44", "#0e0e14"]];
 function openMap(sel) {
   if (secretIdx !== null || inTutorial) { secretIdx = null; secretRet = null; inTutorial = false; }
-  gameDirty = false; exitDlg = null; saved = store.get(saveKey(), null);
+  gameDirty = false; exitDlg = null; saved = loadSave();
   const top = mapTop();
-  mapSel = sel != null && isSecretNode(sel) && canPlay(sel) ? sel : clamp(sel ?? (saved ? saved.level : 0), 0, top); mapPage = mapPageOf(mapSel);
+  mapSel = sel != null && (isSecretNode(sel) || sel === ULTRA_NODE) && canPlay(sel) ? sel : clamp(sel ?? (saved ? saved.level : 0), 0, Math.min(top, LEVELS.length - 1)); mapPage = mapPageOf(mapSel);
   mapAv = null; state = "map"; uiSel = -1; SFX.uiGo();
 }
 const ultraOpen = () => !!(saved && saved.prog && saved.prog.beaten);
@@ -2016,31 +2122,32 @@ const mapTall = () => VW < 760 && !land();
 function mapNode(i) {
   const ld = land();
   if (isSecretNode(i)) { const b = mapNode(secretParent(i)); return { x: b.x + (mapTall() ? 0 : VW * 0.02), y: b.y - (mapTall() ? 64 : ld ? 54 : 88) }; }
-  if (i === 40) return ld ? { x: VW * 0.9, y: 110 } : { x: VW * (mapTall() ? 0.5 : 0.86), y: VH * (mapTall() ? 0.2 : 0.22) };
-  const n = i % 10, w = Math.floor(i / 10);
+  if (i === ULTRA_NODE) return ld ? { x: VW * 0.92, y: 108 } : { x: VW * (mapTall() ? 0.5 : 0.9), y: VH * (mapTall() ? 0.2 : 0.2) };
+  const n = numIn(i), w = worldOf(i), last = WSIZE[w] - 1;
   if (ld) {
     // poca altura: los niveles entre el título y el panel de abajo
     const top = 140, bot = VH - 128, mid = (top + bot) / 2, amp = Math.max(0, (bot - top) / 2);
-    return { x: VW * 0.06 + VW * 0.88 * n / 9, y: mid + Math.sin(n * 1.25 + w * 0.7) * amp };
+    return { x: VW * 0.05 + VW * 0.9 * n / last, y: mid + Math.sin(n * 1.25 + w * 0.7) * amp };
   }
   if (VW < 760) {
-    const row = Math.floor(n / 5), col = row ? 4 - n % 5 : n % 5;
-    return { x: VW * 0.12 + (VW * 0.76) * col / 4, y: VH * (0.34 + row * 0.24) + Math.sin(n * 1.7 + w) * 10 };
+    // celular en vertical: tres filas de cinco en zigzag
+    const row = Math.floor(n / 5), col = row % 2 ? 4 - n % 5 : n % 5;
+    return { x: VW * 0.12 + (VW * 0.76) * col / 4, y: VH * (0.3 + row * 0.17) + Math.sin(n * 1.7 + w) * 8 };
   }
-  return { x: VW * 0.08 + VW * 0.84 * n / 9, y: VH * 0.47 + Math.sin(n * 1.25 + w * 0.7) * VH * 0.15 };
+  return { x: VW * 0.05 + VW * 0.9 * n / last, y: VH * 0.47 + Math.sin(n * 1.25 + w * 0.7) * VH * 0.15 };
 }
-function canPlay(i) { if (isSecretNode(i)) return canPlay(secretParent(i)); return i === 40 ? ultraOpen() : i <= Math.max(prog().unlocked || 0, saved ? saved.level : 0); }
+function canPlay(i) { if (isSecretNode(i)) return canPlay(secretParent(i)); return i === ULTRA_NODE ? ultraOpen() : i <= Math.max(prog().unlocked || 0, saved ? saved.level : 0); }
 function playFromMap(i) {
   if (!canPlay(i)) { SFX.ui(); showToast("Todavía no has llegado hasta aquí", 1.6); return; }
-  if (i === 40) return playUltra();
+  if (i === ULTRA_NODE) return playUltra();
   if (isSecretNode(i)) return playSecretFromMap(i - SECRET_NODE);
   if (saved && saved.level === i && saved.full) { continueGame(); return; }
   loadRun(); loadLevel(i);
 }
 function playUltra() {
-  loadRun(); levelIdx = 39;
-  secretRet = { fromMap: true, level: saved ? saved.level : 39, ck: null, heartBefore: hasPower("heart"), pStart: structuredClone({ hp: P.hp, maxHp: P.maxHp, weapons: P.weapons, cur: P.cur, ammo: P.ammo, res: P.res }) };
-  secretIdx = ULTRA; loadLevel(39);
+  loadRun(); levelIdx = MAIN_END;
+  secretRet = { fromMap: true, level: saved ? saved.level : MAIN_END, ck: null, heartBefore: hasPower("heart"), pStart: structuredClone({ hp: P.hp, maxHp: P.maxHp, weapons: P.weapons, cur: P.cur, ammo: P.ammo, res: P.res }) };
+  secretIdx = ULTRA; loadLevel(MAIN_END);
   showToast("¡La Grieta del Vacío! Dificultad: Pesadilla", 3);
 }
 // los niveles secretos también se juegan desde el mapa, sin tener que buscar el muro agrietado
@@ -2052,21 +2159,25 @@ function playSecretFromMap(si) {
 }
 function mapKey(e) {
   const top = Math.max(prog().unlocked || 0, saved ? saved.level : 0);
-  const sn = i => SECRET_NODE + Math.floor(i / 10); // nodo secreto del mundo del nivel i
+  const sAt = i => { const sn = i >= 0 && i < LEVELS.length ? secretNodeAt(i) : null; return sn !== null && canPlay(sn) ? sn : null; };
   if (["ArrowRight", "KeyD"].includes(e.code)) {
+    // orden: nivel → su secreto (si lo hay) → siguiente nivel; tras el último de la historia, la Grieta
     if (isSecretNode(mapSel)) { const nx = secretParent(mapSel) + 1; if (nx <= top) mapSel = nx; else SFX.ui(); }
-    else if (mapSel < 40 && mapSel % 10 === 2 && canPlay(sn(mapSel))) mapSel = sn(mapSel);
-    else if (mapSel === 39 && ultraOpen()) mapSel = 40; else if (mapSel < 40 && mapSel + 1 <= top) mapSel++; else SFX.ui();
+    else if (mapSel === ULTRA_NODE) { if (MAIN_END + 1 <= top) mapSel = MAIN_END + 1; else SFX.ui(); }
+    else if (sAt(mapSel) !== null) mapSel = sAt(mapSel);
+    else if (mapSel === MAIN_END && ultraOpen()) mapSel = ULTRA_NODE; else if (mapSel + 1 <= top && mapSel + 1 < LEVELS.length) mapSel++; else SFX.ui();
     mapPage = mapPageOf(mapSel);
   }
   else if (["ArrowLeft", "KeyA"].includes(e.code)) {
     if (isSecretNode(mapSel)) mapSel = secretParent(mapSel);
-    else if (mapSel < 40 && mapSel % 10 === 3 && canPlay(sn(mapSel))) mapSel = sn(mapSel);
-    else if (mapSel === 40) mapSel = 39; else if (mapSel > 0) mapSel--;
+    else if (mapSel === ULTRA_NODE) mapSel = MAIN_END;
+    else if (mapSel === MAIN_END + 1 && ultraOpen()) mapSel = ULTRA_NODE;
+    else if (sAt(mapSel - 1) !== null) mapSel = sAt(mapSel - 1);
+    else if (mapSel > 0) mapSel--;
     mapPage = mapPageOf(mapSel);
   }
-  else if (["ArrowUp", "KeyW", "PageUp"].includes(e.code)) { const np = Math.min(3, mapPage + 1); if (np * 10 <= top) { mapPage = np; mapSel = Math.min(top, np * 10); } }
-  else if (["ArrowDown", "KeyS", "PageDown"].includes(e.code)) { const np = Math.max(0, mapPage - 1); mapPage = np; mapSel = Math.min(top, np * 10 + 9); }
+  else if (["ArrowUp", "KeyW", "PageUp"].includes(e.code)) { const np = Math.min(4, mapPage + 1); if (WSTART[np] <= top) { mapPage = np; mapSel = Math.min(top, WSTART[np]); } }
+  else if (["ArrowDown", "KeyS", "PageDown"].includes(e.code)) { const np = Math.max(0, mapPage - 1); mapPage = np; mapSel = Math.min(top, WSTART[np] + WSIZE[np] - 1); }
   else if (["Enter", "Space"].includes(e.code)) playFromMap(mapSel);
   else if (e.code === "Escape" || e.code === "Backspace") { state = "title"; uiSel = 0; }
   else return;
@@ -2082,6 +2193,12 @@ function drawMapScene(w) {
     if (w === 0) { ctx.fillStyle = "#4a3220"; ctx.beginPath(); ctx.moveTo(-30, 20); ctx.lineTo(0, -26); ctx.lineTo(30, 20); ctx.fill(); ctx.fillStyle = "#e8a33d"; ctx.globalAlpha = 0.5 + 0.5 * Math.sin(mt * 3 + k); ctx.fillRect(-2, -6, 4, 6); }
     else if (w === 1) { ctx.fillStyle = "#cfe8ff"; ctx.beginPath(); ctx.moveTo(-12, 18); ctx.lineTo(0, -30); ctx.lineTo(12, 18); ctx.fill(); ctx.fillStyle = "rgba(255,255,255,0.6)"; ctx.fillRect(-2, -20, 3, 30); }
     else if (w === 2) { ctx.fillStyle = ["#7a4ad0", "#3fd8a0", "#d04ab0"][k % 3]; ctx.globalAlpha = 0.6 + 0.4 * Math.sin(mt * 2 + k); ctx.beginPath(); ctx.arc(0, 0, 12, Math.PI, 0); ctx.fill(); ctx.fillStyle = "#e8e0f0"; ctx.fillRect(-3, 0, 6, 12); }
+    else if (w === 4) {
+      // engranajes que giran y tuberías
+      ctx.rotate((k % 2 ? 1 : -1) * mt * 0.6); ctx.fillStyle = k % 3 ? "#5a5a66" : "#8a6a3a";
+      ctx.beginPath(); for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2, rr = i % 2 ? 18 : 23; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } ctx.closePath(); ctx.fill();
+      ctx.fillStyle = MAP_BG[4][1]; ctx.beginPath(); ctx.arc(0, 0, 7, 0, 7); ctx.fill();
+    }
     else { const g = ctx.createRadialGradient(0, 0, 2, 0, 0, 26); g.addColorStop(0, "rgba(255,200,80,0.8)"); g.addColorStop(1, "rgba(255,80,20,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 26 + Math.sin(mt * 4 + k) * 4, 0, 7); ctx.fill(); }
     ctx.restore(); ctx.globalAlpha = 1;
   }
@@ -2097,17 +2214,20 @@ function drawMap() {
   titleText(`MUNDO ${w + 1}`, ld ? 42 : s ? 70 : 64, ld ? 22 : s ? 22 : 30, WORLDS[w].color);
   ctx.textAlign = "center"; ctx.fillStyle = "#fff3dc"; ctx.font = `bold ${ld ? 13 : s ? 15 : 18}px system-ui`; ctx.fillText(WORLDS[w].name, VW / 2, ld ? 62 : s ? 96 : 92, ld ? VW - 260 : VW - 24);
   // camino
-  const nodes = []; for (let n = 0; n < 10; n++) nodes.push(mapNode(w * 10 + n));
+  const nodes = []; for (let n = 0; n < WSIZE[w]; n++) nodes.push(mapNode(WSTART[w] + n));
   ctx.lineCap = "round";
-  for (let n = 0; n < 9; n++) {
-    const a = nodes[n], b = nodes[n + 1], open = w * 10 + n + 1 <= top;
+  for (let n = 0; n < WSIZE[w] - 1; n++) {
+    const a = nodes[n], b = nodes[n + 1], open = WSTART[w] + n + 1 <= top;
     ctx.strokeStyle = "rgba(0,0,0,0.45)"; ctx.lineWidth = 12; ctx.beginPath(); ctx.moveTo(a.x, a.y + 3); ctx.lineTo(b.x, b.y + 3); ctx.stroke();
     ctx.strokeStyle = open ? "#e8c27a" : "rgba(160,150,140,0.35)"; ctx.lineWidth = 8; ctx.setLineDash(open ? [] : [6, 8]); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]);
   }
-  if (w === 3 && ultraOpen()) { const a = nodes[9], b = mapNode(40); ctx.strokeStyle = `rgba(255,80,240,${0.5 + 0.3 * Math.sin(time * 4)})`; ctx.lineWidth = 5; ctx.setLineDash([4, 6]); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]); }
-  // camino morado hasta el nivel secreto, junto al nivel 3
-  const sNode = SECRET_NODE + w, sOpen = canPlay(sNode), sp = mapNode(sNode), sa = nodes[2];
+  if (w === 3 && ultraOpen()) { const a = nodes[WSIZE[w] - 1], b = mapNode(ULTRA_NODE); ctx.strokeStyle = `rgba(255,80,240,${0.5 + 0.3 * Math.sin(time * 4)})`; ctx.lineWidth = 5; ctx.setLineDash([4, 6]); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]); }
+  // caminos morados hasta los niveles secretos de este mundo, junto a su nivel
+  const sNodes = SECRETS.map((d, si) => d.ultra || worldOf(d.lv) !== w ? null : SECRET_NODE + si).filter(x => x !== null);
+  for (const sNode of sNodes) {
+  const sOpen = canPlay(sNode), sp = mapNode(sNode), sa = mapNode(secretParent(sNode));
   ctx.strokeStyle = sOpen ? `rgba(200,120,255,${0.6 + 0.3 * Math.sin(time * 4)})` : "rgba(160,140,180,0.3)"; ctx.lineWidth = 5; ctx.setLineDash([4, 6]); ctx.beginPath(); ctx.moveTo(sa.x, sa.y); ctx.lineTo(sp.x, sp.y); ctx.stroke(); ctx.setLineDash([]);
+  }
   // nodos
   const drawSecretNode = (i, pt) => {
     const si = i - SECRET_NODE, open = canPlay(i), sel = mapSel === i, done = secretDone(si), r = 18, bob = sel && !A11().motion ? Math.sin(time * 5) * 3 : 0;
@@ -2125,7 +2245,7 @@ function drawMap() {
     ui.push({ x: pt.x - r - 6, y: pt.y - r - 6, w: r * 2 + 12, h: r * 2 + 12, fn: () => { if (mapSel === i) playFromMap(i); else if (open) { mapSel = i; SFX.ui(); } else showToast("Llega antes a su nivel para abrirlo", 1.6); }, label: SECRETS[si].name });
   };
   const drawNode = (i, pt) => {
-    const n = i % 10, open = canPlay(i), sel = mapSel === i, boss = n === 4 || n === 9, ultra = i === 40, r = ultra ? 24 : boss ? 22 : 17;
+    const n = numIn(i), open = canPlay(i), sel = mapSel === i, ultra = i === ULTRA_NODE, boss = !ultra && isBossLevel(i), r = ultra ? 24 : boss ? 20 : 15;
     const bob = sel && !A11().motion ? Math.sin(time * 5) * 3 : 0;
     if (sel) { ctx.strokeStyle = "#ffe27a"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(pt.x, pt.y, r + 8 + Math.sin(time * 6) * 2, 0, 7); ctx.stroke(); }
     const g = ctx.createRadialGradient(pt.x - 5, pt.y - 6, 2, pt.x, pt.y, r);
@@ -2135,16 +2255,16 @@ function drawMap() {
     ctx.fillStyle = "#fff"; ctx.font = `bold ${ultra ? 18 : boss ? 16 : 14}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(ultra ? "★" : !open ? "🔒" : boss ? "🏰" : String(n + 1), pt.x, pt.y + bob + 1); ctx.textBaseline = "alphabetic";
     // estrellas conseguidas
-    if (!ultra) for (let k = 0; k < 3; k++) { ctx.fillStyle = k < (pr.stars[i] || 0) ? "#ffd23f" : "rgba(255,255,255,0.18)"; star(pt.x + (k - 1) * 11, pt.y + r + 10, 4.5); }
+    if (!ultra) for (let k = 0; k < 3; k++) { ctx.fillStyle = k < (pr.stars[i] || 0) ? "#ffd23f" : "rgba(255,255,255,0.18)"; star(pt.x + (k - 1) * 9, pt.y + r + 9, 3.8); }
     // nivel con secreto: gema morada (rellena si ya lo encontraste)
     const si = secretFor(i);
     if (si !== null && !ultra && open) { ctx.save(); ctx.translate(pt.x + r * 0.8, pt.y - r * 0.8); ctx.rotate(Math.PI / 4); ctx.fillStyle = secretDone(si) ? "#c070ff" : "rgba(0,0,0,0.5)"; ctx.strokeStyle = "#e0b0ff"; ctx.lineWidth = 1.5; ctx.fillRect(-5, -5, 10, 10); ctx.strokeRect(-5, -5, 10, 10); ctx.restore(); }
     if (ultra && secretDone(ULTRA)) { ctx.fillStyle = "#ffd23f"; ctx.font = "bold 12px system-ui"; ctx.fillText("✓", pt.x + r, pt.y - r); }
     ui.push({ x: pt.x - r - 6, y: pt.y - r - 6, w: r * 2 + 12, h: r * 2 + 12, fn: () => { if (mapSel === i) playFromMap(i); else if (canPlay(i)) { mapSel = i; SFX.ui(); } else showToast("Todavía no has llegado hasta aquí", 1.6); }, label: ultra ? "La Grieta del Vacío" : LEVELS[i].name });
   };
-  nodes.forEach((pt, n) => drawNode(w * 10 + n, pt));
-  drawSecretNode(sNode, sp);
-  if (w === 3 && ultraOpen()) drawNode(40, mapNode(40));
+  nodes.forEach((pt, n) => drawNode(WSTART[w] + n, pt));
+  for (const sNode of sNodes) drawSecretNode(sNode, mapNode(sNode));
+  if (w === 3 && ultraOpen()) drawNode(ULTRA_NODE, mapNode(ULTRA_NODE));
   // tu personaje camina hasta el nivel elegido
   const target = mapPageOf(mapSel) === w ? mapNode(mapSel) : null;
   if (target) {
@@ -2158,9 +2278,9 @@ function drawMap() {
   const pw = Math.min(520, VW - 24), px = VW / 2 - pw / 2, py = VH - (ld ? 100 : mapTall() ? 150 : 128);
   panel(px, py, pw, ld ? 92 : mapTall() ? 138 : 116, 14);
   const secSel = isSecretNode(mapSel) ? SECRETS[mapSel - SECRET_NODE] : null, secPow = secSel && POWERS[mapSel - SECRET_NODE];
-  const name = mapSel === 40 ? "La Grieta del Vacío" : secSel ? secSel.name : LEVELS[mapSel].name;
-  ctx.textAlign = "center"; ctx.fillStyle = mapSel === 40 ? "#ff8af0" : secSel ? "#d0a0ff" : "#e8a33d"; ctx.font = "bold 12px system-ui";
-  ctx.fillText(mapSel === 40 ? "NIVEL SUPERSECRETO · PESADILLA" : secSel ? `NIVEL SECRETO · DIFÍCIL${secPow ? " · premio: " + secPow.icon + " " + secPow.name : ""}` : levelLabel(mapSel), VW / 2, py + 20, pw - 16);
+  const name = mapSel === ULTRA_NODE ? "La Grieta del Vacío" : secSel ? secSel.name : LEVELS[mapSel].name;
+  ctx.textAlign = "center"; ctx.fillStyle = mapSel === ULTRA_NODE ? "#ff8af0" : secSel ? "#d0a0ff" : "#e8a33d"; ctx.font = "bold 12px system-ui";
+  ctx.fillText(mapSel === ULTRA_NODE ? "NIVEL SUPERSECRETO · PESADILLA" : secSel ? `NIVEL SECRETO · DIFÍCIL${secPow ? " · premio: " + secPow.icon + " " + secPow.name : ""}` : levelLabel(mapSel), VW / 2, py + 20, pw - 16);
   ctx.fillStyle = "#fff3dc"; ctx.font = `900 ${ld ? 16 : s ? 18 : 22}px ${TITLE_FONT}`; ctx.fillText(name, VW / 2, py + (ld ? 38 : 46), pw - 20);
   const bw = s ? (pw - 40) / 3 : 150, by = py + (ld ? 46 : s ? 66 : 62);
   const bh = ld ? 38 : 40;
@@ -2172,7 +2292,7 @@ function drawMap() {
 }
 
 // ---------- Niveles secretos, retos y poderes ----------
-const secretFor = i => i % 10 === 2 ? Math.floor(i / 10) : null;
+const secretFor = i => { const si = SECRETS.findIndex(d => !d.ultra && d.lv === i); return si < 0 ? null : si; };
 const ULTRA = 4;
 const secretsKey = () => "secrets." + charId, powersKey = () => "powers." + charId;
 const secretDone = si => (store.get(secretsKey(), []) || []).includes(si);
@@ -2183,8 +2303,20 @@ const POWERS = [
   { id: "lavaboots", name: "Botas de lava", desc: "La lava y los pinchos no te hacen daño", icon: "🥾", color: "#ff7a2a" },
 ];
 POWERS.push({ id: "phoenix", name: "Renacer del Fénix", desc: "Una vez por nivel, si caes, renaces con media vida", icon: "🔥", color: "#ff5a2a" });
+POWERS.push(
+  { id: "magnet", name: "Imán de tesoros", desc: "El oro, los dardos y los corazones vienen hacia ti", icon: "🧲", color: "#ff5a6a" },
+  { id: "autoshield", name: "Escudo de burbuja", desc: "Una burbuja para un golpe y se recarga en 20 segundos", icon: "🫧", color: "#8fd8ff" },
+  { id: "double", name: "Dardo extra", desc: "A veces disparas un dardo de más sin gastar munición", icon: "➕", color: "#ff8a1f" },
+  { id: "crit", name: "Puntería dorada", desc: "Muchos más golpes críticos", icon: "🎯", color: "#ffd23f" },
+  { id: "reload", name: "Recarga rápida", desc: "Recargas mucho más deprisa", icon: "⚡", color: "#ff7ab0" },
+  { id: "speed", name: "Botas veloces", desc: "Corres un 15 % más rápido", icon: "👟", color: "#9be15d" },
+);
 const hasPower = id => (store.get(powersKey(), []) || []).includes(id);
 const PUZZLE_TIPS = {
+  pairs: d => `Memoria: dispara a dos losas para ver sus símbolos y encuentra las ${d.n / 2} parejas`,
+  gears: d => "Gira los engranajes hasta que todas las flechas apunten arriba. ¡Cada uno mueve también al siguiente!",
+  lights: () => "Enciende las 9 lámparas. Cada disparo cambia la lámpara y las de su lado",
+  order: d => `Dispara a las ${d.n} dianas en orden, del 1 al ${d.n}, antes de que se acabe el tiempo`,
   runes: d => `Memoriza el orden en que brillan las ${d.len} runas y dispárales igual`,
   braziers: () => "Enciende los 5 braseros a la vez disparándoles antes de que se apaguen",
   plates: () => "Pisa las 4 placas escondidas en las esquinas para abrir la puerta",
@@ -2204,7 +2336,7 @@ function enterSecret(si, portalIdx) {
 }
 function returnFromSecret() {
   const r = secretRet;
-  if (r && r.fromMap) { const back = r.mapSel ?? 40; secretIdx = null; secretRet = null; JINGLES.win(); openMap(back); showToast(back === 40 ? "¡Has conquistado la Grieta del Vacío!" : "¡Nivel secreto superado! Ya tienes su poder", 3); return; }
+  if (r && r.fromMap) { const back = r.mapSel ?? ULTRA_NODE; secretIdx = null; secretRet = null; JINGLES.win(); openMap(back); showToast(back === ULTRA_NODE ? "¡Has conquistado la Grieta del Vacío!" : "¡Nivel secreto superado! Ya tienes su poder", 3); return; }
   secretIdx = null; secretRet = null;
   const pNow = { weapons: P.weapons.slice(), ammo: { ...P.ammo }, res: { ...P.res } };
   suppressSave = true; loadLevel(r.level); suppressSave = false; worldCard = 0;
@@ -2221,9 +2353,53 @@ function setupPuzzle() {
   if (!d.puzzle) { puzzle = null; return; }
   puzzle = { type: d.puzzle, d, objs: puzzleObjs, step: 0, solved: false, t: 0, spawnT: 2, timer: d.time || 0, seq: [], showT: 1.2 };
   if (d.puzzle === "runes") for (let k = 0; k < d.len; k++) puzzle.seq.push(Math.floor(Math.random() * puzzle.objs.length));
+  const os = puzzle.objs;
+  if (d.puzzle === "pairs") {
+    // parejas de símbolos barajadas
+    const syms = []; for (let k = 0; k < os.length / 2; k++) syms.push(k, k);
+    for (let k = syms.length - 1; k > 0; k--) { const j = Math.floor(Math.random() * (k + 1)); [syms[k], syms[j]] = [syms[j], syms[k]]; }
+    os.forEach((o, k) => { o.sym = syms[k]; o.show = 0; o.done = false; }); puzzle.first = null;
+  } else if (d.puzzle === "gears") {
+    // cada engranaje mueve también al siguiente de la cadena; se desordenan desde la solución
+    puzzle.next = os.length === 4 ? [1, 3, 0, 2] : [1, 2, 5, 0, 3, 4];
+    os.forEach(o => { o.dir = 0; o.ang = 0; });
+    // se desordena hasta que hagan falta bastantes giros (así nunca queda casi resuelto)
+    for (let tries = 0; tries < 30; tries++) {
+      os.forEach(o => o.dir = 0);
+      os.forEach((o, j) => { const c = 1 + Math.floor(Math.random() * 3); for (let k = 0; k < 4 - c; k++) gearTurn(j, true); });
+      if (gearMinTurns() >= os.length + 2) break;
+    }
+    os.forEach(o => o.ang = o.dir * Math.PI / 2);
+  } else if (d.puzzle === "lights") {
+    os.forEach(o => o.on = true);
+    // cuatro lámparas distintas: la solución necesita justo esos cuatro disparos (o los mismos en otro orden)
+    const pick = [0, 1, 2, 3, 4, 5, 6, 7, 8].sort(() => Math.random() - 0.5).slice(0, 4);
+    for (const k of pick) lightPress(k, true);
+  } else if (d.puzzle === "order") {
+    puzzle.step = 0; puzzle.timer = 0;
+  }
+}
+// menor número de giros que resuelve los engranajes (prueba todas las combinaciones: como mucho 4^6)
+function gearMinTurns() {
+  const os = puzzle.objs, n = os.length, nx = puzzle.next; let best = 99;
+  const rec = (i, cnt, sum) => {
+    if (sum >= best) return;
+    if (i === n) { const d = os.map(o => o.dir); cnt.forEach((c, j) => { d[j] += c; d[nx[j]] += c; }); if (d.every(x => x % 4 === 0)) best = sum; return; }
+    for (let c = 0; c < 4; c++) { cnt[i] = c; rec(i + 1, cnt, sum + c); }
+  };
+  rec(0, [], 0); return best;
+}
+function gearTurn(i, silent) {
+  const os = puzzle.objs; for (const j of [i, puzzle.next[i]]) { os[j].dir = (os[j].dir + 1) % 4; os[j].flash = 0.3; }
+  if (!silent) { SFX.bounce(); beep(300 + i * 60, 0.08, "square", 0.04); }
+}
+function lightPress(i, silent) {
+  const r0 = Math.floor(i / 3), c0 = i % 3;
+  for (const [dr, dc] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) { const r1 = r0 + dr, c1 = c0 + dc; if (r1 >= 0 && r1 < 3 && c1 >= 0 && c1 < 3) { const o = puzzle.objs[r1 * 3 + c1]; o.on = !o.on; o.flash = 0.35; } }
+  if (!silent) beep(puzzle.objs[i].on ? 660 : 330, 0.1, "triangle", 0.05);
 }
 function puzzleSpawn(n, near) {
-  const pool = ["sktx", "tkxo", "fxok", "eqpk"][curWorld()];
+  const pool = ["sktx", "tkxo", "fxok", "eqpk", "34ko8"][curWorld()];
   for (let k = 0; k < n; k++) {
     for (let tries = 0; tries < 20; tries++) {
       const x = rand(48, 12 * TS), y = rand(48, 15 * TS);
@@ -2239,15 +2415,35 @@ function solvePuzzle() {
   showToast("¡Reto superado! La puerta se abre... cuidado con el guardián", 3);
 }
 function puzzleHit(p) {
-  if (!puzzle || puzzle.solved || (puzzle.type !== "runes" && puzzle.type !== "braziers")) return false;
+  if (!puzzle || puzzle.solved || !["runes", "braziers", "pairs", "gears", "lights", "order"].includes(puzzle.type)) return false;
   const o = puzzle.objs.find(o => Math.hypot(o.x - p.x, o.y - p.y) < 16); if (!o) return false;
   const i = puzzle.objs.indexOf(o);
+  if (puzzle.type === "pairs") {
+    if (o.done || o.show > 0 || puzzle.wait > 0) return true;
+    o.show = 99; beep(520 + o.sym * 70, 0.12, "sine", 0.05);
+    if (puzzle.first === null) { puzzle.first = o; return true; }
+    const a = puzzle.first; puzzle.first = null;
+    if (a.sym === o.sym) { a.done = o.done = true; SFX.key(); if (puzzle.objs.every(q => q.done)) solvePuzzle(); }
+    else { a.show = o.show = 0.9; puzzle.wait = 0.9; SFX.hurt(); puzzleSpawn(1); }
+    return true;
+  }
+  if (puzzle.type === "gears") { gearTurn(i); if (puzzle.objs.every(q => q.dir === 0)) setTimeout(() => puzzle && !puzzle.solved && puzzle.objs.every(q => q.dir === 0) && solvePuzzle(), 450); return true; }
+  if (puzzle.type === "lights") { lightPress(i); if (puzzle.objs.every(q => q.on)) solvePuzzle(); else if (Math.random() < 0.25) puzzleSpawn(1); return true; }
+  if (puzzle.type === "order") {
+    if (o.hitOk) return true;
+    if (i === puzzle.step) { o.hitOk = true; o.flash = 0.4; puzzle.step++; if (puzzle.step === 1) puzzle.timer = puzzle.d.time; beep(440 + puzzle.step * 80, 0.1, "triangle", 0.06); if (puzzle.step >= puzzle.objs.length) solvePuzzle(); }
+    else orderFail("¡Esa no toca! Empieza otra vez por la 1");
+    return true;
+  }
   if (puzzle.type === "braziers") { if (o.t <= 0) { SFX.secret(); for (let k = 0; k < 10; k++) parts.push({ x: o.x, y: o.y - 8, vx: rand(-30, 30), vy: rand(-90, -30), life: 0.5, max: 0.5, c: "#ffb040", s: 2.5, glow: true }); } o.t = puzzle.d.dur; return true; }
   if (puzzle.showT > 0) return true;
   o.flash = 0.4;
   if (i === puzzle.seq[puzzle.step]) { puzzle.step++; beep(500 + puzzle.step * 120, 0.12, "triangle", 0.06); if (puzzle.step >= puzzle.seq.length) solvePuzzle(); }
   else { SFX.hurt(); showToast("¡Orden equivocado! Fíjate otra vez", 2); puzzle.step = 0; puzzle.showT = 1.2; puzzleSpawn(2); }
   return true;
+}
+function orderFail(msg) {
+  SFX.hurt(); showToast(msg, 2); puzzle.step = 0; puzzle.timer = 0; for (const q of puzzle.objs) q.hitOk = false; puzzleSpawn(2);
 }
 function hintSecret() {
   if (secretIdx !== null || inTutorial) return;
@@ -2275,6 +2471,16 @@ function updatePuzzle(dt) {
   } else if (puzzle.type === "plates") {
     for (const o of puzzle.objs) if (!o.on && Math.hypot(o.x - P.x, o.y - P.y) < 18) { o.on = true; SFX.key(); puzzleSpawn(2); showToast(`Placa ${puzzle.objs.filter(o => o.on).length}/4`, 1.5); }
     if (puzzle.objs.every(o => o.on)) solvePuzzle();
+  } else if (puzzle.type === "pairs") {
+    puzzle.wait = Math.max(0, (puzzle.wait || 0) - dt);
+    for (const o of puzzle.objs) if (o.show < 50) o.show = Math.max(0, o.show - dt);
+  } else if (puzzle.type === "gears") {
+    for (const o of puzzle.objs) { const tgt = o.dir * Math.PI / 2; let dA = ((tgt - o.ang) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI; o.ang += dA * Math.min(1, dt * 10); }
+    puzzle.spawnT -= dt; if (puzzle.spawnT <= 0) { puzzle.spawnT = 9; if (monsters.length < 6) puzzleSpawn(1); }
+  } else if (puzzle.type === "lights") {
+    puzzle.spawnT -= dt; if (puzzle.spawnT <= 0) { puzzle.spawnT = 10; if (monsters.length < 6) puzzleSpawn(1); }
+  } else if (puzzle.type === "order") {
+    if (puzzle.step > 0) { puzzle.timer -= dt; if (puzzle.timer <= 0) orderFail("¡Se acabó el tiempo! Empieza otra vez por la 1"); }
   } else if (puzzle.type === "survive") {
     puzzle.timer -= dt; puzzle.spawnT -= dt;
     if (puzzle.spawnT <= 0) { puzzle.spawnT = 2.6; if (monsters.length < 10) puzzleSpawn(1 + (puzzle.timer < 15 ? 1 : 0)); }
@@ -2303,6 +2509,56 @@ function drawPuzzle() {
       if (o.t > 0 || puzzle.solved) { const k = puzzle.solved ? 1 : o.t / puzzle.d.dur; flame(o.x, o.y - 4, 7 * (0.5 + k * 0.5), 20 * (0.4 + k * 0.6) + Math.sin(time * 14 + i) * 3, Math.sin(time * 5 + i) * 2, "#ff8a1f"); flame(o.x, o.y - 4, 3.5, 11 * (0.4 + k * 0.6), 0, "#ffe08a");
         if (!puzzle.solved) { ctx.strokeStyle = "#ffd23f"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(o.x, o.y + 18, 6, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); ctx.stroke(); } }
       else { ctx.fillStyle = "rgba(120,120,130,0.6)"; ctx.beginPath(); ctx.arc(o.x, o.y - 6, 3, 0, 7); ctx.fill(); }
+    } else if (puzzle.type === "pairs") {
+      // losa de piedra que, al dispararle, muestra su símbolo
+      const up = o.done || o.show > 0, col = ["#ff5a6a", "#5ac8ff", "#9be15d", "#ffd23f", "#c07aff", "#ff9f43"][o.sym % 6];
+      ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.fillRect(o.x - 13, o.y - 11, 28, 26);
+      const g = ctx.createLinearGradient(0, o.y - 14, 0, o.y + 14); g.addColorStop(0, up ? "#3a3448" : "#6a6478"); g.addColorStop(1, up ? "#1e1a28" : "#3a3646");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(o.x - 13, o.y - 14, 26, 26, 4); ctx.fill();
+      ctx.strokeStyle = o.done ? col : "rgba(255,255,255,0.25)"; ctx.lineWidth = o.done ? 2 : 1; ctx.stroke();
+      if (up) {
+        ctx.save(); ctx.translate(o.x, o.y - 1); ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 2.2; if (o.done) { ctx.shadowColor = col; ctx.shadowBlur = 12; }
+        const k = o.sym % 6, big = o.sym >= 6;
+        if (k === 0) { ctx.beginPath(); ctx.arc(0, 0, 6, 0, 7); ctx.fill(); }
+        else if (k === 1) { ctx.beginPath(); ctx.moveTo(0, -7); ctx.lineTo(7, 6); ctx.lineTo(-7, 6); ctx.closePath(); ctx.fill(); }
+        else if (k === 2) ctx.fillRect(-6, -6, 12, 12);
+        else if (k === 3) star(0, 0, 8);
+        else if (k === 4) heart(0, 1, 6, col);
+        else { ctx.beginPath(); ctx.moveTo(-7, 0); ctx.lineTo(0, -7); ctx.lineTo(7, 0); ctx.lineTo(0, 7); ctx.closePath(); ctx.fill(); }
+        if (big) { ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(0, 0, 10, 0, 7); ctx.stroke(); }
+        ctx.restore();
+      } else { ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.font = "bold 14px system-ui"; ctx.textAlign = "center"; ctx.fillText("?", o.x, o.y + 4); }
+    } else if (puzzle.type === "gears") {
+      // engranaje con flecha; la cadena dibujada muestra a cuál arrastra
+      const j = puzzle.next[i], q = puzzle.objs[j];
+      ctx.strokeStyle = "rgba(255,204,51,0.35)"; ctx.lineWidth = 3; ctx.setLineDash([3, 4]); ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.setLineDash([]);
+      const mx = (o.x + q.x) / 2, my = (o.y + q.y) / 2, aa = Math.atan2(q.y - o.y, q.x - o.x);
+      ctx.fillStyle = "rgba(255,204,51,0.7)"; ctx.beginPath(); ctx.moveTo(mx + Math.cos(aa) * 6, my + Math.sin(aa) * 6); ctx.lineTo(mx + Math.cos(aa + 2.5) * 5, my + Math.sin(aa + 2.5) * 5); ctx.lineTo(mx + Math.cos(aa - 2.5) * 5, my + Math.sin(aa - 2.5) * 5); ctx.fill();
+      ctx.save(); ctx.translate(o.x, o.y); ctx.rotate(o.ang);
+      const ok = o.dir === 0, base = ok ? "#9be15d" : "#a8a8b8";
+      ctx.fillStyle = mixHex(base, "#000000", 0.25); ctx.beginPath();
+      for (let k = 0; k < 20; k++) { const a = k / 20 * Math.PI * 2, rr = k % 2 ? 13 : 16; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+      ctx.closePath(); ctx.fill();
+      const g = ctx.createRadialGradient(-3, -4, 1, 0, 0, 13); g.addColorStop(0, mixHex(base, "#ffffff", 0.4)); g.addColorStop(1, base);
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 11.5, 0, 7); ctx.fill();
+      ctx.fillStyle = "#2a2a34"; ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(6, -2); ctx.lineTo(2, -2); ctx.lineTo(2, 7); ctx.lineTo(-2, 7); ctx.lineTo(-2, -2); ctx.lineTo(-6, -2); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      if (o.flash > 0) { ctx.strokeStyle = `rgba(255,255,255,${o.flash * 2})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(o.x, o.y, 19, 0, 7); ctx.stroke(); }
+      ctx.fillStyle = "rgba(155,225,93,0.8)"; ctx.font = "bold 10px system-ui"; ctx.textAlign = "center"; ctx.fillText("▲", o.x, o.y - 21);
+    } else if (puzzle.type === "lights") {
+      // farol: cristal apagado o encendido con su luz
+      ctx.fillStyle = "#2a2a34"; ctx.fillRect(o.x - 2, o.y + 6, 4, 10); ctx.fillRect(o.x - 7, o.y + 14, 14, 3);
+      if (o.on) { const lg = ctx.createRadialGradient(o.x, o.y, 2, o.x, o.y, 34); lg.addColorStop(0, "rgba(255,230,120,0.55)"); lg.addColorStop(1, "rgba(255,230,120,0)"); ctx.fillStyle = lg; ctx.beginPath(); ctx.arc(o.x, o.y, 34, 0, 7); ctx.fill(); }
+      const g = ctx.createRadialGradient(o.x - 2, o.y - 3, 1, o.x, o.y, 10); g.addColorStop(0, o.on ? "#fffbe0" : "#5a5a6a"); g.addColorStop(1, o.on ? "#ffc830" : "#26262e");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(o.x, o.y, 9, 0, 7); ctx.fill();
+      ctx.strokeStyle = "#1a1a22"; ctx.lineWidth = 1.5; ctx.stroke(); ctx.fillStyle = "#3a3a46"; ctx.fillRect(o.x - 5, o.y - 12, 10, 3);
+      if (o.flash > 0) { ctx.strokeStyle = `rgba(255,255,255,${o.flash * 2})`; ctx.beginPath(); ctx.arc(o.x, o.y, 13, 0, 7); ctx.stroke(); }
+    } else if (puzzle.type === "order") {
+      // diana con su número
+      const ok = o.hitOk, nxt = !puzzle.solved && i === puzzle.step;
+      for (const [rr, c] of [[13, ok ? "#3aa05a" : "#e5484d"], [9, "#ffffff"], [5, ok ? "#3aa05a" : "#e5484d"]]) { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(o.x, o.y, rr, 0, 7); ctx.fill(); }
+      if (nxt) { ctx.strokeStyle = `rgba(255,226,122,${0.5 + 0.5 * Math.sin(time * 8)})`; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(o.x, o.y, 17, 0, 7); ctx.stroke(); }
+      ctx.fillStyle = "#1a1a22"; ctx.font = "bold 11px system-ui"; ctx.textAlign = "center"; ctx.fillText(String(i + 1), o.x, o.y + 4);
     } else if (puzzle.type === "plates") {
       ctx.fillStyle = o.on ? "#9be15d" : "#4a4a56"; ctx.strokeStyle = o.on ? "#d0ffa0" : "#6a6a76"; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.roundRect(o.x - 12, o.y - 12, 24, 24, 4); ctx.fill(); ctx.stroke();
@@ -2314,7 +2570,11 @@ function drawPuzzleHud() {
   if (!puzzle || puzzle.solved || state !== "play") return;
   const t = puzzle.type, txt = t === "runes" ? (puzzle.showT > 0 ? "Mira el orden de las runas..." : `Runas: ${puzzle.step}/${puzzle.seq.length}`)
     : t === "braziers" ? `Braseros encendidos: ${puzzle.objs.filter(o => o.t > 0).length}/${puzzle.objs.length}`
-    : t === "plates" ? `Placas: ${puzzle.objs.filter(o => o.on).length}/4` : `Aguanta: ${Math.ceil(puzzle.timer)} s`;
+    : t === "plates" ? `Placas: ${puzzle.objs.filter(o => o.on).length}/4`
+    : t === "pairs" ? `Parejas: ${puzzle.objs.filter(o => o.done).length / 2}/${puzzle.objs.length / 2}`
+    : t === "gears" ? `Flechas arriba: ${puzzle.objs.filter(o => o.dir === 0).length}/${puzzle.objs.length}`
+    : t === "lights" ? `Lámparas encendidas: ${puzzle.objs.filter(o => o.on).length}/9`
+    : t === "order" ? (puzzle.step ? `Diana ${puzzle.step + 1}/${puzzle.objs.length} · ${Math.ceil(puzzle.timer)} s` : `Dispara a la diana 1`) : `Aguanta: ${Math.ceil(puzzle.timer)} s`;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.font = "bold 15px system-ui"; const w = ctx.measureText(tr(txt)).width + 30, x = VW / 2 - w / 2, y = VH - (isTouch() ? 300 : 150);
   ctx.fillStyle = "rgba(40,15,60,0.85)"; ctx.strokeStyle = "#c070ff"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(x, y, w, 32, 10); ctx.fill(); ctx.stroke();
@@ -2621,7 +2881,7 @@ const canHit = m => !(m.def.ghost && m.vis < 0.35) && !(m.type === "p" && m.ph !
 function damageMon(m, d, ang, silent, quiet, critC = 0.08) {
   if (m.hp <= 0 || !canHit(m)) return;
   let crit = false;
-  if (!silent && Math.random() < critC) { d *= 2; crit = true; }
+  if (!silent && Math.random() < critC + (critC > 0 && hasPower("crit") ? 0.15 : 0)) { d *= 2; crit = true; }
   if (m.stun > 0) d *= 1.5;
   if (m.roll) { d *= 0.25; if (!silent && Math.random() < 0.5) floatText(m.x, m.y - m.r, "¡clink!", "#e8d8b0", 10); }
   if (m.tired > 0) { d *= 1.6; if (Math.random() < 0.3) floatText(m.x + rand(-10, 10), m.y - m.r, "¡x1.6!", "#ffe27a", 12); }
@@ -2856,7 +3116,7 @@ function updatePlayer(dt) {
     P.dash -= dt; vx = P.dvx; vy = P.dvy; if (P.dash <= 0) P.land = 1;
     ghosts.push({ x: P.x, y: P.y, life: 0.22 });
   } else {
-    const sp = P.speed * (onWeb ? 0.45 : 1) * (P.turbo > 0 ? 1.4 : 1);
+    const sp = P.speed * (onWeb ? 0.45 : 1) * (P.turbo > 0 ? 1.4 : 1) * (hasPower("speed") ? 1.15 : 1);
     vx = mx * sp; vy = my * sp;
     if (T(ptx, pty) === ICE) {
       // en el hielo cuesta arrancar y frenar
@@ -2874,6 +3134,8 @@ function updatePlayer(dt) {
       for (let i = 0; i < 3; i++) parts.push({ x: P.x + rand(-4, 4), y: P.y + 10, vx: rand(-18, 18) - mx * 25, vy: rand(-14, -2) - my * 20, life: 0.4, max: 0.4, c: "rgba(175,155,135,0.55)", s: rand(1.5, 3) });
     }
   }
+  // las cintas te arrastran (salvo en mitad de un esquive)
+  { const cd2 = T(ptx, pty) === CONV && P.dash <= 0 ? convDir[pty * W + ptx] : null; if (cd2) { vx += cd2[0] * 95; vy += cd2[1] * 95; hint("conv", "¡Una cinta transportadora! Te arrastra en la dirección de las flechas", 3); } }
   moveEnt(P, (vx + P.kx) * dt, (vy + P.ky) * dt, true);
   P.lean += (mx * 0.16 - P.lean) * Math.min(1, dt * 10); P.land = Math.max(0, P.land - dt * 5);
   P.kx *= Math.pow(0.0005, dt); P.ky *= Math.pow(0.0005, dt);
@@ -3137,6 +3399,7 @@ function updateMonsters(dt) {
     if (m.def.boss && m.charging > 0) { vx = m.cvx; vy = m.cvy; }
     if (m.fear > 0) { m.fear -= dt; if (!m.def.rooted) { vx = -ux * sp * 1.25; vy = -uy * sp * 1.25; } }
     if (m.def.rooted) { vx = vy = 0; m.kx = m.ky = 0; }
+    else if (!m.def.fly && mt === CONV) { const cd2 = convDir[mty * W + mtx]; vx += cd2[0] * 80; vy += cd2[1] * 80; }
     let blocked = false;
     if (m.def.ghost) { m.x = clamp(m.x + (vx + m.kx) * dt, TS, (W - 1) * TS); m.y = clamp(m.y + (vy + m.ky) * dt, TS, (H - 1) * TS); }
     else blocked = moveEnt(m, (vx + m.kx) * dt, (vy + m.ky) * dt, false);
@@ -3583,16 +3846,17 @@ function finishLevel() {
   if (saved && secretIdx === null) {
     saved.prog = carryProg(Math.min(LEVELS.length - 1, levelIdx + 1));
     saved.prog.stars[levelIdx] = Math.max(saved.prog.stars[levelIdx] || 0, lv.stars);
-    if (levelIdx + 1 >= LEVELS.length) saved.prog.beaten = true;
+    if (levelIdx === MAIN_END) saved.prog.beaten = true;
     store.set(saveKey(), saved);
   }
   if (!lv.hurt) unlock("nohit");
   if (lv.stars >= 3) unlock("stars3");
-  if (levelIdx % 10 === 9 && levelIdx + 1 < LEVELS.length) {
-    // fin de un mundo: historieta y a por el siguiente
+  if (numIn(levelIdx) === WSIZE[curWorld()] - 1 && levelIdx !== MAIN_END) {
+    // fin de un mundo: historieta y a por el siguiente (al acabar la fábrica, a ver los resultados)
     state = "levelDone"; uiSel = 0; JINGLES.win();
     startWorldEnd(curWorld());
-  } else if (levelIdx + 1 >= LEVELS.length) {
+    if (levelIdx + 1 >= LEVELS.length) { story.done = () => { state = "win"; uiSel = 0; JINGLES.win(); }; story.last = "ver tus resultados"; }
+  } else if (levelIdx === MAIN_END) {
     if (settings.diff === 2) unlock("legend");
     store.set(charK("brasa"), true);
     startEnding();
@@ -3667,6 +3931,7 @@ function drawMain() {
     else if (t === LAVA) drawLava(px, py, x, y);
     else if (t === GATE) drawGate(px, py, x, y);
     else if (t === PORTAL) drawPortal(px, py, x, y);
+    else if (t === CONV) drawConv(px, py, convDir[y * W + x]);
     else if (t === CRATE) drawCrate(px, py, thp[y * W + x]);
     else if (t === WATER) {
       ctx.strokeStyle = "rgba(150,215,255,0.11)"; ctx.lineWidth = 1;
@@ -3805,6 +4070,8 @@ function drawMain() {
   for (const p of projs) if (p.kind === "rocket" || p.kind === "orb") light(p.x, p.y, 60, 0.7);
   for (const f of flashes) light(f.x, f.y, f.r, Math.min(1, f.life * 4));
   for (const it of items) if (it.kind === "key" || it.kind === "weapon") light(it.x, it.y, 46, 0.6);
+  // los objetos del puzle brillan un poco para verlos aunque esté oscuro (las lámparas encendidas, mucho)
+  if (puzzle) for (const o of puzzle.objs) light(o.x, o.y, puzzle.type === "lights" && o.on ? 80 : 40, puzzle.type === "lights" && o.on ? 0.9 : 0.45);
   for (const e of exits) light(e.x, e.y, 85, 0.75);
   for (const l of emiLights) if (inView(l.x, l.y, l.r)) light(l.x, l.y, l.r * (l.flick ? 0.92 + 0.08 * Math.sin(time * 11 + l.x) : 1), l.k);
   if (P.muzzle > 0) light(P.x + Math.cos(P.aim) * 20, P.y + Math.sin(P.aim) * 20, 90, 0.8);
@@ -4660,6 +4927,12 @@ function drawMonsterBody(m) {
 // cuerpos propios de cada jefe (los que no son el Ogro, la Reina Araña ni el Dragón)
 const BOSS_LOOK = {
   J: { kind: "golem", rock: "#4a3028", dark: "#1e120e", glow: "#ff8a2a", hot: "#ffe08a" },
+  "Γ": { kind: "golem", rock: "#7a6048", dark: "#2e2218", glow: "#ffb040", hot: "#ffe0a0" },
+  "Λ": { kind: "wraith", body: "#d8f6ff", edge: "#7fc8f0", eye: "#3ab8ff", ice: true },
+  "Δ": { kind: "wraith", body: "#4a5a3a", edge: "#1a2010", eye: "#c0ff8a" },
+  "Θ": { kind: "salamander" },
+  "Φ": { kind: "golem", rock: "#9aa6b8", dark: "#2a3040", glow: "#ffcc33", hot: "#fff3b0" },
+  "Ω": { kind: "golem", rock: "#5a6070", dark: "#1a1e28", glow: "#ff5a3a", hot: "#ffe0a0", crystal: false },
   H: { kind: "golem", rock: "#7fd8f0", dark: "#2a6a8a", glow: "#e8ffff", hot: "#ffffff", crystal: true },
   a: { kind: "golem", rock: "#8a9bb0", dark: "#3a4454", glow: "#7fe8ff", hot: "#e0fbff", runes: true },
   Y: { kind: "yeti" }, y: { kind: "salamander" }, X: { kind: "shadowking" }, 2: { kind: "devourer" },
@@ -5454,7 +5727,7 @@ function drawHUD() {
     const a = Math.min(1, banner, (3.2 - banner) * 3);
     ctx.globalAlpha = a; ctx.textAlign = "center";
     ctx.fillStyle = "#e8a33d"; ctx.font = `bold ${small ? 13 : 16}px system-ui`;
-    ctx.fillText(inTutorial ? "— TUTORIAL —" : secretIdx !== null ? "— NIVEL SECRETO · DIFÍCIL —" : `— MUNDO ${curWorld() + 1} · NIVEL ${levelIdx % 10 + 1}/10 —`, VW / 2, VH * 0.36);
+    ctx.fillText(inTutorial ? "— TUTORIAL —" : secretIdx !== null ? "— NIVEL SECRETO · DIFÍCIL —" : `— MUNDO ${curWorld() + 1} · NIVEL ${numIn(levelIdx) + 1}/${WSIZE[curWorld()]} —`, VW / 2, VH * 0.36);
     ctx.fillStyle = "#f3e6c8"; ctx.font = `900 ${small ? 26 : 40}px ${TITLE_FONT}`;
     ctx.shadowColor = "rgba(232,163,61,0.6)"; ctx.shadowBlur = 18;
     ctx.fillText(curDef().name, VW / 2, VH * 0.36 + (small ? 36 : 50), VW - 32);
@@ -5653,11 +5926,11 @@ const toggleFx = () => { settings.fx = !settings.fx; store.set("fx", settings.fx
 const toMenu = () => {
   // si sales tras superar un nivel, «Continuar» empieza en el siguiente
   if (!inTutorial && state === "levelDone" && levelIdx < LEVELS.length - 1) {
-    saved = { prog: carryProg(levelIdx + 1), level: levelIdx + 1, diff: settings.diff, weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
+    saved = { v: 2, prog: carryProg(levelIdx + 1), level: levelIdx + 1, diff: settings.diff, weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
     store.set(saveKey(), saved); saveIcon = 1.8;
   }
   gameDirty = false; exitDlg = null; secretIdx = null; secretRet = null;
-  inTutorial = false; state = "title"; uiSel = 0; saved = store.get(saveKey(), null);
+  inTutorial = false; state = "title"; uiSel = 0; saved = loadSave();
 };
 
 function drawPause() {
@@ -5669,7 +5942,7 @@ function drawPause() {
     { label: "Continuar", fn: resume },
     ...(inTutorial ? [] : [{ label: gameDirty ? "💾 Guardar partida" : "✓ Partida guardada", fn: saveGame }]),
     { label: "Reiniciar nivel", fn: () => loadLevel(levelIdx, true) },
-    ...(inTutorial ? [{ label: "Saltar tutorial", fn: endTutorial }] : [{ label: "🗺️ Mapa de los mundos", fn: () => { const go = () => openMap(secretIdx === ULTRA ? 40 : levelIdx); if (!askLeave(go)) go(); } }]),
+    ...(inTutorial ? [{ label: "Saltar tutorial", fn: endTutorial }] : [{ label: "🗺️ Mapa de los mundos", fn: () => { const go = () => openMap(secretIdx === ULTRA ? ULTRA_NODE : secretIdx !== null ? SECRET_NODE + secretIdx : levelIdx); if (!askLeave(go)) go(); } }]),
     { label: `Minimapa: ${["No", "Pequeño", "Grande"][settings.minimap]}`, fn: () => { settings.minimap = (settings.minimap + 1) % 3; store.set("minimap", settings.minimap); } },
     volItem(),
     { label: `Efectos: ${settings.fx ? "Altos" : "Bajos"}`, fn: toggleFx },
@@ -5703,7 +5976,7 @@ function drawLevelDone() {
   dim(0.8);
   const s = sm(), y0 = VH * (s ? 0.14 : 0.16);
   ctx.textAlign = "center"; ctx.fillStyle = "#e8a33d"; ctx.font = `bold ${s ? 13 : 15}px system-ui`;
-  ctx.fillText(levelIdx % 10 === 9 ? `¡MUNDO ${curWorld() + 1} COMPLETADO!` : `MUNDO ${curWorld() + 1} · NIVEL ${levelIdx % 10 + 1} COMPLETADO`, VW / 2, y0);
+  ctx.fillText(numIn(levelIdx) === WSIZE[curWorld()] - 1 ? `¡MUNDO ${curWorld() + 1} COMPLETADO!` : `MUNDO ${curWorld() + 1} · NIVEL ${numIn(levelIdx) + 1} COMPLETADO`, VW / 2, y0);
   titleText(LEVELS[levelIdx].name, y0 + (s ? 36 : 48), s ? 24 : 36);
   drawStars(lv.stars, y0 + (s ? 80 : 104), s ? 26 : 34);
   let y = y0 + (s ? 128 : 160); const lh = s ? 26 : 30;
@@ -5722,7 +5995,7 @@ function drawDead() {
   titleText("¡TE HAN ATRAPADO!", VH * 0.3, s ? 28 : 46, "#ff6b6b");
   ctx.fillStyle = "rgba(243,230,200,0.75)"; ctx.font = `${s ? 13 : 16}px system-ui`; ctx.textAlign = "center";
   ctx.fillText("Consejo: " + deathTip, VW / 2, VH * 0.3 + 40, VW - 32);
-  menuList([{ label: "Reintentar nivel", fn: () => loadLevel(levelIdx, true) }, ...(inTutorial ? [] : [{ label: "🗺️ Mapa de los mundos", fn: () => openMap(secretIdx === ULTRA ? 40 : levelIdx) }]), { label: "Salir al menú", fn: toMenu }], VW / 2, VH * 0.3 + 70, Math.min(300, VW - 40), s ? 42 : 48, 10);
+  menuList([{ label: "Reintentar nivel", fn: () => loadLevel(levelIdx, true) }, ...(inTutorial ? [] : [{ label: "🗺️ Mapa de los mundos", fn: () => openMap(secretIdx === ULTRA ? ULTRA_NODE : secretIdx !== null ? SECRET_NODE + secretIdx : levelIdx) }]), { label: "Salir al menú", fn: toMenu }], VW / 2, VH * 0.3 + 70, Math.min(300, VW - 40), s ? 42 : 48, 10);
 }
 function drawWin() {
   dim(0.8);
@@ -5796,7 +6069,7 @@ function drawTitle() {
   }
   const ld = land();
   ctx.fillStyle = A11().contrast ? "#fff" : "rgba(243,230,200,0.75)"; ctx.font = `${s ? 13 : 16}px system-ui`;
-  if (!ld) ctx.fillText("4 mundos y 40 niveles: rescata a Chispa y descubre qué esconde el Corazón del Abismo.", VW / 2, ty + (s ? 80 : 120), VW - 24);
+  if (!ld) ctx.fillText("5 mundos y 75 niveles: rescata a Chispa y descubre qué esconde el Corazón del Abismo.", VW / 2, ty + (s ? 80 : 120), VW - 24);
 
   // lanzadores girando
   if (!ld) {
@@ -6107,13 +6380,13 @@ if (!chars.some(c => c.id === charId)) charId = chars[0].id;
 const curChar = () => chars.find(c => c.id === charId) || chars[0];
 const saveChars = () => { store.set("chars", chars); store.set("charId", charId); };
 Object.assign(look, lookSnap(curChar())); saveChars();
-saved = store.get(saveKey(), null);
+saved = loadSave();
 let editId = null, editBackup = null, discardAsk = 0, charPage = 0, delAsk = { id: null, t: 0 };
 const lookDirty = () => editBackup && JSON.stringify(lookSnap(look)) !== JSON.stringify(editBackup);
 function useChar(id, quiet) {
   if (!chars.some(c => c.id === id)) return;
   charId = id; Object.assign(look, lookSnap(curChar())); saveLook(); saveChars();
-  saved = store.get(saveKey(), null); loadCharData();
+  saved = loadSave(); loadCharData();
   if (typeof setLang === "function") setLang(countryOf(look.country).lang);
   if (!quiet) { SFX.uiGo(); showToast(`Ahora juegas con ${look.name}`, 2); }
 }
@@ -6125,7 +6398,7 @@ function saveCharacter() {
     const c = { ...lookSnap(look), id: newCharId() }; chars.push(c); editId = c.id;
   }
   charId = editId; saveChars(); saveLook(); editBackup = lookSnap(look);
-  saved = store.get(saveKey(), null); loadCharData();
+  saved = loadSave(); loadCharData();
   SFX.secret(); showToast(`¡${look.name} guardado!`, 2.2); saveIcon = 1.8;
   return true;
 }
@@ -6357,7 +6630,7 @@ function drawChars() {
       ctx.font = `bold ${s ? 13 : 15}px system-ui`; ctx.fillText("Nuevo personaje", x + cw / 2, y + ch / 2 + 34, cw - 12);
       return;
     }
-    const on = c.id === charId, sv = store.get("save." + c.id, null);
+    const on = c.id === charId, sv = migrateSave(store.get("save." + c.id, null));
     ui.push({ x, y, w: cw, h: ch - 44, fn: () => useChar(c.id), label: `${c.name}${on ? " (en uso)" : ""}` });
     ctx.fillStyle = hc ? "#000" : on ? "rgba(232,163,61,0.18)" : "rgba(20,16,24,0.85)";
     ctx.strokeStyle = on ? (hc ? "#ffd400" : "#e8a33d") : focus ? "#ffe2a8" : hc ? "#fff" : "rgba(243,230,200,0.2)"; ctx.lineWidth = on || focus ? 2.5 : 1;
@@ -6619,6 +6892,9 @@ const WORLD_END = [
    { cap: n => `El mapa señalaba aún más abajo. «¡Vamos, Chispa!», dijo ${n}. Bajaron al Bosque de las Sombras.` }],
   [{ cap: () => "El Rey de las Sombras huyó gritando: «¡No podrás con el guardián del Corazón!»." },
    { cap: () => "El suelo empezó a quemar... Más abajo latía algo enorme: el Corazón del Abismo." }],
+  null,
+  [{ cap: () => "La Gran Máquina se paró con un último ¡CLONC! y toda la fábrica quedó en silencio." },
+   { cap: n => `Entre los engranajes, Chispa encontró un hueso de oro. «¡Lo hemos conseguido!», gritó ${n}.` }],
 ];
 function startWorldEnd(w) {
   const pages = w === 0 ? ENDING : WORLD_END[w];
@@ -6627,7 +6903,7 @@ function startWorldEnd(w) {
   state = "story"; uiSel = -1;
 }
 function drawWorldScene(w, i, t) {
-  const col = w === 1 ? ["#1a3a5a", "#05101a"] : ["#3a1a0a", "#100503"];
+  const col = w === 1 ? ["#1a3a5a", "#05101a"] : w === 4 ? ["#3a3a44", "#0c0c12"] : ["#3a1a0a", "#100503"];
   const bg = ctx.createRadialGradient(200, 130, 10, 200, 130, 260); bg.addColorStop(0, col[0]); bg.addColorStop(1, col[1]); ctx.fillStyle = bg; ctx.fillRect(0, 0, 400, 250);
   ctx.fillStyle = w === 1 ? "#102030" : "#200a05"; ctx.fillRect(0, 205, 400, 45);
   for (let k = 0; k < 9; k++) { ctx.fillStyle = w === 1 ? "#cfe8ff" : "#2a1008"; ctx.beginPath(); ctx.moveTo(k * 48 - 6, 0); ctx.lineTo(k * 48 + 10, 26 + (k % 3) * 12); ctx.lineTo(k * 48 + 24, 0); ctx.fill(); }
@@ -6809,7 +7085,7 @@ const TR_ROWS = [
 ["Normal", "Normal", "Normal", "Normal", "Normal", "Normale"],
 ["Difícil", "Hard", "Difícil", "Difficile", "Schwer", "Difficile"],
 ["· UNA AVENTURA BAJO TIERRA ·", "· AN UNDERGROUND ADVENTURE ·", "· UMA AVENTURA SUBTERRÂNEA ·", "· UNE AVENTURE SOUTERRAINE ·", "· EIN ABENTEUER UNTER TAGE ·", "· UN'AVVENTURA SOTTOTERRA ·"],
-["10 niveles: encuentra las llaves, abre las puertas y rescata a Chispa del Rey Ogro.", "10 levels: find the keys, open the doors and rescue Sparky from the Ogre King.", "10 níveis: encontre as chaves, abra as portas e resgate a Faísca do Rei Ogro.", "10 niveaux : trouve les clés, ouvre les portes et sauve Étincelle du Roi Ogre.", "10 Level: Finde die Schlüssel, öffne die Türen und rette Funke vor dem Oger-König.", "10 livelli: trova le chiavi, apri le porte e salva Scintilla dal Re Orco."],
+["15 niveles: encuentra las llaves, abre las puertas y rescata a Chispa del Rey Ogro.", "15 levels: find the keys, open the doors and rescue Sparky from the Ogre King.", "15 níveis: encontre as chaves, abra as portas e resgate a Faísca do Rei Ogro.", "15 niveaux : trouve les clés, ouvre les portes et sauve Étincelle du Roi Ogre.", "15 Level: Finde die Schlüssel, öffne die Türen und rette Funke vor dem Oger-König.", "15 livelli: trova le chiavi, apri le porte e salva Scintilla dal Re Orco."],
 ["Récord: {0} puntos", "Best: {0} points", "Recorde: {0} pontos", "Record : {0} points", "Rekord: {0} Punkte", "Record: {0} punti"],
 ["F, J o clic: disparar  ·  ESPACIO: habilidad del sombrero  ·  WASD/flechas: moverse  ·  SHIFT o clic derecho: esquivar", "F, J or click: shoot  ·  SPACE: hat ability  ·  WASD/arrows: move  ·  SHIFT or right click: dodge", "F, J ou clique: atirar  ·  ESPAÇO: habilidade do chapéu  ·  WASD/setas: mover  ·  SHIFT ou clique direito: esquivar", "F, J ou clic : tirer  ·  ESPACE : pouvoir du chapeau  ·  ZQSD/flèches : bouger  ·  MAJ ou clic droit : esquiver", "F, J oder Klick: schießen  ·  LEERTASTE: Hut-Fähigkeit  ·  WASD/Pfeile: bewegen  ·  SHIFT oder Rechtsklick: ausweichen", "F, J o clic: sparare  ·  SPAZIO: abilità del cappello  ·  WASD/frecce: muoversi  ·  SHIFT o clic destro: schivare"],
 ["1-9, 0, - / Q / rueda / clic en la barra: cambiar arma  ·  R: recargar  ·  TAB: minimapa  ·  M: sonido  ·  P/Esc: pausa", "1-9, 0, - / Q / wheel / click the bar: change weapon  ·  R: reload  ·  TAB: minimap  ·  M: sound  ·  P/Esc: pause", "1-9, 0, - / Q / roda / clique na barra: trocar arma  ·  R: recarregar  ·  TAB: minimapa  ·  M: som  ·  P/Esc: pausa", "1-9, 0, - / Q / molette / clic sur la barre : changer d'arme  ·  R : recharger  ·  TAB : mini-carte  ·  M : son  ·  P/Échap : pause", "1-9, 0, - / Q / Mausrad / Klick auf die Leiste: Waffe wechseln  ·  R: nachladen  ·  TAB: Minikarte  ·  M: Ton  ·  P/Esc: Pause", "1-9, 0, - / Q / rotella / clic sulla barra: cambia arma  ·  R: ricarica  ·  TAB: minimappa  ·  M: audio  ·  P/Esc: pausa"],
@@ -6881,6 +7157,111 @@ const TR_ROWS = [
 ["Bumerán", "Boomerang", "Bumerangue", "Boomerang", "Bumerang", "Boomerang"],
 ["Lanzaburbujas", "Bubble blaster", "Lança-bolhas", "Lance-bulles", "Blasenwerfer", "Lanciabolle"],
 ["Rayo", "Lightning", "Raio", "Éclair", "Blitz", "Fulmine"],
+["La Fábrica Olvidada", "The Forgotten Factory", "A Fábrica Esquecida", "L'Usine Oubliée", "Die Vergessene Fabrik", "La Fabbrica Dimenticata"],
+["Las cintas transportadoras te empujan: ¡úsalas o lucha contra ellas!", "Conveyor belts push you: use them or fight them!", "As esteiras te empurram: use-as ou lute contra elas!", "Les tapis roulants te poussent : utilise-les ou résiste !", "Förderbänder schieben dich: nutze sie oder kämpf dagegen an!", "I nastri trasportatori ti spingono: usali o combattili!"],
+["¡Una cinta transportadora! Te arrastra en la dirección de las flechas", "A conveyor belt! It drags you the way the arrows point", "Uma esteira! Ela te arrasta na direção das setas", "Un tapis roulant ! Il t'entraîne dans le sens des flèches", "Ein Förderband! Es zieht dich in Pfeilrichtung", "Un nastro trasportatore! Ti trascina nella direzione delle frecce"],
+["Los Túneles del Eco", "The Echo Tunnels", "Os Túneis do Eco", "Les Tunnels de l'Écho", "Die Echotunnel", "I Tunnel dell'Eco"],
+["La Mina Abandonada", "The Abandoned Mine", "A Mina Abandonada", "La Mine Abandonnée", "Die Verlassene Mine", "La Miniera Abbandonata"],
+["El Pozo de las Raíces", "The Root Well", "O Poço das Raízes", "Le Puits des Racines", "Der Wurzelschacht", "Il Pozzo delle Radici"],
+["La Galería de Huesos", "The Bone Gallery", "A Galeria de Ossos", "La Galerie des Os", "Die Knochengalerie", "La Galleria delle Ossa"],
+["La Guarida del Gólem de Roca", "The Rock Golem's Lair", "O Covil do Golem de Pedra", "Le Repaire du Golem de Roche", "Der Hort des Felsgolems", "La Tana del Golem di Roccia"],
+["Las Estalactitas", "The Stalactites", "As Estalactites", "Les Stalactites", "Die Stalaktiten", "Le Stalattiti"],
+["El Río Helado", "The Frozen River", "O Rio Gelado", "La Rivière Gelée", "Der Gefrorene Fluss", "Il Fiume Gelato"],
+["La Cueva del Viento", "The Wind Cave", "A Caverna do Vento", "La Grotte du Vent", "Die Windhöhle", "La Grotta del Vento"],
+["Los Espejos de Hielo", "The Ice Mirrors", "Os Espelhos de Gelo", "Les Miroirs de Glace", "Die Eisspiegel", "Gli Specchi di Ghiaccio"],
+["El Santuario Glacial", "The Glacial Sanctuary", "O Santuário Glacial", "Le Sanctuaire Glaciaire", "Das Gletscherheiligtum", "Il Santuario Glaciale"],
+["El Claro Maldito", "The Cursed Clearing", "A Clareira Maldita", "La Clairière Maudite", "Die Verfluchte Lichtung", "La Radura Maledetta"],
+["Los Árboles Huecos", "The Hollow Trees", "As Árvores Ocas", "Les Arbres Creux", "Die Hohlen Bäume", "Gli Alberi Cavi"],
+["La Ciénaga Brillante", "The Glowing Swamp", "O Pântano Brilhante", "Le Marais Brillant", "Der Leuchtende Sumpf", "La Palude Luminosa"],
+["El Templo Hundido", "The Sunken Temple", "O Templo Afundado", "Le Temple Englouti", "Der Versunkene Tempel", "Il Tempio Sommerso"],
+["El Corazón del Pantano", "The Heart of the Swamp", "O Coração do Pântano", "Le Cœur du Marais", "Das Herz des Sumpfes", "Il Cuore della Palude"],
+["Los Ríos de Fuego", "The Rivers of Fire", "Os Rios de Fogo", "Les Rivières de Feu", "Die Feuerflüsse", "I Fiumi di Fuoco"],
+["Las Columnas de Basalto", "The Basalt Columns", "As Colunas de Basalto", "Les Colonnes de Basalte", "Die Basaltsäulen", "Le Colonne di Basalto"],
+["El Horno del Volcán", "The Volcano Furnace", "O Forno do Vulcão", "Le Four du Volcan", "Der Vulkanofen", "La Fornace del Vulcano"],
+["La Isla de Ceniza", "The Ash Island", "A Ilha de Cinzas", "L'Île de Cendres", "Die Ascheinsel", "L'Isola di Cenere"],
+["El Nido de la Salamandra", "The Salamander's Nest", "O Ninho da Salamandra", "Le Nid de la Salamandre", "Das Salamandernest", "Il Nido della Salamandra"],
+["La Puerta Oxidada", "The Rusty Gate", "O Portão Enferrujado", "La Porte Rouillée", "Das Rostige Tor", "Il Cancello Arrugginito"],
+["Las Cintas Ruidosas", "The Noisy Belts", "As Esteiras Barulhentas", "Les Tapis Bruyants", "Die Lauten Bänder", "I Nastri Rumorosi"],
+["El Almacén de Engranajes", "The Gear Warehouse", "O Armazém de Engrenagens", "L'Entrepôt d'Engrenages", "Das Zahnradlager", "Il Magazzino degli Ingranaggi"],
+["Los Tubos de Vapor", "The Steam Pipes", "Os Tubos de Vapor", "Les Tuyaux de Vapeur", "Die Dampfrohre", "I Tubi del Vapore"],
+["El Taller del Robot", "The Robot Workshop", "A Oficina do Robô", "L'Atelier du Robot", "Die Roboterwerkstatt", "L'Officina del Robot"],
+["La Sala de Calderas", "The Boiler Room", "A Sala das Caldeiras", "La Chaufferie", "Der Kesselraum", "La Sala Caldaie"],
+["Las Vías de la Mina", "The Mine Tracks", "Os Trilhos da Mina", "Les Rails de la Mine", "Die Grubengleise", "I Binari della Miniera"],
+["El Montacargas", "The Freight Lift", "O Monta-cargas", "Le Monte-charge", "Der Lastenaufzug", "Il Montacarichi"],
+["Los Hornos Fríos", "The Cold Furnaces", "Os Fornos Frios", "Les Fours Froids", "Die Kalten Öfen", "I Forni Freddi"],
+["El Nido de Acero", "The Steel Nest", "O Ninho de Aço", "Le Nid d'Acier", "Das Stahlnest", "Il Nido d'Acciaio"],
+["La Cadena de Montaje", "The Assembly Line", "A Linha de Montagem", "La Chaîne de Montage", "Das Fließband", "La Catena di Montaggio"],
+["El Laboratorio Perdido", "The Lost Laboratory", "O Laboratório Perdido", "Le Laboratoire Perdu", "Das Verlorene Labor", "Il Laboratorio Perduto"],
+["Las Turbinas", "The Turbines", "As Turbinas", "Les Turbines", "Die Turbinen", "Le Turbine"],
+["La Sala de Control", "The Control Room", "A Sala de Controle", "La Salle de Contrôle", "Der Kontrollraum", "La Sala di Controllo"],
+["El Corazón de la Fábrica", "The Heart of the Factory", "O Coração da Fábrica", "Le Cœur de l'Usine", "Das Herz der Fabrik", "Il Cuore della Fabbrica"],
+["Gólem de Roca", "Rock Golem", "Golem de Pedra", "Golem de Roche", "Felsgolem", "Golem di Roccia"],
+["Espectro Glacial", "Glacial Wraith", "Espectro Glacial", "Spectre Glaciaire", "Gletschergeist", "Spettro Glaciale"],
+["Espectro del Pantano", "Swamp Wraith", "Espectro do Pântano", "Spectre du Marais", "Sumpfgeist", "Spettro della Palude"],
+["Gran Salamandra", "Great Salamander", "Grande Salamandra", "Grande Salamandre", "Großer Salamander", "Grande Salamandra"],
+["Robot Minero", "Mining Robot", "Robô Mineiro", "Robot Mineur", "Bergbauroboter", "Robot Minatore"],
+["Araña Mecánica", "Mechanical Spider", "Aranha Mecânica", "Araignée Mécanique", "Mechanische Spinne", "Ragno Meccanico"],
+["Gran Máquina", "Great Machine", "Grande Máquina", "Grande Machine", "Große Maschine", "Grande Macchina"],
+["GÓLEM DE ROCA · GUARDIÁN DE LA MINA", "ROCK GOLEM · GUARDIAN OF THE MINE", "GOLEM DE PEDRA · GUARDIÃO DA MINA", "GOLEM DE ROCHE · GARDIEN DE LA MINE", "FELSGOLEM · WÄCHTER DER MINE", "GOLEM DI ROCCIA · GUARDIANO DELLA MINIERA"],
+["ESPECTRO GLACIAL · ALMA DEL HIELO", "GLACIAL WRAITH · SOUL OF THE ICE", "ESPECTRO GLACIAL · ALMA DO GELO", "SPECTRE GLACIAIRE · ÂME DE LA GLACE", "GLETSCHERGEIST · SEELE DES EISES", "SPETTRO GLACIALE · ANIMA DEL GHIACCIO"],
+["ESPECTRO DEL PANTANO · SEÑOR DE LA NIEBLA", "SWAMP WRAITH · LORD OF THE MIST", "ESPECTRO DO PÂNTANO · SENHOR DA NÉVOA", "SPECTRE DU MARAIS · SEIGNEUR DE LA BRUME", "SUMPFGEIST · HERR DES NEBELS", "SPETTRO DELLA PALUDE · SIGNORE DELLA NEBBIA"],
+["GRAN SALAMANDRA · REINA DEL VOLCÁN", "GREAT SALAMANDER · QUEEN OF THE VOLCANO", "GRANDE SALAMANDRA · RAINHA DO VULCÃO", "GRANDE SALAMANDRE · REINE DU VOLCAN", "GROSSER SALAMANDER · KÖNIGIN DES VULKANS", "GRANDE SALAMANDRA · REGINA DEL VULCANO"],
+["ROBOT MINERO · CAPATAZ DE LA FÁBRICA", "MINING ROBOT · FACTORY FOREMAN", "ROBÔ MINEIRO · CAPATAZ DA FÁBRICA", "ROBOT MINEUR · CONTREMAÎTRE DE L'USINE", "BERGBAUROBOTER · VORARBEITER DER FABRIK", "ROBOT MINATORE · CAPOREPARTO DELLA FABBRICA"],
+["ARAÑA MECÁNICA · TEJEDORA DE ACERO", "MECHANICAL SPIDER · STEEL WEAVER", "ARANHA MECÂNICA · TECELÃ DE AÇO", "ARAIGNÉE MÉCANIQUE · TISSEUSE D'ACIER", "MECHANISCHE SPINNE · STAHLWEBERIN", "RAGNO MECCANICO · TESSITORE D'ACCIAIO"],
+["GRAN MÁQUINA · EL CORAZÓN DE LA FÁBRICA", "GREAT MACHINE · HEART OF THE FACTORY", "GRANDE MÁQUINA · O CORAÇÃO DA FÁBRICA", "GRANDE MACHINE · LE CŒUR DE L'USINE", "GROSSE MASCHINE · DAS HERZ DER FABRIK", "GRANDE MACCHINA · IL CUORE DELLA FABBRICA"],
+["¡Las rocas se juntan y forman un gólem!", "The rocks come together into a golem!", "As pedras se juntam e formam um golem!", "Les rochers s'assemblent en un golem !", "Die Felsen formen einen Golem!", "Le rocce si uniscono in un golem!"],
+["¡Un frío mortal llena la sala!", "A deadly cold fills the room!", "Um frio mortal enche a sala!", "Un froid mortel envahit la salle !", "Tödliche Kälte füllt den Raum!", "Un freddo mortale riempie la sala!"],
+["¡Algo surge de la ciénaga!", "Something rises from the swamp!", "Algo surge do pântano!", "Quelque chose surgit du marais !", "Etwas steigt aus dem Sumpf!", "Qualcosa emerge dalla palude!"],
+["¡La Gran Salamandra sale de la lava!", "The Great Salamander rises from the lava!", "A Grande Salamandra sai da lava!", "La Grande Salamandre sort de la lave !", "Der Große Salamander steigt aus der Lava!", "La Grande Salamandra esce dalla lava!"],
+["¡El Robot Minero se pone en marcha!", "The Mining Robot starts up!", "O Robô Mineiro liga os motores!", "Le Robot Mineur démarre !", "Der Bergbauroboter springt an!", "Il Robot Minatore si mette in moto!"],
+["¡Una Araña Mecánica baja del techo!", "A Mechanical Spider drops from the ceiling!", "Uma Aranha Mecânica desce do teto!", "Une Araignée Mécanique descend du plafond !", "Eine mechanische Spinne seilt sich ab!", "Un Ragno Meccanico scende dal soffitto!"],
+["¡La Gran Máquina despierta con un estruendo!", "The Great Machine wakes with a roar!", "A Grande Máquina desperta com um estrondo!", "La Grande Machine se réveille dans un fracas !", "Die Große Maschine erwacht mit Getöse!", "La Grande Macchina si sveglia con un boato!"],
+["¡El Gólem de Roca retumba de furia!", "The Rock Golem rumbles with fury!", "O Golem de Pedra ruge de fúria!", "Le Golem de Roche gronde de fureur !", "Der Felsgolem bebt vor Wut!", "Il Golem di Roccia rimbomba di furia!"],
+["¡El Espectro Glacial aúlla de rabia!", "The Glacial Wraith howls with rage!", "O Espectro Glacial uiva de raiva!", "Le Spectre Glaciaire hurle de rage !", "Der Gletschergeist heult vor Wut!", "Lo Spettro Glaciale ulula di rabbia!"],
+["¡El Espectro del Pantano se enfurece!", "The Swamp Wraith gets furious!", "O Espectro do Pântano se enfurece!", "Le Spectre du Marais s'enrage !", "Der Sumpfgeist wird wütend!", "Lo Spettro della Palude si infuria!"],
+["¡La Gran Salamandra arde de furia!", "The Great Salamander burns with fury!", "A Grande Salamandra arde de fúria!", "La Grande Salamandre brûle de fureur !", "Der Große Salamander brennt vor Wut!", "La Grande Salamandra arde di furia!"],
+["¡El Robot Minero echa humo de rabia!", "The Mining Robot fumes with rage!", "O Robô Mineiro solta fumaça de raiva!", "Le Robot Mineur fume de rage !", "Der Bergbauroboter qualmt vor Wut!", "Il Robot Minatore fuma di rabbia!"],
+["¡La Araña Mecánica chirría furiosa!", "The Mechanical Spider screeches in fury!", "A Aranha Mecânica range furiosa!", "L'Araignée Mécanique grince de fureur !", "Die mechanische Spinne kreischt vor Wut!", "Il Ragno Meccanico stride furioso!"],
+["¡La Gran Máquina se sobrecalienta!", "The Great Machine is overheating!", "A Grande Máquina está superaquecendo!", "La Grande Machine surchauffe !", "Die Große Maschine überhitzt!", "La Grande Macchina si surriscalda!"],
+["¡El Gólem de Roca se ha desmoronado!", "The Rock Golem has crumbled!", "O Golem de Pedra desmoronou!", "Le Golem de Roche s'est effondré !", "Der Felsgolem ist zerbröckelt!", "Il Golem di Roccia è crollato!"],
+["¡El Espectro Glacial se ha desvanecido!", "The Glacial Wraith has vanished!", "O Espectro Glacial desapareceu!", "Le Spectre Glaciaire s'est évanoui !", "Der Gletschergeist ist verschwunden!", "Lo Spettro Glaciale è svanito!"],
+["¡El Espectro del Pantano se ha hundido!", "The Swamp Wraith has sunk!", "O Espectro do Pântano afundou!", "Le Spectre du Marais a sombré !", "Der Sumpfgeist ist versunken!", "Lo Spettro della Palude è affondato!"],
+["¡La Gran Salamandra se ha apagado!", "The Great Salamander has gone out!", "A Grande Salamandra se apagou!", "La Grande Salamandre s'est éteinte !", "Der Große Salamander ist erloschen!", "La Grande Salamandra si è spenta!"],
+["¡El Robot Minero se ha apagado!", "The Mining Robot has shut down!", "O Robô Mineiro desligou!", "Le Robot Mineur s'est éteint !", "Der Bergbauroboter ist aus!", "Il Robot Minatore si è spento!"],
+["¡La Araña Mecánica se ha desmontado!", "The Mechanical Spider fell apart!", "A Aranha Mecânica se desmontou!", "L'Araignée Mécanique s'est démontée !", "Die mechanische Spinne ist zerfallen!", "Il Ragno Meccanico si è smontato!"],
+["¡Has parado la Gran Máquina!", "You stopped the Great Machine!", "Você parou a Grande Máquina!", "Tu as arrêté la Grande Machine !", "Du hast die Große Maschine gestoppt!", "Hai fermato la Grande Macchina!"],
+["La Galería de la Memoria", "The Memory Gallery", "A Galeria da Memória", "La Galerie de la Mémoire", "Die Galerie des Gedächtnisses", "La Galleria della Memoria"],
+["La Sala de los Engranajes", "The Gear Room", "A Sala das Engrenagens", "La Salle des Engrenages", "Der Zahnradsaal", "La Sala degli Ingranaggi"],
+["El Jardín de las Luces", "The Garden of Lights", "O Jardim das Luzes", "Le Jardin des Lumières", "Der Garten der Lichter", "Il Giardino delle Luci"],
+["El Campo de Tiro de Fuego", "The Fire Shooting Range", "O Campo de Tiro de Fogo", "Le Stand de Tir de Feu", "Der Feuerschießstand", "Il Poligono di Fuoco"],
+["El Archivo de las Máquinas", "The Machine Archive", "O Arquivo das Máquinas", "Les Archives des Machines", "Das Maschinenarchiv", "L'Archivio delle Macchine"],
+["La Caja de Cambios", "The Gearbox", "A Caixa de Câmbio", "La Boîte de Vitesses", "Das Getriebe", "Il Cambio"],
+["Memoria: dispara a dos losas para ver sus símbolos y encuentra las {0} parejas", "Memory: shoot two tiles to see their symbols and find the {0} pairs", "Memória: atire em dois blocos para ver os símbolos e encontre os {0} pares", "Mémoire : tire sur deux dalles pour voir leurs symboles et trouve les {0} paires", "Gedächtnis: Schieß auf zwei Platten, um ihre Symbole zu sehen, und finde die {0} Paare", "Memoria: spara a due lastre per vederne i simboli e trova le {0} coppie"],
+["Gira los engranajes hasta que todas las flechas apunten arriba. ¡Cada uno mueve también al siguiente!", "Turn the gears until every arrow points up. Each one also turns the next!", "Gire as engrenagens até todas as setas apontarem para cima. Cada uma também gira a seguinte!", "Tourne les engrenages jusqu'à ce que toutes les flèches pointent vers le haut. Chacun fait aussi tourner le suivant !", "Dreh die Zahnräder, bis alle Pfeile nach oben zeigen. Jedes dreht auch das nächste!", "Gira gli ingranaggi finché tutte le frecce puntano in alto. Ognuno gira anche il successivo!"],
+["Enciende las 9 lámparas. Cada disparo cambia la lámpara y las de su lado", "Light all 9 lamps. Each shot toggles the lamp and the ones beside it", "Acenda as 9 lâmpadas. Cada tiro muda a lâmpada e as do lado", "Allume les 9 lampes. Chaque tir change la lampe et ses voisines", "Zünde alle 9 Lampen an. Jeder Schuss schaltet die Lampe und ihre Nachbarn um", "Accendi le 9 lampade. Ogni colpo cambia la lampada e quelle accanto"],
+["Dispara a las {0} dianas en orden, del 1 al {1}, antes de que se acabe el tiempo", "Shoot the {0} targets in order, from 1 to {1}, before time runs out", "Atire nos {0} alvos em ordem, do 1 ao {1}, antes que o tempo acabe", "Tire sur les {0} cibles dans l'ordre, de 1 à {1}, avant la fin du temps", "Triff die {0} Zielscheiben der Reihe nach, von 1 bis {1}, bevor die Zeit abläuft", "Colpisci i {0} bersagli in ordine, da 1 a {1}, prima che scada il tempo"],
+["Parejas: {0}/{1}", "Pairs: {0}/{1}", "Pares: {0}/{1}", "Paires : {0}/{1}", "Paare: {0}/{1}", "Coppie: {0}/{1}"],
+["Flechas arriba: {0}/{1}", "Arrows up: {0}/{1}", "Setas para cima: {0}/{1}", "Flèches en haut : {0}/{1}", "Pfeile oben: {0}/{1}", "Frecce in alto: {0}/{1}"],
+["Lámparas encendidas: {0}/9", "Lamps lit: {0}/9", "Lâmpadas acesas: {0}/9", "Lampes allumées : {0}/9", "Lampen an: {0}/9", "Lampade accese: {0}/9"],
+["Diana {0}/{1} · {2} s", "Target {0}/{1} · {2} s", "Alvo {0}/{1} · {2} s", "Cible {0}/{1} · {2} s", "Ziel {0}/{1} · {2} s", "Bersaglio {0}/{1} · {2} s"],
+["Dispara a la diana 1", "Shoot target 1", "Atire no alvo 1", "Tire sur la cible 1", "Triff Ziel 1", "Colpisci il bersaglio 1"],
+["¡Esa no toca! Empieza otra vez por la 1", "Not that one! Start again from 1", "Esse não! Comece de novo pelo 1", "Pas celle-là ! Recommence par la 1", "Nicht die! Fang wieder bei 1 an", "Non quello! Ricomincia dall'1"],
+["¡Se acabó el tiempo! Empieza otra vez por la 1", "Time's up! Start again from 1", "O tempo acabou! Comece de novo pelo 1", "Temps écoulé ! Recommence par la 1", "Zeit abgelaufen! Fang wieder bei 1 an", "Tempo scaduto! Ricomincia dall'1"],
+["Escudo de burbuja", "Bubble shield", "Escudo de bolha", "Bouclier bulle", "Blasenschild", "Scudo a bolla"],
+["Una burbuja para un golpe y se recarga en 20 segundos", "A bubble blocks one hit and recharges in 20 seconds", "Uma bolha bloqueia um golpe e recarrega em 20 segundos", "Une bulle bloque un coup et se recharge en 20 secondes", "Eine Blase blockt einen Treffer und lädt in 20 Sekunden nach", "Una bolla para un colpo e si ricarica in 20 secondi"],
+["Dardo extra", "Extra dart", "Dardo extra", "Fléchette bonus", "Extrapfeil", "Dardo extra"],
+["A veces disparas un dardo de más sin gastar munición", "Sometimes you fire an extra dart for free", "Às vezes você atira um dardo a mais sem gastar munição", "Parfois tu tires une fléchette de plus sans munition", "Manchmal schießt du einen Extrapfeil ohne Munition", "A volte spari un dardo in più senza munizioni"],
+["Puntería dorada", "Golden aim", "Mira dourada", "Visée dorée", "Goldenes Zielen", "Mira dorata"],
+["Muchos más golpes críticos", "Many more critical hits", "Muito mais golpes críticos", "Beaucoup plus de coups critiques", "Viel mehr kritische Treffer", "Molti più colpi critici"],
+["Recarga rápida", "Quick reload", "Recarga rápida", "Recharge rapide", "Schnelles Nachladen", "Ricarica rapida"],
+["Recargas mucho más deprisa", "You reload much faster", "Você recarrega muito mais rápido", "Tu recharges bien plus vite", "Du lädst viel schneller nach", "Ricarichi molto più in fretta"],
+["Botas veloces", "Swift boots", "Botas velozes", "Bottes rapides", "Flinke Stiefel", "Stivali veloci"],
+["Corres un 15 % más rápido", "You run 15% faster", "Você corre 15% mais rápido", "Tu cours 15 % plus vite", "Du läufst 15 % schneller", "Corri il 15% più veloce"],
+["Botones táctiles: {0}", "Touch buttons: {0}", "Botões de toque: {0}", "Boutons tactiles : {0}", "Touch-Tasten: {0}", "Pulsanti touch: {0}"],
+["Pequeños", "Small", "Pequenos", "Petits", "Klein", "Piccoli"], ["Normales", "Normal", "Normais", "Normaux", "Normal", "Normali"], ["Grandes", "Large", "Grandes", "Grands", "Groß", "Grandi"],
+["El tamaño de DISPARA, ESQUIVA y los demás botones", "The size of FIRE, DODGE and the other buttons", "O tamanho de ATIRAR, DESVIAR e dos outros botões", "La taille de TIRER, ESQUIVER et des autres boutons", "Die Größe von FEUER, AUSWEICHEN und den anderen Tasten", "La dimensione di SPARA, SCHIVA e degli altri pulsanti"],
+["La Gran Máquina se paró con un último ¡CLONC! y toda la fábrica quedó en silencio.", "The Great Machine stopped with one last CLONK! and the whole factory went silent.", "A Grande Máquina parou com um último CLONC! e a fábrica ficou em silêncio.", "La Grande Machine s'arrêta dans un dernier CLONC ! et toute l'usine se tut.", "Die Große Maschine stoppte mit einem letzten KLONK! und die Fabrik wurde still.", "La Grande Macchina si fermò con un ultimo CLONC! e la fabbrica tacque."],
+["Entre los engranajes, Chispa encontró un hueso de oro. «¡Lo hemos conseguido!», gritó {0}.", "Among the gears, Sparky found a golden bone. “We did it!”, shouted {0}.", "Entre as engrenagens, Faísca achou um osso de ouro. «Conseguimos!», gritou {0}.", "Parmi les engrenages, Étincelle trouva un os en or. « On a réussi ! », cria {0}.", "Zwischen den Zahnrädern fand Funke einen goldenen Knochen. „Wir haben es geschafft!“, rief {0}.", "Tra gli ingranaggi, Scintilla trovò un osso d'oro. «Ce l'abbiamo fatta!», gridò {0}."],
 ["Rata gigante", "Giant rat", "Rato gigante", "Rat géant", "Riesenratte", "Ratto gigante"],
 ["Armadillo", "Armadillo", "Tatu", "Tatou", "Gürteltier", "Armadillo"],
 ["Muñeco de nieve", "Snowman", "Boneco de neve", "Bonhomme de neige", "Schneemann", "Pupazzo di neve"],
@@ -7134,6 +7515,7 @@ function a11yItems() {
     { label: "‹ Volver", fn: closeSub },
   ];
 }
+function cycleBtn(d) { settings.btn = (settings.btn + d + 3) % 3; store.set("btn", settings.btn); }
 function optionItems() {
   return [
     { label: `Dificultad: ${DIFF().name}`, fn: () => toggleDiff(1), lr: toggleDiff },
@@ -7141,6 +7523,7 @@ function optionItems() {
     { label: `Efectos: ${settings.fx ? "Altos" : "Bajos"}`, hint: "Bajos va mejor en equipos lentos", fn: toggleFx },
     { label: `Resolución: ${resLabel()}`, hint: "Automática baja la nitidez sola si el juego va lento", fn: () => cycleRes(1), lr: cycleRes },
     { label: `Dispositivo: ${{ pc: "Computador", tablet: "Tableta o iPad", phone: "Celular" }[settings.device] || "?"}`, fn: () => openDevice() },
+    ...(settings.device !== "pc" ? [{ label: `Botones táctiles: ${BTN_NAMES[settings.btn]}`, hint: "El tamaño de DISPARA, ESQUIVA y los demás botones", fn: () => cycleBtn(1), lr: cycleBtn }] : []),
     { label: "‹ Volver", fn: closeSub },
   ];
 }
@@ -7429,7 +7812,7 @@ function askExit() {
 }
 function exitGame(showBye) {
   if (state === "play" || state === "pause") toMenu();
-  exitAsk = 0; homeAsk = 0; inTutorial = false; saved = store.get(saveKey(), null);
+  exitAsk = 0; homeAsk = 0; inTutorial = false; saved = loadSave();
   for (const k of SESSION_KEYS) delete sessionMem[k];
   settings.device = null; touch.on = false;
   for (const k in keys) keys[k] = false; mouse.down = false; touch.fire = false;
@@ -7658,15 +8041,15 @@ TR_ROWS.push(
 ["ESPÍRITU DE HIELO · MINIJEFE", "ICE SPIRIT · MINI-BOSS", "ESPÍRITO DE GELO · MINICHEFE", "ESPRIT DE GLACE · MINI-BOSS", "EISGEIST · MINIBOSS", "SPIRITO DI GHIACCIO · MINIBOSS"],
 ["SOMBRA MENOR · MINIJEFE", "LESSER SHADOW · MINI-BOSS", "SOMBRA MENOR · MINICHEFE", "OMBRE MINEURE · MINI-BOSS", "KLEINER SCHATTEN · MINIBOSS", "OMBRA MINORE · MINIBOSS"],
 ["SALAMANDRA DE FUEGO · MINIJEFE", "FIRE SALAMANDER · MINI-BOSS", "SALAMANDRA DE FOGO · MINICHEFE", "SALAMANDRE DE FEU · MINI-BOSS", "FEUERSALAMANDER · MINIBOSS", "SALAMANDRA DI FUOCO · MINIBOSS"],
-["Mundo {0} · Nivel {1}/10", "World {0} · Level {1}/10", "Mundo {0} · Nível {1}/10", "Monde {0} · Niveau {1}/10", "Welt {0} · Level {1}/10", "Mondo {0} · Livello {1}/10"],
+["Mundo {0} · Nivel {1}/15", "World {0} · Level {1}/15", "Mundo {0} · Nível {1}/15", "Monde {0} · Niveau {1}/15", "Welt {0} · Level {1}/15", "Mondo {0} · Livello {1}/15"],
 ["Mundo {0} · Nivel {1}/10 · {2}", "World {0} · Level {1}/10 · {2}", "Mundo {0} · Nível {1}/10 · {2}", "Monde {0} · Niveau {1}/10 · {2}", "Welt {0} · Level {1}/10 · {2}", "Mondo {0} · Livello {1}/10 · {2}"],
 ["Continuar · Mundo {0} · Nivel {1}/10 ({2})", "Continue · World {0} · Level {1}/10 ({2})", "Continuar · Mundo {0} · Nível {1}/10 ({2})", "Continuer · Monde {0} · Niveau {1}/10 ({2})", "Weiter · Welt {0} · Level {1}/10 ({2})", "Continua · Mondo {0} · Livello {1}/10 ({2})"],
-["— MUNDO {0} · NIVEL {1}/10 —", "— WORLD {0} · LEVEL {1}/10 —", "— MUNDO {0} · NÍVEL {1}/10 —", "— MONDE {0} · NIVEAU {1}/10 —", "— WELT {0} · LEVEL {1}/10 —", "— MONDO {0} · LIVELLO {1}/10 —"],
+["— MUNDO {0} · NIVEL {1}/15 —", "— WORLD {0} · LEVEL {1}/15 —", "— MUNDO {0} · NÍVEL {1}/15 —", "— MONDE {0} · NIVEAU {1}/15 —", "— WELT {0} · LEVEL {1}/15 —", "— MONDO {0} · LIVELLO {1}/15 —"],
 ["MUNDO {0} · NIVEL {1} COMPLETADO", "WORLD {0} · LEVEL {1} COMPLETE", "MUNDO {0} · NÍVEL {1} CONCLUÍDO", "MONDE {0} · NIVEAU {1} TERMINÉ", "WELT {0} · LEVEL {1} GESCHAFFT", "MONDO {0} · LIVELLO {1} COMPLETATO"],
 ["¡MUNDO {0} COMPLETADO!", "WORLD {0} COMPLETE!", "MUNDO {0} CONCLUÍDO!", "MONDE {0} TERMINÉ !", "WELT {0} GESCHAFFT!", "MONDO {0} COMPLETATO!"],
 ["MUNDO {0}", "WORLD {0}", "MUNDO {0}", "MONDE {0}", "WELT {0}", "MONDO {0}"],
 ["ir al mundo {0}", "go to world {0}", "ir para o mundo {0}", "aller au monde {0}", "zu Welt {0}", "vai al mondo {0}"],
-["4 mundos y 40 niveles: rescata a Chispa y descubre qué esconde el Corazón del Abismo.", "4 worlds and 40 levels: rescue Sparky and discover what the Heart of the Abyss hides.", "4 mundos e 40 níveis: resgate a Faísca e descubra o que esconde o Coração do Abismo.", "4 mondes et 40 niveaux : sauve Étincelle et découvre ce que cache le Cœur de l'Abîme.", "4 Welten und 40 Level: Rette Funke und entdecke, was das Herz des Abgrunds verbirgt.", "4 mondi e 40 livelli: salva Scintilla e scopri cosa nasconde il Cuore dell'Abisso."],
+["5 mundos y 75 niveles: rescata a Chispa y descubre qué esconde el Corazón del Abismo.", "5 worlds and 75 levels: rescue Sparky and discover what the Heart of the Abyss hides.", "5 mundos e 75 níveis: resgate a Faísca e descubra o que esconde o Coração do Abismo.", "5 mondes et 75 niveaux : sauve Étincelle et découvre ce que cache le Cœur de l'Abîme.", "5 Welten und 75 Level: Rette Funke und entdecke, was das Herz des Abgrunds verbirgt.", "5 mondi e 75 livelli: salva Scintilla e scopri cosa nasconde il Cuore dell'Abisso."],
 ["Las Profundidades", "The Depths", "As Profundezas", "Les Profondeurs", "Die Tiefen", "Le Profondità"],
 ["Las Cavernas de Hielo", "The Ice Caverns", "As Cavernas de Gelo", "Les Cavernes de Glace", "Die Eishöhlen", "Le Caverne di Ghiaccio"],
 ["El Bosque de las Sombras", "The Shadow Forest", "A Floresta das Sombras", "La Forêt des Ombres", "Der Schattenwald", "La Foresta delle Ombre"],
