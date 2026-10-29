@@ -849,7 +849,9 @@ const RES_STEPS = [1, 0.8, 0.65, 0.5, 0.4], LS = 0.5;
 let resIdx = 0;
 function resize() {
   const fixed = typeof settings !== "undefined" && settings.res !== "auto" ? settings.res : null;
-  DPR = Math.max(0.5, Math.min(2, window.devicePixelRatio || 1) * RES_STEPS[fixed ?? resIdx]);
+  // las pantallas de celulares y tabletas tienen mucha densidad: se aprovecha hasta 2,5 píxeles por punto
+  const maxD = matchMedia("(pointer: coarse)").matches ? 2.5 : 2;
+  DPR = Math.max(0.5, Math.min(maxD, window.devicePixelRatio || 1) * RES_STEPS[fixed ?? resIdx]);
   VW = innerWidth; VH = innerHeight;
   // el lienzo ocupa justo lo que se ve (en el celular, 100vh incluye la barra del navegador y se cortaba abajo)
   cv.style.width = VW + "px"; cv.style.height = VH + "px";
@@ -1903,7 +1905,7 @@ settings.btn = [0, 1, 2].includes(store.get("btn", 1)) ? store.get("btn", 1) : 1
 function btns() {
   // celular: según el lado corto de la pantalla; tableta: más grandes pero sin pasarse; y el tamaño elegido en Opciones
   const tab = settings.device === "tablet", short = Math.min(VW, VH);
-  const s = (tab ? clamp(short / 720, 0.95, 1.15) : clamp(short / 460, 0.72, 0.92)) * BTN_SIZES[settings.btn];
+  const s = (tab ? clamp(short / 660, 1.05, 1.3) : clamp(short / 420, 0.82, 1.02)) * BTN_SIZES[settings.btn];
   const mx = 12 + (land() ? 18 : 0), my = 12 + (land() ? 4 : 0); // en horizontal, separados del borde (muescas y bordes curvos)
   return {
     fire:   { x: VW - 82 * s - mx, y: VH - 96 * s - my, r: 50 * s },
@@ -4310,7 +4312,7 @@ function drawMain() {
   for (const l of emiLights) if (inView(l.x, l.y, l.r)) light(l.x, l.y, l.r * (l.flick ? 0.92 + 0.08 * Math.sin(time * 11 + l.x) : 1), l.k);
   if (P.muzzle > 0) { const mz = muzzle(); light(mz.x, mz.y, 90, 0.8); }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.drawImage(lc, 0, 0, cv.width, cv.height);
+  ctx.imageSmoothingQuality = "high"; ctx.drawImage(lc, 0, 0, cv.width, cv.height);
 
   // resplandores de color
   worldT(ctx);
@@ -4347,7 +4349,7 @@ function drawMain() {
   for (const p of parts) if (p.glow) glow(p.x, p.y, 8, "255,210,120", 0.25 * p.life / p.max);
   for (const g of glints) { ctx.fillStyle = `rgba(255,255,220,${g.life * 2})`; ctx.fillRect(g.x - 0.5, g.y - 2, 1, 4); ctx.fillRect(g.x - 2, g.y - 0.5, 4, 1); }
   if (P.muzzle > 0) { const mz = muzzle(); glow(mz.x, mz.y, 26, "255,230,150", 0.6); }
-  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(gcv, 0, 0, cv.width, cv.height); ctx.restore();
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingQuality = "high"; ctx.drawImage(gcv, 0, 0, cv.width, cv.height); ctx.restore();
   ctx.globalCompositeOperation = "source-over";
 
   // la niebla vuelve a tapar lo no explorado (para que los brillos no revelen el mapa)
@@ -6358,11 +6360,11 @@ function drawTitle() {
   items.push({ label: exitAsk > 0 ? "¿Seguro? Pulsa otra vez para salir" : "Salir del juego", fn: askExit, danger: true });
   // menú: una columna centrada con botones más bajos en celular y tableta
   const touchy = isTouch(), gap = ld ? 5 : s ? 6 : 8;
-  const mW = ld ? Math.min(250, VW * 0.36) : Math.min((phone ? 250 : touchy ? 290 : 340) * Math.min(UIK(), 1.15), VW - 80);
+  const mW = ld ? Math.min(280, VW * 0.38) : Math.min((phone ? 280 : touchy ? 330 : 340) * Math.min(UIK(), 1.15), VW - 60);
   const mX = ld ? VW * 0.79 : VW / 2, y0 = ld ? 66 : gunsEnd + (s ? 12 : 18);
   const room = (ld ? VH - 14 : VH - (s ? 120 : 90)) - y0;
-  const bh = clamp(room / items.length - gap, ld ? 28 : 32, (phone ? 36 : touchy ? 40 : 46) * UIK());
-  const fs = (ld || phone ? 13 : touchy ? 14 : 16) / UIK() * Math.min(UIK(), 1.25);
+  const bh = clamp(room / items.length - gap, ld ? 30 : 34, (phone ? 42 : touchy ? 46 : 46) * UIK());
+  const fs = (ld ? 14 : phone ? 15 : touchy ? 16 : 16) / UIK() * Math.min(UIK(), 1.25);
   items.forEach(it => it.size = fs);
   menuList(items, mX, y0, mW, bh, gap);
   const menuEnd = y0 + items.length * (bh + gap);
@@ -6377,41 +6379,7 @@ function drawTitle() {
          "Ratón: apuntar y disparar  ·  1-9, 0, -: cambiar arma  ·  R: recargar  ·  P: pausa"];
     lines.forEach((l, i) => ctx.fillText(l, VW / 2, yb + i * 17 * Math.min(UIK(), 1.2), VW - 24));
   }
-  // monstruos: a los lados del menú si hay sitio y desfilando abajo
-  const side = (VW - mW) / 2 - 30;
-  if (!ld && side >= 130) titleGuards(mX - mW / 2 - side / 2 - 15, mX + mW / 2 + side / 2 + 15, y0 + 20, menuEnd - 10, Math.min(1.6, side / 110));
-  const paradeY = ld ? VH - 22 : VH - 20, paradeTop = ld ? gunsEnd + 20 : yb + 44;
-  if (paradeY - paradeTop >= 34) titleParade(ld ? 10 : 0, ld ? VW * 0.6 : VW, paradeY, clamp((paradeY - paradeTop) / 36, 0.9, s ? 1.4 : 1.7));
   if (picker.open) drawPicker();
-}
-
-// monstruos de la pantalla de inicio: un desfile que camina por el suelo de la cueva
-const PARADE = ["s", "3", "t", "k", "x", "4", "e", "5", "o", "6", "f", "7", "q", "8", "n", "p"];
-function titleParade(x0, x1, yG, k) {
-  const span = x1 - x0, gapX = 62 * k, n = Math.ceil(span / gapX) + 1, mt = A11().motion ? 0 : time;
-  const px = P.x, py = P.y; P.x = x1 + 500; P.y = yG;
-  ctx.save(); ctx.beginPath(); ctx.rect(x0, yG - 70 * k, span, 80 * k); ctx.clip();
-  ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.fillRect(x0, yG + 4 * k, span, 3);
-  for (let i = 0; i < n; i++) {
-    const off = (mt * 34 * k + i * gapX) % (n * gapX), x = x0 - gapX + off, ty = PARADE[i % PARADE.length];
-    const m = fakeMon(ty, 0, 0, mt * 1.3 + i), d = MON[ty];
-    ctx.save(); ctx.translate(x, yG - d.r * k * (d.fly ? 2 : 0.9)); ctx.scale(k, k); m.alert = 1; drawMonsterRaw(m); ctx.restore();
-  }
-  ctx.restore(); P.x = px; P.y = py;
-}
-// a los lados del menú, en pantallas anchas: jefes y monstruos que vigilan
-const GUARDS_L = ["O", "k", "4", "6"], GUARDS_R = ["Q", "5", "7", "8"];
-function titleGuards(xl, xr, ya, yb, k) {
-  const mt = A11().motion ? 0 : time, px = P.x, py = P.y;
-  for (const [x, list] of [[xl, GUARDS_L], [xr, GUARDS_R]]) {
-    const step = (yb - ya) / list.length;
-    list.forEach((ty, i) => {
-      const y = ya + step * (i + 0.5) + Math.sin(mt * 1.6 + i + x) * 3, m = fakeMon(ty, 0, 0, mt + i * 0.7), kk = k * (MON[ty].boss ? 0.8 : 1.15);
-      P.x = VW / 2; P.y = y; // miran hacia el menú
-      ctx.save(); ctx.translate(x + Math.sin(mt * 0.8 + i * 2) * 10, y); ctx.scale(kk, kk); P.x = (VW / 2 - x) / kk; P.y = 0; m.alert = 1; drawMonsterRaw(m); ctx.restore();
-    });
-  }
-  P.x = px; P.y = py;
 }
 
 // ---------- Historieta del inicio y editor del personaje ----------
@@ -8008,7 +7976,7 @@ function navHit(x, y) {
 const homeHit = navHit;
 function navRects() {
   if (!showNav()) return [];
-  const inGame = state === "play" || state === "pause", ask = homeAsk > 0, h = inGame && isTouch() ? 34 : 40;
+  const inGame = state === "play" || state === "pause", ask = homeAsk > 0, h = inGame && isTouch() ? 38 : 40;
   if (state === "title") {
     const kinds = ["sound", "lang", "access", ...(showFull() ? ["full"] : [])], bw = 44, gap = 8;
     const out = [{ kind: "back", x: 16, y: 16, w: VW < 360 ? 44 : 104, h, label: VW >= 360 }]; // en el título hay sitio para el texto
@@ -8600,9 +8568,11 @@ function autoRes(raw) {
   if (perf.t < 1.5) return;
   const fps = perf.n / perf.t, hitch = perf.hitch; perf.t = 0; perf.n = 0; perf.hitch = false;
   if (hitch) return;
-  if (fps < 42) { if (++perf.bad >= 2 && resIdx < RES_STEPS.length - 1) { resIdx++; perf.downs++; perf.bad = 0; perf.good = 0; resize(); } return; }
+  // en táctil no baja de «Baja» (la imagen borrosa se nota mucho en una pantalla pequeña y de cerca)
+  const lowest = isTouch() ? 2 : RES_STEPS.length - 1;
+  if (fps < (isTouch() ? 36 : 42)) { if (++perf.bad >= 2 && resIdx < lowest) { resIdx++; perf.downs++; perf.bad = 0; perf.good = 0; resize(); } return; }
   perf.bad = 0;
-  if (fps > 57 && resIdx > 0 && perf.downs < 4) { if (++perf.good >= 4) { resIdx--; perf.good = 0; resize(); } }
+  if (fps > 55 && resIdx > 0 && perf.downs < 6) { if (++perf.good >= 3) { resIdx--; perf.good = 0; resize(); } }
   else perf.good = 0;
 }
 function loop(now) {
