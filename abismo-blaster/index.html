@@ -329,11 +329,21 @@ const MID_NAMES = [
 const MID_BOSSES = ["Γ", "Λ", "Δ", "Θ"];
 // w: -1 Profundidades, 0 hielo, 1 sombras, 2 lava, 3 fábrica · n: dificultad 0-9
 // cfg: seedN (semilla distinta para los niveles nuevos), boss, name y secret (pasaje secreto)
-const GEN_V = 2; // versión del generador: cambia cuando cambian los mapas
+const GEN_V = 3; // versión del generador: cambia cuando cambian los mapas
+// cada aparato tiene su propia semilla: los niveles son distintos en cada uno (y siempre iguales en el mismo)
+const DEVICE_SEED = (() => {
+  try {
+    if (typeof localStorage === "undefined") return 0;
+    let v = parseInt(localStorage.getItem("abismoNerf.seed"), 10);
+    if (!(v > 0)) { v = 1 + Math.floor(Math.random() * 2000000000); localStorage.setItem("abismoNerf.seed", String(v)); }
+    return v;
+  } catch (e) { return 0; }
+})();
 function genWorldLevel(w, n, cfg = {}) {
   const PICKS = "SMIALDWNCF", boss = cfg.boss !== undefined ? cfg.boss : n === 4 || n === 9 ? WORLD_BOSSES[w][n === 4 ? 0 : 1] : null;
-  for (let attempt = 0; attempt < 60; attempt++) {
-    let seed = 7919 * (w + 2) + 104729 * (cfg.seedN ?? n) + attempt * 31337 + 17;
+  for (let attempt = 0; attempt < 200; attempt++) {
+    // si con la semilla del aparato no sale un nivel válido, al final se usa la de siempre
+    let seed = 7919 * (w + 2) + 104729 * (cfg.seedN ?? n) + attempt * 31337 + 17 + (attempt < 150 ? DEVICE_SEED * 7 : 0);
     const rnd = () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
     const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1)), pick = a => a[Math.floor(rnd() * a.length)];
     const cols = n >= 5 ? 5 : 4, rows = 3, cw = 11, ch = 9, W = cols * cw + 1, H = rows * ch + 1;
@@ -522,26 +532,27 @@ for (let gw = 0; gw < 5; gw++) for (let slot = 0; slot < 15; slot++) {
   const w = gw - 1, mid = slot >= 5 && slot < 10, k = slot - 5;
   if (gw === 4) LEVELS.push(genWorldLevel(3, Math.round(slot * 9 / 14), { seedN: 200 + slot, name: WORLD_LEVEL_NAMES[3][slot], boss: slot % 5 === 4 ? ["Φ", "Ψ", "Ω"][Math.floor(slot / 5)] : null, secret: slot === 2 || slot === 7 }));
   else if (mid) LEVELS.push(genWorldLevel(w, k + 2, { seedN: 100 + slot, name: MID_NAMES[gw][k], boss: k === 4 ? MID_BOSSES[gw] : null, secret: k === 2 }));
-  else if (gw === 0) LEVELS.push(HAND_LEVELS[slot < 5 ? slot : slot - 5]);
+  else if (gw === 0) { const hs = slot < 5 ? slot : slot - 5; LEVELS.push(genWorldLevel(-1, hs, { seedN: 300 + slot, name: HAND_LEVELS[hs].name, boss: slot === 4 ? "Q" : slot === 14 ? "O" : null, secret: slot === 2 })); }
   else LEVELS.push(genWorldLevel(w, slot < 5 ? slot : slot - 5));
 }
 // ---------- Niveles secretos: 2 por mundo ----------
 //  1 objeto del reto   !  puerta del reto (se abre al resolverlo)   &  aquí aparece la salida al vencer al minijefe
 //  a Guardián Rúnico · i Espíritu de Hielo · j Sombra Menor · y Salamandra de Fuego (minijefes)
 // w: mundo (0-4) · lv: nivel donde está el muro agrietado (en el mapa, el secreto aparece a su lado)
-const SECRET_DEFS = [
-  { name: "La Cámara de las Runas", puzzle: "runes", len: 5, w: 0, lv: 2 }, { name: "La Cripta de Hielo", puzzle: "plates", w: 1, lv: 17 },
-  { name: "El Asedio de las Sombras", puzzle: "survive", time: 35, w: 2, lv: 32 }, { name: "La Forja Apagada", puzzle: "braziers", dur: 5, w: 3, lv: 47 },
+// los 10 retos (fáciles); cada aparato los reparte de otra forma entre los secretos
+const SECRET_PUZZLES = [
+  { name: "La Cámara de las Runas", puzzle: "runes", len: 4 }, { name: "La Cripta de Hielo", puzzle: "plates" },
+  { name: "El Asedio de las Sombras", puzzle: "survive", time: 20 }, { name: "La Forja Apagada", puzzle: "braziers", dur: 8 },
+  { name: "La Galería de la Memoria", puzzle: "pairs", n: 8 }, { name: "La Sala de los Engranajes", puzzle: "gears", n: 4 },
+  { name: "El Jardín de las Luces", puzzle: "lights" }, { name: "El Campo de Tiro de Fuego", puzzle: "order", n: 6, time: 15 },
+  { name: "El Archivo de las Máquinas", puzzle: "pairs", n: 8 }, { name: "La Caja de Cambios", puzzle: "gears", n: 4 },
 ];
-// los segundos secretos de cada mundo: puzles más complejos
-const SECRET_DEFS2 = [
-  { name: "La Galería de la Memoria", puzzle: "pairs", n: 8, w: 0, lv: 7 },
-  { name: "La Sala de los Engranajes", puzzle: "gears", n: 4, w: 1, lv: 22 },
-  { name: "El Jardín de las Luces", puzzle: "lights", w: 2, lv: 37 },
-  { name: "El Campo de Tiro de Fuego", puzzle: "order", n: 8, time: 10, w: 3, lv: 52 },
-  { name: "El Archivo de las Máquinas", puzzle: "pairs", n: 12, w: 4, lv: 62 },
-  { name: "La Caja de Cambios", puzzle: "gears", n: 6, w: 4, lv: 67 },
-];
+{ let sd = (typeof DEVICE_SEED !== "undefined" ? DEVICE_SEED : 0) + 99991; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+  if (sd !== 99991) for (let k = SECRET_PUZZLES.length - 1; k > 0; k--) { const j = Math.floor(rr() * (k + 1)); [SECRET_PUZZLES[k], SECRET_PUZZLES[j]] = [SECRET_PUZZLES[j], SECRET_PUZZLES[k]]; } }
+// dos secretos por mundo, en los niveles 3 y 8
+const SECRET_SPOTS = [[0, 2], [1, 17], [2, 32], [3, 47], [0, 7], [1, 22], [2, 37], [3, 52], [4, 62], [4, 67]];
+const SECRET_DEFS = SECRET_SPOTS.slice(0, 4).map(([w, lv], k) => ({ ...SECRET_PUZZLES[k], w, lv }));
+const SECRET_DEFS2 = SECRET_SPOTS.slice(4).map(([w, lv], k) => ({ ...SECRET_PUZZLES[k + 4], w, lv }));
 function buildSecret(d, si) {
   const w = d.w, W = 29, H = 17, m = Array.from({ length: H }, (_, y) => Array.from({ length: W }, (_, x) => x === 0 || y === 0 || x === W - 1 || y === H - 1 || x === 13 ? "#" : "."));
   for (const x of [3, 9, 17, 24]) m[0][x] = "T";
@@ -552,7 +563,7 @@ function buildSecret(d, si) {
     : d.puzzle === "pairs" ? (d.n > 8 ? grid([2, 5, 8, 11], [3, 7, 13]) : grid([2, 5, 8, 11], [4, 12]))
     : d.puzzle === "gears" ? (d.n > 4 ? grid([3, 7, 11], [4, 12]) : grid([4, 9], [4, 12]))
     : d.puzzle === "lights" ? grid([3, 6, 9], [4, 8, 12])
-    : d.puzzle === "order" ? [[2, 2], [11, 3], [6, 6], [2, 9], [10, 9], [5, 13], [11, 14], [8, 11]] : [];
+    : d.puzzle === "order" ? [[2, 2], [11, 3], [6, 6], [2, 9], [10, 9], [5, 13], [11, 14], [8, 11]].slice(0, d.n || 8) : [];
   if (d.puzzle !== "runes" && d.puzzle !== "plates" && d.puzzle !== "braziers") m[8][3] = "."; // el jugador entra por abajo para no tapar el puzle
   if (m[8][3] === ".") m[15][6] = "P";
   for (const [x, y] of objs) m[y][x] = "1";
@@ -814,7 +825,7 @@ let saved = null; // partida del personaje actual (se carga al conocer el person
 const saveKey = () => "save." + (typeof charId === "string" ? charId : "x");
 const charK = (k, id = charId) => k + "." + id; // datos propios de cada personaje: logros, récord, Brasa
 const NIGHTMARE = { name: "Pesadilla", hp: 6, mhp: 1.8, spd: 1.2, drop: 0.5, proj: 1.25, rate: 1.45, pts: 2.5 };
-const DIFF = () => typeof secretIdx !== "undefined" && secretIdx !== null ? (secretIdx === ULTRA ? NIGHTMARE : DIFFS[2]) : DIFFS[settings.diff];
+const DIFF = () => typeof secretIdx !== "undefined" && secretIdx !== null ? (secretIdx === ULTRA ? NIGHTMARE : DIFFS[0]) : DIFFS[settings.diff];
 const TITLE_FONT = "Cinzel, Georgia, serif";
 
 // ---------- Canvas ----------
@@ -1052,7 +1063,7 @@ const spikeUp = (tx, ty) => spikePhase(tx, ty) < 0.75;
 
 function freshRun() {
   run = { score: 0, kills: 0, gold: 0, secrets: 0, time: 0, stars: 0 };
-  Object.assign(P, { hp: DIFF().hp + (hasPower("heart") ? 2 : 0), maxHp: DIFF().hp + (hasPower("heart") ? 2 : 0), weapons: ["pistola"], cur: 0, ammo: { pistola: WEAPONS.pistola.clip }, res: { pistola: WEAPONS.pistola.res } });
+  Object.assign(P, { hp: DIFF().hp + (hasPower("heart") ? 2 : 0) + 2 * UPG.hp, maxHp: DIFF().hp + (hasPower("heart") ? 2 : 0) + 2 * UPG.hp, weapons: ["pistola"], cur: 0, ammo: { pistola: WEAPONS.pistola.clip }, res: { pistola: WEAPONS.pistola.res } });
   hintsShown.clear();
 }
 // progreso del mapa: hasta qué nivel has llegado y las mejores estrellas de cada uno
@@ -1742,8 +1753,9 @@ function makeExit() {
 }
 function paintMini(x, y) {
   const t = T(x, y);
-  miniCtx.fillStyle = t === CRACK ? "#c070ff" : t === WALL ? "#6b5a4b" : t === DOOR ? KEYS[doorCol[y * W + x]].c : t === EXIT ? "#7fd8ff" :
-    t === SPIKE ? "#5a4a3a" : t === WATER ? "#1d4c78" : t === ICE ? "#5d8fae" : t === LAVA ? "#c4481a" : t === GATE ? "#8a8a96" : t === PORTAL ? "#c070ff" : t === CONV ? "#5a5440" : t === CRATE ? "#7a5a34" : t === WEB ? "#4a4550" : "#2a231e";
+  // los muros agrietados y los portales secretos no se ven en el minimapa: hay que descubrirlos
+  miniCtx.fillStyle = t === CRACK ? "#6b5a4b" : t === WALL ? "#6b5a4b" : t === DOOR ? KEYS[doorCol[y * W + x]].c : t === EXIT ? "#7fd8ff" :
+    t === SPIKE ? "#5a4a3a" : t === WATER ? "#1d4c78" : t === ICE ? "#5d8fae" : t === LAVA ? "#c4481a" : t === GATE ? "#8a8a96" : t === PORTAL ? "#2a231e" : t === CONV ? "#5a5440" : t === CRATE ? "#7a5a34" : t === WEB ? "#4a4550" : "#2a231e";
   miniCtx.fillRect(x * 4, y * 4, 4, 4);
 }
 function markSeen(tx, ty) {
@@ -1828,6 +1840,7 @@ addEventListener("keydown", e => {
     else if (["Enter", "Space"].includes(e.code)) { const b = ui[uiSel]; if (b) { pressFx(b); SFX.uiGo(); b.fn(); } keys.Space = false; }
     else if (e.code === "Escape" && state === "pause") resume();
     else if (e.code === "Escape" && state === "ach") { state = "title"; uiSel = 0; }
+    else if (e.code === "Escape" && state === "shop") goBack();
     else if (e.code === "Escape" && (state === "options" || state === "access")) closeSub();
     else if (e.code === "Escape" && state === "chars") { state = "title"; uiSel = 0; }
     else if (e.code === "Tab" && ui.length) { uiSel = (uiSel + (e.shiftKey ? ui.length - 1 : 1)) % ui.length; SFX.ui(); }
@@ -1856,11 +1869,15 @@ cv.addEventListener("mousemove", e => {
   mouse.x = e.clientX; mouse.y = e.clientY; mouse.last = time;
   if (state !== "play") { const i = ui.findIndex(b => hitBox(b, e.clientX, e.clientY)); if (i >= 0 && i !== uiSel) { uiSel = i; } }
 });
+let miniRect = null;
+const inMini = (x, y) => miniRect && x >= miniRect.x && x <= miniRect.x + miniRect.w && y >= miniRect.y && y <= miniRect.y + miniRect.h;
+function toggleMini() { settings.minimap = settings.minimap === 2 ? 1 : 2; store.set("minimap", settings.minimap); SFX.ui(); }
 cv.addEventListener("mousedown", e => {
   audio(); mouse.x = e.clientX; mouse.y = e.clientY; mouse.last = time;
   if (homeHit(e.clientX, e.clientY)) return;
   if (exitDlg) return;
   if (state !== "play") { if (!clickUI(e.clientX, e.clientY) && state === "story") storyNext(1); return; }
+  if (inMini(e.clientX, e.clientY)) { toggleMini(); return; }
   const hb = hotbar.find(b => e.clientX >= b.x && e.clientX <= b.x + b.w && e.clientY >= b.y && e.clientY <= b.y + b.h);
   if (hb) { if (P.weapons.includes(hb.id)) selectSlot(ORDER.indexOf(hb.id)); return; }
   if (e.button === 0) mouse.down = true;
@@ -1921,6 +1938,7 @@ cv.addEventListener("touchstart", e => {
   const B = btns();
   for (const t of e.changedTouches) {
     const x = t.clientX, y = t.clientY;
+    if (inMini(x, y)) { toggleMini(); continue; }
     const hb = hotbar.find(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
     if (hb) { selectSlot(ORDER.indexOf(hb.id)); continue; }
     if (inBtn(B.pause, x, y)) { pause(); continue; }
@@ -2127,7 +2145,7 @@ function drawWorldCard() {
   const bgc = ctx.createLinearGradient(0, 0, VW, 0); bgc.addColorStop(0, "rgba(5,4,7,0)"); bgc.addColorStop(0.5, "rgba(5,4,7,0.7)"); bgc.addColorStop(1, "rgba(5,4,7,0)");
   ctx.fillStyle = bgc; ctx.fillRect(0, cy - 46, VW, 104);
   ctx.translate(slide, 0);
-  ctx.fillStyle = w.color; ctx.font = `bold ${sm() ? 13 : 16}px system-ui`; ctx.fillText(sd ? (sd.ultra ? "NIVEL SUPERSECRETO · PESADILLA" : "NIVEL SECRETO · DIFÍCIL") : `MUNDO ${curWorld() + 1}`, VW / 2, cy - 20);
+  ctx.fillStyle = w.color; ctx.font = `bold ${sm() ? 13 : 16}px system-ui`; ctx.fillText(sd ? (sd.ultra ? "NIVEL SUPERSECRETO · PESADILLA" : "NIVEL SECRETO · FÁCIL") : `MUNDO ${curWorld() + 1}`, VW / 2, cy - 20);
   ctx.fillStyle = "#fff3dc"; ctx.font = `900 ${sm() ? 24 : 36}px ${TITLE_FONT}`; ctx.fillText(w.name, VW / 2, cy + 14, VW - 24);
   ctx.translate(-slide * 2, 0);
   ctx.fillStyle = "rgba(243,230,200,0.85)"; ctx.font = `${sm() ? 12 : 14}px system-ui`; ctx.fillText(w.twist, VW / 2, cy + 42, VW - 24);
@@ -2188,7 +2206,7 @@ function playSecretFromMap(si) {
   loadRun(); const lv = secretParent(SECRET_NODE + si); levelIdx = lv;
   secretRet = { fromMap: true, mapSel: SECRET_NODE + si, level: saved ? saved.level : lv, ck: null, heartBefore: hasPower("heart"), pStart: structuredClone({ hp: P.hp, maxHp: P.maxHp, weapons: P.weapons, cur: P.cur, ammo: P.ammo, res: P.res }) };
   secretIdx = si; loadLevel(lv);
-  showToast(`¡${SECRETS[si].name}! Dificultad: Difícil`, 3);
+  showToast(`¡${SECRETS[si].name}! Dificultad: Fácil`, 3);
 }
 function mapKey(e) {
   const top = Math.max(prog().unlocked || 0, saved ? saved.level : 0);
@@ -2444,13 +2462,15 @@ function drawMap() {
   const secSel = isSecretNode(mapSel) ? SECRETS[mapSel - SECRET_NODE] : null, secPow = secSel && POWERS[mapSel - SECRET_NODE];
   const name = mapSel === ULTRA_NODE ? "La Grieta del Vacío" : secSel ? secSel.name : LEVELS[mapSel].name;
   ctx.textAlign = "center"; ctx.fillStyle = mapSel === ULTRA_NODE ? "#ff8af0" : secSel ? "#d0a0ff" : "#e8a33d"; ctx.font = "bold 12px system-ui";
-  ctx.fillText(mapSel === ULTRA_NODE ? "NIVEL SUPERSECRETO · PESADILLA" : secSel ? `NIVEL SECRETO · DIFÍCIL${secPow ? " · premio: " + secPow.icon + " " + secPow.name : ""}` : levelLabel(mapSel), VW / 2, py + 20, pw - 16);
+  ctx.fillText(mapSel === ULTRA_NODE ? "NIVEL SUPERSECRETO · PESADILLA" : secSel ? `NIVEL SECRETO · FÁCIL${secPow ? " · premio: " + secPow.icon + " " + secPow.name : ""}` : levelLabel(mapSel), VW / 2, py + 20, pw - 16);
   ctx.fillStyle = "#fff3dc"; ctx.font = `900 ${ld ? 16 : s ? 18 : 22}px ${TITLE_FONT}`; ctx.fillText(name, VW / 2, py + (ld ? 38 : 46), pw - 20);
   const bw = s ? (pw - 40) / 3 : 150, by = py + (ld ? 46 : s ? 66 : 62);
   const bh = ld ? 38 : 40;
   button("‹ Mundo", px + 10, by, bw, bh, () => mapKey({ code: "ArrowDown" }), { size: 13 });
   button(saved && saved.level === mapSel && saved.full ? "▶ Continuar" : "▶ Jugar", VW / 2 - bw / 2, by, bw, bh, () => playFromMap(mapSel), { size: 15 });
   button("Mundo ›", px + pw - bw - 10, by, bw, bh, () => mapKey({ code: "ArrowUp" }), { size: 13 });
+  // el taller de mejoras, arriba a la derecha
+  button("🛠️ Taller", VW - (ld || s ? 110 : 140) - 16, 16, ld || s ? 110 : 140, 40, () => openShop("map"), { size: 14 });
   if (!s && !isTouch()) { ctx.fillStyle = "rgba(243,230,200,0.5)"; ctx.font = "12px system-ui"; ctx.fillText("←→ elegir nivel  ·  ↑↓ cambiar de mundo  ·  ENTER jugar  ·  ESC volver", VW / 2, py - 10); }
   if (picker.open) drawPicker();
 }
@@ -2496,7 +2516,7 @@ function enterSecret(si, portalIdx) {
   secretRet = { level: levelIdx, ck, heartBefore: hasPower("heart"), pStart: structuredClone({ hp: P.hp, maxHp: P.maxHp, weapons: P.weapons, cur: P.cur, ammo: P.ammo, res: P.res }) };
   secretIdx = si; SFX.secret(); SFX.uiGo(); flashes.push({ x: P.x, y: P.y, r: 200, life: 0.4 });
   loadLevel(levelIdx);
-  showToast("¡Has encontrado un nivel secreto! Aquí la dificultad es Difícil", 3);
+  showToast("¡Has encontrado un nivel secreto! Aquí la dificultad es Fácil", 3);
 }
 function returnFromSecret() {
   const r = secretRet;
@@ -2531,13 +2551,13 @@ function setupPuzzle() {
     for (let tries = 0; tries < 30; tries++) {
       os.forEach(o => o.dir = 0);
       os.forEach((o, j) => { const c = 1 + Math.floor(Math.random() * 3); for (let k = 0; k < 4 - c; k++) gearTurn(j, true); });
-      if (gearMinTurns() >= os.length + 2) break;
+      if (gearMinTurns() >= os.length) break;
     }
     os.forEach(o => o.ang = o.dir * Math.PI / 2);
   } else if (d.puzzle === "lights") {
     os.forEach(o => o.on = true);
     // cuatro lámparas distintas: la solución necesita justo esos cuatro disparos (o los mismos en otro orden)
-    const pick = [0, 1, 2, 3, 4, 5, 6, 7, 8].sort(() => Math.random() - 0.5).slice(0, 4);
+    const pick = [0, 1, 2, 3, 4, 5, 6, 7, 8].sort(() => Math.random() - 0.5).slice(0, 3);
     for (const k of pick) lightPress(k, true);
   } else if (d.puzzle === "order") {
     puzzle.step = 0; puzzle.timer = 0;
@@ -2588,11 +2608,11 @@ function puzzleHit(p) {
     if (puzzle.first === null) { puzzle.first = o; return true; }
     const a = puzzle.first; puzzle.first = null;
     if (a.sym === o.sym) { a.done = o.done = true; SFX.key(); if (puzzle.objs.every(q => q.done)) solvePuzzle(); }
-    else { a.show = o.show = 0.9; puzzle.wait = 0.9; SFX.hurt(); puzzleSpawn(1); }
+    else { a.show = o.show = 1.2; puzzle.wait = 1.2; SFX.hurt(); }
     return true;
   }
   if (puzzle.type === "gears") { gearTurn(i); if (puzzle.objs.every(q => q.dir === 0)) setTimeout(() => puzzle && !puzzle.solved && puzzle.objs.every(q => q.dir === 0) && solvePuzzle(), 450); return true; }
-  if (puzzle.type === "lights") { lightPress(i); if (puzzle.objs.every(q => q.on)) solvePuzzle(); else if (Math.random() < 0.25) puzzleSpawn(1); return true; }
+  if (puzzle.type === "lights") { lightPress(i); if (puzzle.objs.every(q => q.on)) solvePuzzle(); return true; }
   if (puzzle.type === "order") {
     if (o.hitOk) return true;
     if (i === puzzle.step) { o.hitOk = true; o.flash = 0.4; puzzle.step++; if (puzzle.step === 1) puzzle.timer = puzzle.d.time; beep(440 + puzzle.step * 80, 0.1, "triangle", 0.06); if (puzzle.step >= puzzle.objs.length) solvePuzzle(); }
@@ -2607,7 +2627,7 @@ function puzzleHit(p) {
   return true;
 }
 function orderFail(msg) {
-  SFX.hurt(); showToast(msg, 2); puzzle.step = 0; puzzle.timer = 0; for (const q of puzzle.objs) q.hitOk = false; puzzleSpawn(2);
+  SFX.hurt(); showToast(msg, 2); puzzle.step = 0; puzzle.timer = 0; for (const q of puzzle.objs) q.hitOk = false; puzzleSpawn(1);
 }
 function hintSecret() {
   if (secretIdx !== null || inTutorial) return;
@@ -3030,7 +3050,7 @@ function fire() {
     const foam = kind === "dart" || kind === "bolt" || kind === "mega" || kind === "disc", skin = DART_SKINS[look.dart] || DART_SKINS[0];
     projs.push({ x: mx, y: my, px: mx, py: my, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
       r: { rocket: 6, disc: 5, grenade: 5, water: 4, mega: 7, bubble: 7 }[kind] || 3, dmg: w.dmg, owner: "p", kind, w: id, crit: w.crit || 0.08,
-      life: { rocket: 2.2, bolt: 1.2, disc: w.boomerang ? 3 : 2.6, grenade: 0.95, water: rand(0.32, 0.42), mega: 1.6, bubble: 2.2 }[kind] || (id === "rifle" || id === "franco" ? 1.5 : w.ricochet ? 1.8 : 1.1),
+      life: ({ rocket: 2.2, bolt: 1.2, disc: w.boomerang ? 3 : 2.6, grenade: 0.95, water: rand(0.32, 0.42), mega: 1.6, bubble: 2.2 }[kind] || (id === "rifle" || id === "franco" ? 1.5 : w.ricochet ? 1.8 : 1.1)) * (kind === "grenade" || kind === "disc" ? 1 : w.rangeK || 1),
       splash: w.splash || 0, color: foam ? skin.body(w.color) : w.color, tip: foam ? skin.tip : "#ff6a00", trail: foam ? skin.trail : null,
       pierce: w.pierce || 0, bounces: w.bounces || 0, ricochet: w.ricochet || 0, freeze: w.freeze || 0, chain: w.chain || 0, boom: !!w.boomerang, hits: new Set(), t: 0 });
   }
@@ -3310,7 +3330,7 @@ function updatePlayer(dt) {
     P.dash -= dt; vx = P.dvx; vy = P.dvy; if (P.dash <= 0) P.land = 1;
     ghosts.push({ x: P.x, y: P.y, life: 0.22 });
   } else {
-    const sp = P.speed * (onWeb ? 0.45 : 1) * (P.turbo > 0 ? 1.4 : 1) * (hasPower("speed") ? 1.15 : 1);
+    const sp = P.speed * (onWeb ? 0.45 : 1) * (P.turbo > 0 ? 1.4 : 1) * (hasPower("speed") ? 1.15 : 1) * (1 + 0.06 * UPG.spd);
     vx = mx * sp; vy = my * sp;
     if (T(ptx, pty) === ICE) {
       // en el hielo cuesta arrancar y frenar
@@ -4122,6 +4142,7 @@ function drawMain() {
   if (state === "options" || state === "access") { drawSubMenu(); return; }
   if (state === "bye") { drawBye(); return; }
   if (state === "chars") { drawChars(); return; }
+  if (state === "shop") { drawShop(); return; }
   if (state === "map") { drawMap(); return; }
   CZ = ZOOM * (1 + zoomPunch);
   const vw = VW / CZ, vh = VH / CZ;
@@ -4367,10 +4388,12 @@ function drawMain() {
     g.addColorStop(0, "rgba(229,72,77,0)"); g.addColorStop(1, `rgba(229,72,77,${a})`);
     ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
   }
+  miniRect = null;
   if (state === "play" || state === "pause") drawHUD();
   if (settings.minimap === 2 && mini && state === "play") {
     const mw = Math.min(VW - 40, 760), mh = Math.min(VH - 200, 520), sc = Math.max(3, Math.min(mw / W, mh / H));
-    drawMiniMap(VW / 2 - mw / 2, VH / 2 - mh / 2 - 20, mw, mh, sc, false);
+    drawMiniMap(VW / 2 - mw / 2, VH / 2 - mh / 2 - 20, mw, mh, sc, false); miniRect = { x: VW / 2 - mw / 2 - 5, y: VH / 2 - mh / 2 - 25, w: mw + 10, h: mh + 10 };
+    ctx.fillStyle = "rgba(243,230,200,0.7)"; ctx.font = "12px system-ui"; ctx.textAlign = "center"; ctx.fillText(isTouch() ? "Toca el mapa para hacerlo pequeño" : "Clic en el mapa para hacerlo pequeño", VW / 2, VH / 2 + mh / 2 + 2);
   }
   if (touch.on && state === "play") drawTouch();
   if (state === "play") { drawCombo(); drawTutorialPanel(); drawWorldCard(); drawPuzzleHud(); drawBossIntro(); }
@@ -4985,11 +5008,28 @@ function mixHex(a, b, k) {
 function drawPlayerBody(x, y, aim, bob, walk) {
   const suit = SUIT_COLORS[look.suit] || SUIT_COLORS[0], skin = SKIN_TONES[look.skin] || SKIN_TONES[1];
   const hatC = HAT_COLORS[look.hatColor] || HAT_COLORS[0], pack = PACK_COLORS[look.pack] || PACK_COLORS[0], hy = y + bob;
-  ctx.fillStyle = "#2a1f18";
-  ctx.beginPath(); ctx.arc(x - 4, y + 7 + Math.sin(walk) * 2, 3, 0, 7); ctx.arc(x + 4, y + 7 - Math.sin(walk) * 2, 3, 0, 7); ctx.fill();
-  const tg = ctx.createRadialGradient(x - 3, hy - 3, 1, x, hy, 11); tg.addColorStop(0, mixHex(suit, "#ffffff", 0.3)); tg.addColorStop(1, mixHex(suit, "#000000", 0.35));
+  // botas con suela y brillo, que se mueven al andar
+  for (const [sx, ph] of [[-4, 1], [4, -1]]) {
+    const by = y + 7 + Math.sin(walk) * 2 * ph;
+    ctx.fillStyle = "#1a120c"; ctx.beginPath(); ctx.ellipse(x + sx, by + 1, 3.6, 3, 0, 0, 7); ctx.fill();
+    const bg = ctx.createLinearGradient(0, by - 3, 0, by + 2); bg.addColorStop(0, "#6a4a30"); bg.addColorStop(1, "#2e1f14");
+    ctx.fillStyle = bg; ctx.beginPath(); ctx.ellipse(x + sx, by, 3.2, 2.7, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = "rgba(255,230,190,0.35)"; ctx.beginPath(); ctx.ellipse(x + sx - 0.9, by - 1.1, 1.2, 0.7, -0.4, 0, 7); ctx.fill();
+  }
+  // traje: volumen, costuras, hombreras, cinturón con hebilla y bandolera de dardos
+  const tg = ctx.createRadialGradient(x - 3, hy - 3, 1, x, hy, 11); tg.addColorStop(0, mixHex(suit, "#ffffff", 0.32)); tg.addColorStop(0.6, suit); tg.addColorStop(1, mixHex(suit, "#000000", 0.4));
   ctx.fillStyle = tg; ctx.beginPath(); ctx.arc(x, hy, 10, 0, 7); ctx.fill();
-  ctx.strokeStyle = mixHex(suit, "#000000", 0.55); ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.save(); ctx.beginPath(); ctx.arc(x, hy, 10, 0, 7); ctx.clip();
+  ctx.strokeStyle = mixHex(suit, "#000000", 0.35); ctx.lineWidth = 0.6; ctx.setLineDash([1.2, 1.2]);
+  ctx.beginPath(); ctx.moveTo(x, hy - 10); ctx.lineTo(x, hy + 10); ctx.stroke(); ctx.setLineDash([]);
+  const px2 = -Math.sin(aim), py2 = Math.cos(aim); // hacia los lados de donde apuntas
+  for (const sd of [-1, 1]) { const sx = x + px2 * 8 * sd, sy = hy + py2 * 6 * sd; const sg = ctx.createRadialGradient(sx - 1, sy - 1, 0.5, sx, sy, 4); sg.addColorStop(0, mixHex(suit, "#ffffff", 0.45)); sg.addColorStop(1, mixHex(suit, "#000000", 0.3)); ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(sx, sy, 3.6, 0, 7); ctx.fill(); }
+  ctx.fillStyle = "#3a2618"; ctx.fillRect(x - 10, hy + 4.2, 20, 2.4);
+  ctx.fillStyle = "#ffd23f"; ctx.fillRect(x - 1.6, hy + 3.9, 3.2, 3); ctx.fillStyle = "#3a2618"; ctx.fillRect(x - 0.7, hy + 4.6, 1.4, 1.6);
+  ctx.strokeStyle = "#5a3a22"; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.moveTo(x - 8, hy - 6); ctx.lineTo(x + 8, hy + 5); ctx.stroke();
+  for (let i = 0; i < 4; i++) { const t = 0.2 + i * 0.2; ctx.fillStyle = ["#ff8a1f", "#3fb7ff", "#9be15d", "#ffd23f"][i]; ctx.fillRect(x - 8 + 16 * t - 0.8, hy - 6 + 11 * t - 1.8, 1.6, 2.4); }
+  ctx.restore();
+  ctx.strokeStyle = mixHex(suit, "#000000", 0.6); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, hy, 10, 0, 7); ctx.stroke();
   gloss(x, hy, 10);
   // mochila con dardos de la piel elegida
   ctx.save(); ctx.translate(x - Math.cos(aim) * 7.5, hy - Math.sin(aim) * 7.5); ctx.rotate(aim);
@@ -5002,7 +5042,21 @@ function drawPlayerBody(x, y, aim, bob, walk) {
     ctx.fillStyle = sk.tip; ctx.beginPath(); ctx.arc(-6.8, -3.1 + i * 3.3, 1.1, 0, 7); ctx.fill();
   }
   ctx.restore();
-  ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(x, hy - 3, 6, 0, 7); ctx.fill();
+  // cabeza con sombra, orejas, pelo bajo el sombrero y una cara que mira hacia donde apuntas
+  ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.beginPath(); ctx.ellipse(x, hy + 2.6, 6, 2.2, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = mixHex(skin, "#000000", 0.15); for (const sd of [-1, 1]) { ctx.beginPath(); ctx.arc(x + sd * 5.8, hy - 2.6, 1.6, 0, 7); ctx.fill(); }
+  const hg = ctx.createRadialGradient(x - 2, hy - 5, 0.5, x, hy - 3, 6.4); hg.addColorStop(0, mixHex(skin, "#ffffff", 0.3)); hg.addColorStop(1, mixHex(skin, "#000000", 0.18));
+  ctx.fillStyle = hg; ctx.beginPath(); ctx.arc(x, hy - 3, 6, 0, 7); ctx.fill();
+  ctx.strokeStyle = mixHex(skin, "#000000", 0.35); ctx.lineWidth = 0.6; ctx.stroke();
+  ctx.fillStyle = "#3a2414"; ctx.beginPath(); ctx.ellipse(x, hy - 6.8, 5.6, 2.2, 0, 0, 7); ctx.fill();
+  { const fx = Math.cos(aim) * 1.8, fy = Math.max(-0.4, Math.sin(aim)) * 1.1 + 0.6, blink = Math.sin(time * 1.3 + x * 0.01) > 0.985;
+    for (const sd of [-1, 1]) {
+      const ex = x + fx + sd * 2.3, ey = hy - 2.6 + fy;
+      if (blink) { ctx.strokeStyle = "#2a1a10"; ctx.lineWidth = 0.7; ctx.beginPath(); ctx.moveTo(ex - 1, ey); ctx.lineTo(ex + 1, ey); ctx.stroke(); }
+      else { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.ellipse(ex, ey, 1.25, 1.45, 0, 0, 7); ctx.fill(); ctx.fillStyle = "#1a1010"; ctx.beginPath(); ctx.arc(ex + fx * 0.25, ey + 0.2, 0.75, 0, 7); ctx.fill(); }
+      ctx.fillStyle = "rgba(255,120,120,0.35)"; ctx.beginPath(); ctx.arc(x + fx * 0.6 + sd * 3.6, hy - 0.8 + fy, 1.1, 0, 7); ctx.fill();
+    }
+    ctx.strokeStyle = "rgba(60,30,20,0.7)"; ctx.lineWidth = 0.6; ctx.beginPath(); ctx.arc(x + fx * 0.8, hy - 1 + fy, 1.3, 0.3, Math.PI - 0.3); ctx.stroke(); }
   const dark = mixHex(hatC, "#000000", 0.45), light = mixHex(hatC, "#ffffff", 0.5);
   if (look.hat === 1) { // gorra con visera hacia donde miras
     ctx.fillStyle = hatC; ctx.beginPath(); ctx.arc(x, hy - 5, 6.2, Math.PI, 0); ctx.fill();
@@ -5047,8 +5101,10 @@ function drawPlayerBody(x, y, aim, bob, walk) {
     ctx.strokeStyle = "#d9b04a"; ctx.lineWidth = 0.7; ctx.stroke();
     ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(x, hy - 9.5, 1.6, 0, 7); ctx.fill(); ctx.fillRect(x - 1.8, hy - 7.6, 3.6, 0.8);
   } else { // casco minero
-    ctx.fillStyle = hatC; ctx.beginPath(); ctx.arc(x, hy - 5, 6.3, Math.PI, 0); ctx.fill();
+    const cg = ctx.createRadialGradient(x - 2, hy - 9, 0.5, x, hy - 6, 7); cg.addColorStop(0, light); cg.addColorStop(1, hatC);
+    ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(x, hy - 5, 6.3, Math.PI, 0); ctx.fill();
     ctx.fillStyle = dark; ctx.fillRect(x - 6.3, hy - 5.5, 12.6, 1.3);
+    ctx.strokeStyle = "rgba(255,255,255,0.35)"; ctx.lineWidth = 0.7; ctx.beginPath(); ctx.arc(x, hy - 5, 4.6, Math.PI + 0.5, -0.6); ctx.stroke();
   }
   ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.beginPath(); ctx.ellipse(x - 2.5, hy - 8, 2.4, 1, -0.4, 0, 7); ctx.fill();
   const lx = x + Math.cos(aim) * 3, ly = hy - (look.hat === 3 ? 5.5 : 8);
@@ -5900,7 +5956,7 @@ function drawHUD() {
   // minimapa: vista local alrededor del jugador (o mapa completo con TAB)
   if (settings.minimap === 1 && mini) {
     const lt = land() && touch.on, mw = lt ? 140 : small ? 128 : 184, mh = lt ? 70 : small ? 96 : 132, mx = VW - mw - 12, my = 68;
-    drawMiniMap(mx, my, mw, mh, small ? 4 : 5, true);
+    drawMiniMap(mx, my, mw, mh, small ? 4 : 5, true); miniRect = { x: mx - 5, y: my - 5, w: mw + 10, h: mh + 10 };
   }
   // barra de armas: todas las armas, con cargador | reserva
   hotbar = [];
@@ -5969,7 +6025,7 @@ function drawHUD() {
     const a = Math.min(1, banner, (3.2 - banner) * 3);
     ctx.globalAlpha = a; ctx.textAlign = "center";
     ctx.fillStyle = "#e8a33d"; ctx.font = `bold ${small ? 13 : 16}px system-ui`;
-    ctx.fillText(inTutorial ? "— TUTORIAL —" : secretIdx !== null ? "— NIVEL SECRETO · DIFÍCIL —" : `— MUNDO ${curWorld() + 1} · NIVEL ${numIn(levelIdx) + 1}/${WSIZE[curWorld()]} —`, VW / 2, VH * 0.36);
+    ctx.fillText(inTutorial ? "— TUTORIAL —" : secretIdx !== null ? "— NIVEL SECRETO · FÁCIL —" : `— MUNDO ${curWorld() + 1} · NIVEL ${numIn(levelIdx) + 1}/${WSIZE[curWorld()]} —`, VW / 2, VH * 0.36);
     ctx.fillStyle = "#f3e6c8"; ctx.font = `900 ${small ? 26 : 40}px ${TITLE_FONT}`;
     ctx.shadowColor = "rgba(232,163,61,0.6)"; ctx.shadowBlur = 18;
     ctx.fillText(curDef().name, VW / 2, VH * 0.36 + (small ? 36 : 50), VW - 32);
@@ -5999,9 +6055,8 @@ function drawMiniMap(mx, my, mw, mh, sc, local) {
     if (!seenAt(it.x, it.y)) continue;
     const [x, y] = map(it.x / TS, it.y / TS);
     if (it.kind === "key") { ctx.fillStyle = KEYS[it.c].c; ctx.beginPath(); ctx.arc(x, y, 2.6, 0, 7); ctx.fill(); ctx.strokeStyle = "#fff"; ctx.lineWidth = 0.8; ctx.stroke(); }
-    else if (it.kind === "weapon") { ctx.fillStyle = WEAPONS[it.w].color; ctx.fillRect(x - 2.5, y - 2.5, 5, 5); }
+    // las armas y los corazones (lo bueno) no salen en el minimapa
     else if (it.kind === "bullets" || it.kind === "ammo") { ctx.fillStyle = "#ffb02e"; ctx.fillRect(x - 1.5, y - 1.5, 3, 3); }
-    else if (it.kind === "heart") { ctx.fillStyle = "#ff4d5e"; ctx.fillRect(x - 1.5, y - 1.5, 3, 3); }
   }
   // radar de monstruos cercanos que ya hayas visto
   for (const m of monsters) {
@@ -6341,6 +6396,7 @@ function drawTitle() {
   items.push({ label: "Nueva partida", fn: startNewGameFlow });
   items.push({ label: "Tutorial", fn: startTutorial });
   items.push({ label: `Personajes: ${look.name} (${chars.length}/${MAX_CHARS})`, fn: openChars });
+  items.push({ label: "🛠️ Taller de mejoras", fn: () => openShop("title") });
   items.push({ label: `Logros (${ACH.filter(a => achieved[a.id]).length}/${ACH.length})`, fn: () => { state = "ach"; uiSel = 0; } });
   items.push({ label: "Opciones", fn: () => openSub("options") });
   items.push({ label: "Accesibilidad", fn: () => openSub("access") });
@@ -6953,7 +7009,7 @@ const ARPS = { story: [[57, 60, 64, 69], [53, 57, 60, 65], [55, 59, 62, 67], [52
                ending: [[60, 64, 67, 72], [55, 59, 62, 67], [57, 60, 64, 69], [53, 57, 60, 65]] };
 const END_MELODY = [72, 0, 76, 79, 0, 77, 76, 74, 72, 0, 74, 76, 0, 79, 77, 76];
 function musicMode() {
-  if (state === "title" || state === "custom" || state === "ach" || state === "options" || state === "access" || state === "chars" || state === "map") return "title";
+  if (state === "title" || state === "custom" || state === "ach" || state === "options" || state === "access" || state === "chars" || state === "map" || state === "shop") return "title";
   if (state === "story") return story.pages === ENDING ? "ending" : "story";
   if (state === "win") return "ending";
   if (state === "play" && monsters.some(m => m.def.boss && m.alert > 0)) return "boss";
@@ -7066,7 +7122,31 @@ const ACH = [
 ];
 const achieved = {};
 // cada personaje tiene sus propios logros, récord y mascota; al cambiar de personaje se cargan los suyos
+// ---------- Taller: mejoras del personaje y de las armas (se compran con oro; cada personaje tiene las suyas) ----------
+const WEAPONS_BASE = structuredClone(WEAPONS);
+const UPG_CHAR = [
+  { id: "str", name: "Fuerza", desc: k => `+${k * 15} % de daño`, icon: "💪", max: 5, cost: [60, 120, 200, 300, 450] },
+  { id: "spd", name: "Velocidad", desc: k => `+${k * 6} % de velocidad`, icon: "👟", max: 5, cost: [50, 100, 170, 260, 380] },
+  { id: "hp", name: "Vida", desc: k => `+${k} corazón${k === 1 ? "" : "es"}`, icon: "❤️", max: 3, cost: [100, 220, 400] },
+];
+const UPG_WEAP = [
+  { id: "rate", name: "Cadencia", desc: k => `dispara un ${k * 12} % más rápido`, icon: "⚡", max: 3, cost: [50, 110, 200] },
+  { id: "range", name: "Alcance", desc: k => `los dardos llegan un ${k * 20} % más lejos`, icon: "🎯", max: 3, cost: [40, 90, 170] },
+  { id: "ammo", name: "Balas", desc: k => `cargador un ${k * 25} % más grande`, icon: "📦", max: 3, cost: [50, 110, 200] },
+];
+let UPG = { str: 0, spd: 0, hp: 0, w: {} };
+const wUpg = id => UPG.w[id] || (UPG.w[id] = { rate: 0, range: 0, ammo: 0 });
+// las armas usan siempre sus valores mejorados
+function applyUpgrades() {
+  for (const id in WEAPONS_BASE) {
+    const b = WEAPONS_BASE[id], u = UPG.w[id] || {}, w = WEAPONS[id];
+    w.dmg = b.dmg * (1 + 0.15 * UPG.str); w.cd = b.cd * (1 - 0.12 * (u.rate || 0)); w.reload = b.reload * (1 - 0.08 * (u.rate || 0));
+    w.clip = Math.max(1, Math.round(b.clip * (1 + 0.25 * (u.ammo || 0)))); w.max = Math.round(b.max * (1 + 0.25 * (u.ammo || 0))); w.res = Math.round(b.res * (1 + 0.25 * (u.ammo || 0)));
+    w.rangeK = 1 + 0.2 * (u.range || 0);
+  }
+}
 function loadCharData() {
+  UPG = Object.assign({ str: 0, spd: 0, hp: 0, w: {} }, store.get(charK("upg"), {}) || {}); applyUpgrades();
   for (const k in achieved) delete achieved[k];
   Object.assign(achieved, store.get(charK("ach"), {}) || {});
   best = +store.get(charK("best"), 0) || 0;
@@ -7520,6 +7600,29 @@ const TR_ROWS = [
 ["¡ZAS!", "WHAM!", "PÁ!", "VLAN !", "ZACK!", "ZAC!"],
 ["¡NOOOO...!", "NOOOO...!", "NÃÃÃO...!", "NOOOON... !", "NEEEIN...!", "NOOOO...!"],
 ["¡FIUM!", "WHOOSH!", "FIUM!", "FIOU !", "WUSCH!", "FIUU!"],
+["Toca el mapa para hacerlo pequeño", "Tap the map to make it small", "Toque no mapa para diminuí-lo", "Touche la carte pour la réduire", "Tippe auf die Karte, um sie zu verkleinern", "Tocca la mappa per rimpicciolirla"],
+["Clic en el mapa para hacerlo pequeño", "Click the map to make it small", "Clique no mapa para diminuí-lo", "Clique sur la carte pour la réduire", "Klick auf die Karte, um sie zu verkleinern", "Fai clic sulla mappa per rimpicciolirla"],
+["TALLER", "WORKSHOP", "OFICINA", "ATELIER", "WERKSTATT", "OFFICINA"],
+["🪙 Oro: {0}", "🪙 Gold: {0}", "🪙 Ouro: {0}", "🪙 Or : {0}", "🪙 Gold: {0}", "🪙 Oro: {0}"],
+["🛠️ Taller de mejoras", "🛠️ Upgrade workshop", "🛠️ Oficina de melhorias", "🛠️ Atelier d'améliorations", "🛠️ Upgrade-Werkstatt", "🛠️ Officina dei potenziamenti"],
+["🛠️ Taller", "🛠️ Workshop", "🛠️ Oficina", "🛠️ Atelier", "🛠️ Werkstatt", "🛠️ Officina"],
+["Personaje", "Character", "Personagem", "Personnage", "Figur", "Personaggio"], ["▸ Personaje", "▸ Character", "▸ Personagem", "▸ Personnage", "▸ Figur", "▸ Personaggio"],
+["Armas", "Weapons", "Armas", "Armes", "Waffen", "Armi"], ["▸ Armas", "▸ Weapons", "▸ Armas", "▸ Armes", "▸ Waffen", "▸ Armi"],
+["Fuerza", "Strength", "Força", "Force", "Stärke", "Forza"], ["Velocidad", "Speed", "Velocidade", "Vitesse", "Tempo", "Velocità"], ["Vida", "Health", "Vida", "Vie", "Leben", "Vita"],
+["Cadencia", "Fire rate", "Cadência", "Cadence", "Feuerrate", "Cadenza"], ["Alcance", "Range", "Alcance", "Portée", "Reichweite", "Gittata"], ["Balas", "Ammo", "Balas", "Munitions", "Munition", "Munizioni"],
+["+{0} % de daño", "+{0}% damage", "+{0}% de dano", "+{0} % de dégâts", "+{0} % Schaden", "+{0}% di danno"],
+["+{0} % de velocidad", "+{0}% speed", "+{0}% de velocidade", "+{0} % de vitesse", "+{0} % Tempo", "+{0}% di velocità"],
+["+{0} corazón", "+{0} heart", "+{0} coração", "+{0} cœur", "+{0} Herz", "+{0} cuore"], ["+{0} corazones", "+{0} hearts", "+{0} corações", "+{0} cœurs", "+{0} Herzen", "+{0} cuori"],
+["dispara un {0} % más rápido", "fires {0}% faster", "atira {0}% mais rápido", "tire {0} % plus vite", "schießt {0} % schneller", "spara il {0}% più veloce"],
+["los dardos llegan un {0} % más lejos", "darts fly {0}% farther", "os dardos vão {0}% mais longe", "les fléchettes vont {0} % plus loin", "Pfeile fliegen {0} % weiter", "i dardi vanno il {0}% più lontano"],
+["cargador un {0} % más grande", "{0}% bigger magazine", "carregador {0}% maior", "chargeur {0} % plus grand", "{0} % größeres Magazin", "caricatore più grande del {0}%"],
+["sin mejorar", "not upgraded", "sem melhoria", "pas amélioré", "nicht verbessert", "non potenziato"],
+["✓ Máximo", "✓ Max", "✓ Máximo", "✓ Max", "✓ Maximum", "✓ Massimo"],
+["Mejorar · {0} 🪙", "Upgrade · {0} 🪙", "Melhorar · {0} 🪙", "Améliorer · {0} 🪙", "Verbessern · {0} 🪙", "Potenzia · {0} 🪙"],
+["Te faltan {0} de oro. ¡Recoge monedas en los niveles!", "You need {0} more gold. Collect coins in the levels!", "Faltam {0} de ouro. Pegue moedas nos níveis!", "Il te manque {0} d'or. Ramasse des pièces dans les niveaux !", "Dir fehlen {0} Gold. Sammle Münzen in den Levels!", "Ti mancano {0} d'oro. Raccogli monete nei livelli!"],
+["¡{0} mejorada!", "{0} upgraded!", "{0} melhorada!", "{0} améliorée !", "{0} verbessert!", "{0} potenziata!"],
+["Las mejoras son de este personaje y duran para siempre", "Upgrades belong to this character and last forever", "As melhorias são deste personagem e duram para sempre", "Les améliorations sont à ce personnage et durent pour toujours", "Die Verbesserungen gehören dieser Figur und bleiben für immer", "I potenziamenti sono di questo personaggio e durano per sempre"],
+["Empieza una partida y recoge oro para comprar mejoras", "Start a game and collect gold to buy upgrades", "Comece uma partida e pegue ouro para comprar melhorias", "Commence une partie et ramasse de l'or pour acheter des améliorations", "Starte ein Spiel und sammle Gold für Verbesserungen", "Inizia una partita e raccogli oro per comprare potenziamenti"],
 ["Rata gigante", "Giant rat", "Rato gigante", "Rat géant", "Riesenratte", "Ratto gigante"],
 ["Armadillo", "Armadillo", "Tatu", "Tatou", "Gürteltier", "Armadillo"],
 ["Muñeco de nieve", "Snowman", "Boneco de neve", "Bonhomme de neige", "Schneemann", "Pupazzo di neve"],
@@ -7863,6 +7966,67 @@ function goHome() {
   for (const k in keys) keys[k] = false; mouse.down = false; touch.fire = false;
   toMenu();
 }
+let shop = { tab: 0, wi: 0, from: "title" };
+function openShop(from) { shop.from = from || "title"; shop.tab = 0; shop.wi = 0; saved = loadSave(); state = "shop"; uiSel = 0; stateT = 0; SFX.uiGo(); }
+const shopGold = () => (saved && saved.run && saved.run.gold) || 0;
+const shopWeapons = () => (saved && saved.weapons && saved.weapons.length ? saved.weapons : ["pistola"]).filter(w => WEAPONS[w]);
+function buyUpgrade(kind, def, wid) {
+  const lvl = kind === "c" ? UPG[def.id] : wUpg(wid)[def.id];
+  if (lvl >= def.max) { SFX.ui(); return; }
+  const cost = def.cost[lvl];
+  if (!saved || shopGold() < cost) { SFX.empty(); showToast(`Te faltan ${cost - shopGold()} de oro. ¡Recoge monedas en los niveles!`, 2.5); return; }
+  saved.run.gold -= cost; run.gold = Math.max(0, (run.gold || 0) - cost);
+  if (kind === "c") { UPG[def.id]++; if (def.id === "hp") { saved.maxHp = (saved.maxHp || 6) + 2; saved.hp = (saved.hp || 6) + 2; } }
+  else wUpg(wid)[def.id]++;
+  store.set(charK("upg"), UPG); store.set(saveKey(), saved); applyUpgrades();
+  SFX.secret(); JINGLES.ach && JINGLES.ach(); showToast(`¡${def.name} mejorada!`, 1.8);
+}
+function drawShop() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const g = ctx.createRadialGradient(VW / 2, VH * 0.4, 0, VW / 2, VH * 0.4, Math.max(VW, VH) * 0.7);
+  g.addColorStop(0, "#2e1c10"); g.addColorStop(1, "#060406"); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+  ui = [];
+  const ld = land(), s = sm(), pw = Math.min(600, VW - 24), px = VW / 2 - pw / 2;
+  titleText("TALLER", ld ? 34 : s ? 64 : 70, s ? 28 : 40);
+  ctx.textAlign = "center"; ctx.font = `bold ${s ? 15 : 18}px system-ui`; ctx.fillStyle = "#ffd23f";
+  ctx.fillText(`🪙 Oro: ${shopGold()}`, VW / 2, ld ? 60 : s ? 92 : 104);
+  if (!saved) { ctx.fillStyle = "rgba(243,230,200,0.7)"; ctx.font = "14px system-ui"; ctx.fillText("Empieza una partida y recoge oro para comprar mejoras", VW / 2, VH / 2, VW - 24); }
+  // pestañas
+  const ty = ld ? 70 : s ? 106 : 122, tw = (pw - 10) / 2;
+  button(shop.tab === 0 ? "▸ Personaje" : "Personaje", px, ty, tw, 36, () => { shop.tab = 0; }, { size: 14 });
+  button(shop.tab === 1 ? "▸ Armas" : "Armas", px + tw + 10, ty, tw, 36, () => { shop.tab = 1; }, { size: 14 });
+  let y = ty + 48;
+  const rowH = ld ? Math.min(58, (VH - y - 56) / 4) : s ? 70 : 78;
+  const row = (def, lvl, onBuy, extra) => {
+    panel(px, y, pw, rowH - 8, 12);
+    ctx.textAlign = "left"; ctx.font = `${s ? 20 : 24}px system-ui`; ctx.fillStyle = "#fff"; ctx.fillText(def.icon, px + 12, y + (rowH - 8) / 2 + 8);
+    ctx.font = `bold ${s ? 14 : 16}px system-ui`; ctx.fillStyle = "#fff3dc"; ctx.fillText(def.name, px + 48, y + (ld ? 20 : 24));
+    ctx.font = `${s ? 11 : 13}px system-ui`; ctx.fillStyle = "rgba(243,230,200,0.7)"; ctx.fillText(lvl ? def.desc(lvl) : "sin mejorar", px + 48, y + (ld ? 36 : 44), pw - 210);
+    // puntos de nivel
+    ctx.font = `bold ${s ? 14 : 16}px system-ui`; const nx = px + 48 + ctx.measureText(tr(def.name)).width + 12;
+    for (let k = 0; k < def.max; k++) { ctx.fillStyle = k < lvl ? "#ffd23f" : "rgba(255,255,255,0.18)"; ctx.beginPath(); ctx.arc(nx + k * 12, y + (ld ? 15 : 19), 4, 0, 7); ctx.fill(); }
+    const full = lvl >= def.max, cost = full ? 0 : def.cost[lvl], afford = !full && shopGold() >= cost, bw = s ? 118 : 150;
+    button(full ? "✓ Máximo" : `Mejorar · ${cost} 🪙`, px + pw - bw - 10, y + (rowH - 8) / 2 - 18, bw, 36, onBuy, { size: s ? 12 : 14 });
+    if (!full && !afford) { ctx.fillStyle = "rgba(10,8,12,0.45)"; ctx.beginPath(); ctx.roundRect(px + pw - bw - 10, y + (rowH - 8) / 2 - 18, bw, 36, 10); ctx.fill(); }
+    y += rowH;
+  };
+  if (shop.tab === 0) {
+    for (const d of UPG_CHAR) row(d, UPG[d.id], () => buyUpgrade("c", d));
+  } else {
+    const ws = shopWeapons(); shop.wi = (shop.wi + ws.length) % ws.length; const id = ws[shop.wi];
+    // elegir el arma
+    panel(px, y, pw, rowH - 8, 12);
+    button("‹", px + 8, y + (rowH - 8) / 2 - 18, 40, 36, () => { shop.wi--; SFX.ui(); }, { size: 18 });
+    button("›", px + pw - 48, y + (rowH - 8) / 2 - 18, 40, 36, () => { shop.wi++; SFX.ui(); }, { size: 18 });
+    ctx.save(); ctx.translate(VW / 2 - 70, y + (rowH - 8) / 2); drawGun(id, s ? 1.6 : 2); ctx.restore();
+    ctx.textAlign = "left"; ctx.fillStyle = WEAPONS[id].color; ctx.font = `bold ${s ? 14 : 17}px system-ui`; ctx.fillText(tr(WEAPONS[id].name), VW / 2 - 20, y + (rowH - 8) / 2 + 2, pw / 2 - 40);
+    ctx.fillStyle = "rgba(243,230,200,0.6)"; ctx.font = "11px system-ui"; ctx.fillText(`${shop.wi + 1}/${ws.length}`, VW / 2 - 20, y + (rowH - 8) / 2 + 18);
+    y += rowH;
+    for (const d of UPG_WEAP) row(d, wUpg(id)[d.id], () => buyUpgrade("w", d, id));
+  }
+  if (!ld) { ctx.textAlign = "center"; ctx.fillStyle = "rgba(243,230,200,0.5)"; ctx.font = "12px system-ui"; ctx.fillText("Las mejoras son de este personaje y duran para siempre", VW / 2, y + 16, VW - 24); }
+  if (picker.open) drawPicker();
+}
 // «Volver»: un paso atrás desde cualquier pantalla
 function goBack() {
   SFX.ui(); homeAsk = 0;
@@ -7873,6 +8037,7 @@ function goBack() {
     if (customFrom === "new") { startNewGameFlow(); story.i = STORY.length - 1; } else leaveCustomTo();
   }
   else if (state === "chars" || state === "map") { state = "title"; uiSel = 0; }
+  else if (state === "shop") { if (shop.from === "map") openMap(); else { state = "title"; uiSel = 0; } }
   else if (state === "options" || state === "access") closeSub();
   else if (state === "play") pause();
   else if (state === "pause") resume();
@@ -8246,13 +8411,13 @@ TR_ROWS.push(
 ["¡El Devorador del Vacío abre su ojo!", "The Void Devourer opens its eye!", "O Devorador do Vazio abre o olho!", "Le Dévoreur du Néant ouvre son œil !", "Der Verschlinger der Leere öffnet sein Auge!", "Il Divoratore del Vuoto apre il suo occhio!"],
 ["¡Has vencido al Devorador del Vacío!", "You defeated the Void Devourer!", "Você venceu o Devorador do Vazio!", "Tu as vaincu le Dévoreur du Néant !", "Du hast den Verschlinger der Leere besiegt!", "Hai sconfitto il Divoratore del Vuoto!"],
 ["Nivel secreto · Mundo {0} · {1}", "Secret level · World {0} · {1}", "Nível secreto · Mundo {0} · {1}", "Niveau secret · Monde {0} · {1}", "Geheimlevel · Welt {0} · {1}", "Livello segreto · Mondo {0} · {1}"],
-["NIVEL SECRETO · DIFÍCIL", "SECRET LEVEL · HARD", "NÍVEL SECRETO · DIFÍCIL", "NIVEAU SECRET · DIFFICILE", "GEHEIMLEVEL · SCHWER", "LIVELLO SEGRETO · DIFFICILE"],
-["NIVEL SECRETO · DIFÍCIL · premio: {0} {1}", "SECRET LEVEL · HARD · reward: {0} {1}", "NÍVEL SECRETO · DIFÍCIL · prêmio: {0} {1}", "NIVEAU SECRET · DIFFICILE · récompense : {0} {1}", "GEHEIMLEVEL · SCHWER · Belohnung: {0} {1}", "LIVELLO SEGRETO · DIFFICILE · premio: {0} {1}"],
-["¡{0}! Dificultad: Difícil", "{0}! Difficulty: Hard", "{0}! Dificuldade: Difícil", "{0} ! Difficulté : Difficile", "{0}! Schwierigkeit: Schwer", "{0}! Difficoltà: Difficile"],
+["NIVEL SECRETO · FÁCIL", "SECRET LEVEL · EASY", "NÍVEL SECRETO · FÁCIL", "NIVEAU SECRET · FACILE", "GEHEIMLEVEL · LEICHT", "LIVELLO SEGRETO · FACILE"],
+["NIVEL SECRETO · FÁCIL · premio: {0} {1}", "SECRET LEVEL · EASY · reward: {0} {1}", "NÍVEL SECRETO · FÁCIL · prêmio: {0} {1}", "NIVEAU SECRET · FACILE · récompense : {0} {1}", "GEHEIMLEVEL · LEICHT · Belohnung: {0} {1}", "LIVELLO SEGRETO · FACILE · premio: {0} {1}"],
+["¡{0}! Dificultad: Fácil", "{0}! Difficulty: Easy", "{0}! Dificuldade: Fácil", "{0} ! Difficulté : Facile", "{0}! Schwierigkeit: Leicht", "{0}! Difficoltà: Facile"],
 ["¡Nivel secreto superado! Ya tienes su poder", "Secret level cleared! You now have its power", "Nível secreto superado! Agora você tem o poder dele", "Niveau secret réussi ! Tu as maintenant son pouvoir", "Geheimlevel geschafft! Jetzt hast du seine Kraft", "Livello segreto superato! Ora hai il suo potere"],
 ["En iPhone: pulsa Compartir y «Añadir a pantalla de inicio» para jugar a pantalla completa", "On iPhone: tap Share and “Add to Home Screen” to play full screen", "No iPhone: toque em Compartilhar e «Adicionar à Tela de Início» para jogar em tela cheia", "Sur iPhone : touche Partager puis « Sur l'écran d'accueil » pour jouer en plein écran", "Auf dem iPhone: Tippe auf Teilen und „Zum Home-Bildschirm“, um im Vollbild zu spielen", "Su iPhone: tocca Condividi e «Aggiungi alla schermata Home» per giocare a schermo intero"],
 ["Llega antes a su nivel para abrirlo", "Reach its level first to unlock it", "Chegue primeiro ao nível dele para abri-lo", "Atteins d'abord son niveau pour l'ouvrir", "Erreiche zuerst sein Level, um es freizuschalten", "Raggiungi prima il suo livello per sbloccarlo"],
-["¡Has encontrado un nivel secreto! Aquí la dificultad es Difícil", "You found a secret level! Difficulty here is Hard", "Você encontrou um nível secreto! Aqui a dificuldade é Difícil", "Tu as trouvé un niveau secret ! Ici la difficulté est Difficile", "Du hast ein Geheimlevel gefunden! Hier ist es Schwer", "Hai trovato un livello segreto! Qui la difficoltà è Difficile"],
+["¡Has encontrado un nivel secreto! Aquí la dificultad es Fácil", "You found a secret level! Difficulty here is Easy", "Você encontrou um nível secreto! Aqui a dificuldade é Fácil", "Tu as trouvé un niveau secret ! Ici la difficulté est Facile", "Du hast ein Geheimlevel gefunden! Hier ist es Leicht", "Hai trovato un livello segreto! Qui la difficoltà è Facile"],
 ["¡Has vuelto del nivel secreto con un poder nuevo!", "You're back from the secret level with a new power!", "Você voltou do nível secreto com um novo poder!", "Tu reviens du niveau secret avec un nouveau pouvoir !", "Du bist mit einer neuen Kraft aus dem Geheimlevel zurück!", "Sei tornato dal livello segreto con un nuovo potere!"],
 ["En el nivel secreto no se puede guardar: tu partida se guardó al entrar", "You can't save in the secret level: your game was saved when you entered", "Não dá para salvar no nível secreto: seu jogo foi salvo ao entrar", "Impossible de sauvegarder ici : ta partie a été sauvegardée en entrant", "Im Geheimlevel kann man nicht speichern: Beim Betreten wurde gespeichert", "Nel livello segreto non si salva: la partita è stata salvata all'ingresso"],
 ["¡Reto superado! La puerta se abre... cuidado con el guardián", "Challenge complete! The door opens... beware of the guardian", "Desafio superado! A porta se abre... cuidado com o guardião", "Défi réussi ! La porte s'ouvre... attention au gardien", "Rätsel gelöst! Die Tür öffnet sich... Vorsicht vor dem Wächter", "Sfida superata! La porta si apre... attento al guardiano"],
@@ -8302,6 +8467,7 @@ TR_ROWS.push(
 ["Mundo {0} · Nivel {1}/15", "World {0} · Level {1}/15", "Mundo {0} · Nível {1}/15", "Monde {0} · Niveau {1}/15", "Welt {0} · Level {1}/15", "Mondo {0} · Livello {1}/15"],
 ["Mundo {0} · Nivel {1}/10 · {2}", "World {0} · Level {1}/10 · {2}", "Mundo {0} · Nível {1}/10 · {2}", "Monde {0} · Niveau {1}/10 · {2}", "Welt {0} · Level {1}/10 · {2}", "Mondo {0} · Livello {1}/10 · {2}"],
 ["Continuar · Mundo {0} · Nivel {1}/10 ({2})", "Continue · World {0} · Level {1}/10 ({2})", "Continuar · Mundo {0} · Nível {1}/10 ({2})", "Continuer · Monde {0} · Niveau {1}/10 ({2})", "Weiter · Welt {0} · Level {1}/10 ({2})", "Continua · Mondo {0} · Livello {1}/10 ({2})"],
+["— NIVEL SECRETO · FÁCIL —", "— SECRET LEVEL · EASY —", "— NÍVEL SECRETO · FÁCIL —", "— NIVEAU SECRET · FACILE —", "— GEHEIMLEVEL · LEICHT —", "— LIVELLO SEGRETO · FACILE —"],
 ["— MUNDO {0} · NIVEL {1}/15 —", "— WORLD {0} · LEVEL {1}/15 —", "— MUNDO {0} · NÍVEL {1}/15 —", "— MONDE {0} · NIVEAU {1}/15 —", "— WELT {0} · LEVEL {1}/15 —", "— MONDO {0} · LIVELLO {1}/15 —"],
 ["MUNDO {0} · NIVEL {1} COMPLETADO", "WORLD {0} · LEVEL {1} COMPLETE", "MUNDO {0} · NÍVEL {1} CONCLUÍDO", "MONDE {0} · NIVEAU {1} TERMINÉ", "WELT {0} · LEVEL {1} GESCHAFFT", "MONDO {0} · LIVELLO {1} COMPLETATO"],
 ["¡MUNDO {0} COMPLETADO!", "WORLD {0} COMPLETE!", "MUNDO {0} CONCLUÍDO!", "MONDE {0} TERMINÉ !", "WELT {0} GESCHAFFT!", "MONDO {0} COMPLETATO!"],
