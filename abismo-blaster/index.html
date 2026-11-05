@@ -1887,7 +1887,10 @@ cv.addEventListener("mousemove", e => {
 let miniRect = null;
 const inMini = (x, y) => miniRect && x >= miniRect.x && x <= miniRect.x + miniRect.w && y >= miniRect.y && y <= miniRect.y + miniRect.h;
 function toggleMini() { settings.minimap = settings.minimap === 2 ? 1 : 2; store.set("minimap", settings.minimap); SFX.ui(); }
+let lastTouchAt = -1e9;
 cv.addEventListener("mousedown", e => {
+  // tras un toque, algunos navegadores mandan además un clic de ratón falso: se ignora para no pulsar dos veces
+  if (performance.now() - lastTouchAt < 800) return;
   audio(); mouse.x = e.clientX; mouse.y = e.clientY; mouse.last = time;
   if (homeHit(e.clientX, e.clientY)) return;
   if (exitDlg) return;
@@ -1940,13 +1943,15 @@ const joyR = () => { const B = btns(); return clamp(B.fire.r * 1.05, 40, 70); };
 // vibración corta al recibir daño o esquivar (solo en aparatos táctiles y si no se ha pedido menos movimiento)
 const buzz = ms => { try { if (isTouch() && !A11().motion && navigator.vibrate) navigator.vibrate(ms); } catch (e) {} };
 const inBtn = (b, x, y) => Math.hypot(x - b.x, y - b.y) < b.r + 10;
-let autoFullDone = false;
+let autoFullDone = false, pendingFull = false;
 document.addEventListener("gesturestart", e => e.preventDefault(), { passive: false });
 addEventListener("orientationchange", () => { setTimeout(() => { if (innerHeight > innerWidth) autoFullDone = false; }, 300); });
 cv.addEventListener("touchstart", e => {
-  e.preventDefault(); audio(); touch.on = true;
+  e.preventDefault(); audio(); touch.on = true; lastTouchAt = performance.now();
   // al girar el celular o la tableta en horizontal, el primer toque pone el juego a pantalla completa
-  if (!autoFullDone && VW > VH && canFull() && !standalone() && !(document.fullscreenElement || document.webkitFullscreenElement)) { autoFullDone = true; toggleFull(); }
+  if (!autoFullDone && VW > VH && canFull() && !standalone() && !(document.fullscreenElement || document.webkitFullscreenElement)) { autoFullDone = true; pendingFull = true; }
+  { const t0 = e.changedTouches[0], fb = navBtns.find(b => b.kind === "full" && t0.clientX >= b.x - 4 && t0.clientX <= b.x + b.w + 4 && t0.clientY >= b.y - 4 && t0.clientY <= b.y + b.h + 4);
+    if (fb) { pendingFull = true; SFX.uiGo(); return; } }
   if (homeHit(e.changedTouches[0].clientX, e.changedTouches[0].clientY)) return;
   if (picker.open) { const t = e.changedTouches[0]; picker.drag = { x: t.clientX, y: t.clientY, s0: picker.scroll, moved: false }; return; }
   if (state !== "play") { const t = e.changedTouches[0]; if (state === "custom") nameInput.blur(); if (!clickUI(t.clientX, t.clientY) && state === "story") storyNext(1); return; }
@@ -1982,6 +1987,10 @@ cv.addEventListener("touchmove", e => {
   }
 }, { passive: false });
 const tend = e => {
+  lastTouchAt = performance.now();
+  // el navegador solo deja empezar el sonido y la pantalla completa al levantar el dedo
+  audio();
+  if (pendingFull) { pendingFull = false; toggleFull(); }
   if (volDrag) { volDrag = false; volTick(); return; }
   if (picker.drag) { const d = picker.drag; picker.drag = null; if (!d.moved) clickUI(d.x, d.y); return; }
   for (const t of e.changedTouches) {
@@ -5060,21 +5069,13 @@ function drawPlayerBody(x, y, aim, bob, walk) {
     ctx.fillStyle = sk.tip; ctx.beginPath(); ctx.arc(-6.8, -3.1 + i * 3.3, 1.1, 0, 7); ctx.fill();
   }
   ctx.restore();
-  // cabeza con sombra, orejas, pelo bajo el sombrero y una cara que mira hacia donde apuntas
+  // cabeza con sombra, orejas y pelo bajo el sombrero
   ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.beginPath(); ctx.ellipse(x, hy + 2.6, 6, 2.2, 0, 0, 7); ctx.fill();
   ctx.fillStyle = mixHex(skin, "#000000", 0.15); for (const sd of [-1, 1]) { ctx.beginPath(); ctx.arc(x + sd * 5.8, hy - 2.6, 1.6, 0, 7); ctx.fill(); }
   const hg = ctx.createRadialGradient(x - 2, hy - 5, 0.5, x, hy - 3, 6.4); hg.addColorStop(0, mixHex(skin, "#ffffff", 0.3)); hg.addColorStop(1, mixHex(skin, "#000000", 0.18));
   ctx.fillStyle = hg; ctx.beginPath(); ctx.arc(x, hy - 3, 6, 0, 7); ctx.fill();
   ctx.strokeStyle = mixHex(skin, "#000000", 0.35); ctx.lineWidth = 0.6; ctx.stroke();
   ctx.fillStyle = "#3a2414"; ctx.beginPath(); ctx.ellipse(x, hy - 6.8, 5.6, 2.2, 0, 0, 7); ctx.fill();
-  { const fx = Math.cos(aim) * 1.8, fy = Math.max(-0.4, Math.sin(aim)) * 1.1 + 0.6, blink = Math.sin(time * 1.3 + x * 0.01) > 0.985;
-    for (const sd of [-1, 1]) {
-      const ex = x + fx + sd * 2.3, ey = hy - 2.6 + fy;
-      if (blink) { ctx.strokeStyle = "#2a1a10"; ctx.lineWidth = 0.7; ctx.beginPath(); ctx.moveTo(ex - 1, ey); ctx.lineTo(ex + 1, ey); ctx.stroke(); }
-      else { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.ellipse(ex, ey, 1.25, 1.45, 0, 0, 7); ctx.fill(); ctx.fillStyle = "#1a1010"; ctx.beginPath(); ctx.arc(ex + fx * 0.25, ey + 0.2, 0.75, 0, 7); ctx.fill(); }
-      ctx.fillStyle = "rgba(255,120,120,0.35)"; ctx.beginPath(); ctx.arc(x + fx * 0.6 + sd * 3.6, hy - 0.8 + fy, 1.1, 0, 7); ctx.fill();
-    }
-    ctx.strokeStyle = "rgba(60,30,20,0.7)"; ctx.lineWidth = 0.6; ctx.beginPath(); ctx.arc(x + fx * 0.8, hy - 1 + fy, 1.3, 0.3, Math.PI - 0.3); ctx.stroke(); }
   const dark = mixHex(hatC, "#000000", 0.45), light = mixHex(hatC, "#ffffff", 0.5);
   if (look.hat === 1) { // gorra con visera hacia donde miras
     ctx.fillStyle = hatC; ctx.beginPath(); ctx.arc(x, hy - 5, 6.2, Math.PI, 0); ctx.fill();
