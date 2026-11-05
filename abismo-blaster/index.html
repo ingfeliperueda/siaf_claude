@@ -1135,7 +1135,7 @@ function loadLevel(i, retry) {
   } else if (!retry) {
     snapshot = { weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
     if (!inTutorial && !suppressSave) saved = { v: 2, prog: carryProg(i), level: i, diff: settings.diff, weapons: P.weapons.slice(), maxHp: P.maxHp, hp: P.hp, run: { ...run }, ammo: { ...P.ammo }, res: { ...P.res } };
-    if (!suppressSave) { store.set(saveKey(), saved); if (!inTutorial) { saveIcon = 1.8; gameDirty = false; } }
+    if (!suppressSave) { store.set(saveKey(), saved); if (!inTutorial) { saveIcon = 1.8; gameDirty = false; saveChars(); } }
   } else {
     P.weapons = snapshot.weapons.slice(); P.maxHp = snapshot.maxHp; P.hp = Math.max(Math.ceil(P.maxHp * 0.67), snapshot.hp);
     run = { ...snapshot.run };
@@ -6704,11 +6704,15 @@ const MAX_CHARS = 20, LOOK_KEYS = ["name", "country", "suit", "skin", "hat", "ha
 const lookSnap = o => Object.fromEntries(LOOK_KEYS.map(k => [k, o[k]]));
 const newCharId = () => "c" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
 let chars = (store.get("chars", null) || []).filter(c => c && c.id).slice(0, MAX_CHARS);
-if (!chars.length) chars = [{ ...lookSnap(look), id: newCharId() }];
+let charsNew = false;
+if (!chars.length) { chars = [{ ...lookSnap(look), id: newCharId() }]; charsNew = true; }
 let charId = store.get("charId", chars[0].id);
-if (!chars.some(c => c.id === charId)) charId = chars[0].id;
+if (!chars.some(c => c.id === charId)) { charId = chars[0].id; charsNew = true; }
 const curChar = () => chars.find(c => c.id === charId) || chars[0];
 const saveChars = () => { store.set("chars", chars); store.set("charId", charId); };
+// el primer personaje se guarda enseguida: si no, cada vez que se abría el juego tenía otra identidad
+// y se perdían su partida, sus mejoras y sus logros
+if (charsNew) saveChars();
 Object.assign(look, lookSnap(curChar())); saveChars();
 saved = loadSave();
 let editId = null, editBackup = null, discardAsk = 0, charPage = 0, delAsk = { id: null, t: 0 };
@@ -7999,7 +8003,7 @@ function buyUpgrade(kind, def, wid) {
   saved.run.gold -= cost; run.gold = Math.max(0, (run.gold || 0) - cost);
   if (kind === "c") { UPG[def.id]++; if (def.id === "hp") { saved.maxHp = (saved.maxHp || 6) + 2; saved.hp = (saved.hp || 6) + 2; } }
   else wUpg(wid)[def.id]++;
-  store.set(charK("upg"), UPG); store.set(saveKey(), saved); applyUpgrades();
+  store.set(charK("upg"), UPG); store.set(saveKey(), saved); saveChars(); applyUpgrades();
   SFX.secret(); JINGLES.ach && JINGLES.ach(); showToast(`¡${def.name} mejorada!`, 1.8);
 }
 // ejemplo del arma en el taller: el personaje dispara a una diana con la cadencia, el alcance y el cargador reales
@@ -8017,7 +8021,7 @@ function drawShopDemo(id, x, y, w, h) {
   if (d.rel > 0) { d.rel -= dt; if (d.rel <= 0) d.ammo = W0.clip; }
   else if ((d.cd -= dt) <= 0) {
     const n = W0.darts || 1;
-    for (let i = 0; i < n; i++) d.darts.push({ x: hx + 16 * k, y: hy - 2 * k + (n > 1 ? (i - (n - 1) / 2) * 5 * k : 0), vx: 260 * k, vy: n > 1 ? (i - (n - 1) / 2) * 18 * k : 0, life: range / (260 * k) });
+    for (let i = 0; i < n; i++) d.darts.push({ x: hx + 16 * k, y: hy - 2 * k + (n > 1 ? (i - (n - 1) / 2) * 5 * k : 0), vx: 170 * k, vy: n > 1 ? (i - (n - 1) / 2) * 12 * k : 0, life: (range - 16 * k) / (170 * k) });
     d.cd = Math.max(0.12, W0.cd * 1.6); if (--d.ammo <= 0) d.rel = Math.max(0.5, W0.reload);
   }
   for (const q of d.darts) { q.x += q.vx * dt; q.y += q.vy * dt; q.life -= dt; ctx.save(); ctx.translate(q.x, q.y); ctx.scale(0.7 * k, 0.7 * k); drawDartShape(W0.color, "#ff6a00"); ctx.restore(); }
@@ -8046,7 +8050,7 @@ function drawShop() {
   const top = ty + 48, bottom = VH - (ld ? 10 : 34);
   // izquierda: el personaje o el arma; derecha: las mejoras (en el celular en vertical, una encima de otra)
   const leftW = wide ? Math.min(380, tot * 0.42) : tot, rightX = wide ? px + leftW + 12 : px, rightW = wide ? tot - leftW - 12 : tot;
-  const nRows = 3, rowH = wide ? clamp((bottom - top) / nRows, 50, 82) : clamp((bottom - top) * 0.55 / nRows, 52, 74);
+  const nRows = 3, rowH = wide ? clamp((bottom - top) / nRows, 50, VH > 700 ? 110 : 82) : clamp((bottom - top) * 0.55 / nRows, 52, 74);
   const leftH = wide ? Math.min(bottom - top, nRows * rowH - 8) : Math.max(140, bottom - top - nRows * rowH - 6);
   const rowsY = wide ? top : top + leftH + 8;
   panel(px, top, leftW, leftH, 14);
