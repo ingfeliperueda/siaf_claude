@@ -498,6 +498,21 @@ function genWorldLevel(w, n, cfg = {}) {
         if (done) break;
       }
     }
+    // cuartos del tesoro: un hueco cerrado detrás de un muro agrietado, junto a una sala, con oro y cosas buenas
+    for (let tries = 0, made = 0, want = n >= 5 ? 2 : 1; tries < 80 && made < want; tries++) {
+      const R = pick(rooms); if (R.c === start || (boss && R.c === exitC)) continue;
+      const side = ri(0, 3), dx = [1, -1, 0, 0][side], dy = [0, 0, 1, -1][side];
+      // muro agrietado pegado a la sala y, detrás, un cuarto de 2×2
+      const cxw = dx ? (dx > 0 ? R.x + R.w : R.x - 1) : ri(R.x + 1, R.x + R.w - 2), cyw = dy ? (dy > 0 ? R.y + R.h : R.y - 1) : ri(R.y + 1, R.y + R.h - 2);
+      const ax = cxw + (dx > 0 ? 1 : dx < 0 ? -2 : 0), ay = cyw + (dy > 0 ? 1 : dy < 0 ? -2 : 0);
+      let ok = cxw > 0 && cyw > 0 && cxw < W - 1 && cyw < H - 1 && m[cyw][cxw] === "#";
+      for (let y = ay - 1; ok && y <= ay + 2; y++) for (let x = ax - 1; x <= ax + 2; x++) { if (y < 1 || x < 1 || y >= H - 1 || x >= W - 1) { ok = false; break; } if (!(x === cxw && y === cyw) && m[y][x] !== "#") { ok = false; break; } }
+      if (!ok) continue;
+      m[cyw][cxw] = "%";
+      const loot = ["$", "$", rnd() < 0.5 ? "h" : "+", rnd() < 0.25 ? "m" : "$"];
+      [[0, 0], [1, 0], [0, 1], [1, 1]].forEach(([ox, oy], k) => { m[ay + oy][ax + ox] = loot[k]; });
+      made++;
+    }
     const map = m.map(r => r.join(""));
     if (!genSolvable(map)) continue;
     return { name: cfg.name ?? WORLD_LEVEL_NAMES[w][n], map, world: w + 2, gen: true };
@@ -541,11 +556,11 @@ for (let gw = 0; gw < 5; gw++) for (let slot = 0; slot < 15; slot++) {
 // w: mundo (0-4) · lv: nivel donde está el muro agrietado (en el mapa, el secreto aparece a su lado)
 // los 10 retos (fáciles); cada aparato los reparte de otra forma entre los secretos
 const SECRET_PUZZLES = [
-  { name: "La Cámara de las Runas", puzzle: "runes", len: 4 }, { name: "La Cripta de Hielo", puzzle: "plates" },
-  { name: "El Asedio de las Sombras", puzzle: "survive", time: 20 }, { name: "La Forja Apagada", puzzle: "braziers", dur: 8 },
-  { name: "La Galería de la Memoria", puzzle: "pairs", n: 8 }, { name: "La Sala de los Engranajes", puzzle: "gears", n: 4 },
-  { name: "El Jardín de las Luces", puzzle: "lights" }, { name: "El Campo de Tiro de Fuego", puzzle: "order", n: 6, time: 15 },
-  { name: "El Archivo de las Máquinas", puzzle: "pairs", n: 8 }, { name: "La Caja de Cambios", puzzle: "gears", n: 4 },
+  { name: "La Cámara de las Runas", puzzle: "runes", len: 3 }, { name: "La Cripta de Hielo", puzzle: "plates" },
+  { name: "El Asedio de las Sombras", puzzle: "survive", time: 15 }, { name: "La Forja Apagada", puzzle: "braziers", dur: 12 },
+  { name: "La Galería de la Memoria", puzzle: "pairs", n: 6 }, { name: "La Sala de los Engranajes", puzzle: "gears", n: 4 },
+  { name: "El Jardín de las Luces", puzzle: "lights" }, { name: "El Campo de Tiro de Fuego", puzzle: "order", n: 5, time: 20 },
+  { name: "El Archivo de las Máquinas", puzzle: "pairs", n: 6 }, { name: "La Caja de Cambios", puzzle: "gears", n: 4 },
 ];
 { let sd = (typeof DEVICE_SEED !== "undefined" ? DEVICE_SEED : 0) + 99991; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
   if (sd !== 99991) for (let k = SECRET_PUZZLES.length - 1; k > 0; k--) { const j = Math.floor(rr() * (k + 1)); [SECRET_PUZZLES[k], SECRET_PUZZLES[j]] = [SECRET_PUZZLES[j], SECRET_PUZZLES[k]]; } }
@@ -560,7 +575,7 @@ function buildSecret(d, si) {
   const grid = (xs, ys) => ys.flatMap(y => xs.map(x => [x, y]));
   const objs = d.puzzle === "runes" ? [[3, 3], [9, 3], [3, 13], [9, 13], [6, 5], [6, 11]].slice(0, 4)
     : d.puzzle === "braziers" ? [[2, 2], [10, 2], [10, 14], [2, 14], [7, 8]] : d.puzzle === "plates" ? [[1, 1], [11, 1], [11, 15], [1, 15]]
-    : d.puzzle === "pairs" ? (d.n > 8 ? grid([2, 5, 8, 11], [3, 7, 13]) : grid([2, 5, 8, 11], [4, 12]))
+    : d.puzzle === "pairs" ? (d.n > 8 ? grid([2, 5, 8, 11], [3, 7, 13]) : grid([3, 6, 9], [4, 12])).slice(0, d.n || 8)
     : d.puzzle === "gears" ? (d.n > 4 ? grid([3, 7, 11], [4, 12]) : grid([4, 9], [4, 12]))
     : d.puzzle === "lights" ? grid([3, 6, 9], [4, 8, 12])
     : d.puzzle === "order" ? [[2, 2], [11, 3], [6, 6], [2, 9], [10, 9], [5, 13], [11, 14], [8, 11]].slice(0, d.n || 8) : [];
@@ -728,13 +743,13 @@ const MON = {
        title: "REINA DEL VACÍO · SEGUNDA GUARDIANA", intro: "¡La Reina del Vacío teje la nada!", rage: "¡La Reina del Vacío está furiosa!", defeat: "¡La Reina del Vacío se ha desvanecido!" },
   2: { name: "Devorador del Vacío", specials: ["breath", "meteor", "slam", "spiral", "teleport"], orb: "#ff3af0", hp: 220, speed: 70, r: 26, dmg: 2, sight: 520, color: "#3a1a6a", pts: 3000, heavy: true, boss: true, base: "O", minion: "fot", noKey: true,
        title: "DEVORADOR DEL VACÍO · EL ÚLTIMO SECRETO", intro: "¡El Devorador del Vacío abre su ojo!", rage: "¡El Devorador del Vacío lo quiere todo!", defeat: "¡Has vencido al Devorador del Vacío!" },
-  a: { name: "Guardián Rúnico", specials: ["slam"], orb: "#8fe8ff",  hp: 45, speed: 70, r: 18, dmg: 2, sight: 420, color: "#8a9bb0", pts: 400, heavy: true, boss: true, base: "O", minion: "k", noKey: true,
+  a: { name: "Guardián Rúnico", specials: ["slam"], orb: "#8fe8ff",  hp: 28, speed: 70, r: 18, dmg: 2, sight: 420, color: "#8a9bb0", pts: 400, heavy: true, boss: true, base: "O", minion: "k", noKey: true,
        title: "GUARDIÁN RÚNICO · MINIJEFE", intro: "¡El Guardián Rúnico protege el poder!", rage: "¡El Guardián Rúnico se enfurece!", defeat: "¡Has vencido al Guardián Rúnico!" },
-  i: { name: "Espíritu de Hielo", specials: ["icefan"], orb: "#cff4ff",  hp: 45, speed: 92, r: 16, dmg: 2, sight: 420, color: "#bfefff", pts: 450, heavy: true, boss: true, base: "Q", minion: "t", noKey: true,
+  i: { name: "Espíritu de Hielo", specials: ["icefan"], orb: "#cff4ff",  hp: 28, speed: 92, r: 16, dmg: 2, sight: 420, color: "#bfefff", pts: 450, heavy: true, boss: true, base: "Q", minion: "t", noKey: true,
        title: "ESPÍRITU DE HIELO · MINIJEFE", intro: "¡Un Espíritu de Hielo cobra vida!", rage: "¡El Espíritu de Hielo se enfurece!", defeat: "¡Has vencido al Espíritu de Hielo!" },
-  j: { name: "Sombra Menor", specials: ["teleport"], orb: "#c08cff",  hp: 50, speed: 96, r: 16, dmg: 2, sight: 420, color: "#4a3a6a", pts: 500, heavy: true, boss: true, base: "Q", minion: "f", noKey: true,
+  j: { name: "Sombra Menor", specials: ["teleport"], orb: "#c08cff",  hp: 30, speed: 96, r: 16, dmg: 2, sight: 420, color: "#4a3a6a", pts: 500, heavy: true, boss: true, base: "Q", minion: "f", noKey: true,
        title: "SOMBRA MENOR · MINIJEFE", intro: "¡La Sombra Menor sale de la oscuridad!", rage: "¡La Sombra Menor se enfurece!", defeat: "¡Has vencido a la Sombra Menor!" },
-  y: { name: "Salamandra de Fuego", specials: ["breath"],  hp: 60, speed: 74, r: 18, dmg: 2, sight: 420, color: "#ff6a2a", pts: 550, heavy: true, boss: true, base: "O", minion: "e", noKey: true,
+  y: { name: "Salamandra de Fuego", specials: ["breath"],  hp: 34, speed: 74, r: 18, dmg: 2, sight: 420, color: "#ff6a2a", pts: 550, heavy: true, boss: true, base: "O", minion: "e", noKey: true,
        title: "SALAMANDRA DE FUEGO · MINIJEFE", intro: "¡La Salamandra de Fuego despierta!", rage: "¡La Salamandra arde de furia!", defeat: "¡Has vencido a la Salamandra de Fuego!" },
   Y: { name: "Yeti Gigante", specials: ["slam", "icefan"], orb: "#9fe2ff",  hp: 80, speed: 66, r: 22, dmg: 2, sight: 460, color: "#dfeefc", pts: 600, heavy: true, boss: true, base: "O", minion: "t", noKey: true,
        title: "YETI GIGANTE · TERROR DE LAS NIEVES", intro: "¡Un rugido helado sacude la cueva!", rage: "¡El Yeti está furioso!", defeat: "¡Has derrotado al Yeti Gigante!" },
@@ -1063,7 +1078,7 @@ const spikeUp = (tx, ty) => spikePhase(tx, ty) < 0.75;
 
 function freshRun() {
   run = { score: 0, kills: 0, gold: 0, secrets: 0, time: 0, stars: 0 };
-  Object.assign(P, { hp: DIFF().hp + (hasPower("heart") ? 2 : 0) + 2 * UPG.hp, maxHp: DIFF().hp + (hasPower("heart") ? 2 : 0) + 2 * UPG.hp, weapons: ["pistola"], cur: 0, ammo: { pistola: WEAPONS.pistola.clip }, res: { pistola: WEAPONS.pistola.res } });
+  Object.assign(P, { hp: DIFF().hp + (hasPower("heart") ? 4 : 0) + 2 * UPG.hp, maxHp: DIFF().hp + (hasPower("heart") ? 4 : 0) + 2 * UPG.hp, weapons: ["pistola"], cur: 0, ammo: { pistola: WEAPONS.pistola.clip }, res: { pistola: WEAPONS.pistola.res } });
   hintsShown.clear();
 }
 // progreso del mapa: hasta qué nivel has llegado y las mejores estrellas de cada uno
@@ -2205,7 +2220,7 @@ function playUltra() {
 function playSecretFromMap(si) {
   loadRun(); const lv = secretParent(SECRET_NODE + si); levelIdx = lv;
   secretRet = { fromMap: true, mapSel: SECRET_NODE + si, level: saved ? saved.level : lv, ck: null, heartBefore: hasPower("heart"), pStart: structuredClone({ hp: P.hp, maxHp: P.maxHp, weapons: P.weapons, cur: P.cur, ammo: P.ammo, res: P.res }) };
-  secretIdx = si; loadLevel(lv);
+  secretIdx = si; loadLevel(lv); P.hp = P.maxHp;
   showToast(`¡${SECRETS[si].name}! Dificultad: Fácil`, 3);
 }
 function mapKey(e) {
@@ -2489,13 +2504,14 @@ const POWERS = [
 POWERS.push({ id: "phoenix", name: "Renacer del Fénix", desc: "Una vez por nivel, si caes, renaces con media vida", icon: "🔥", color: "#ff5a2a" });
 POWERS.push(
   { id: "magnet", name: "Imán de tesoros", desc: "El oro, los dardos y los corazones vienen hacia ti", icon: "🧲", color: "#ff5a6a" },
-  { id: "autoshield", name: "Escudo de burbuja", desc: "Una burbuja para un golpe y se recarga en 20 segundos", icon: "🫧", color: "#8fd8ff" },
+  { id: "autoshield", name: "Escudo de burbuja", desc: "Una burbuja para un golpe y se recarga en 12 segundos", icon: "🫧", color: "#8fd8ff" },
   { id: "double", name: "Dardo extra", desc: "A veces disparas un dardo de más sin gastar munición", icon: "➕", color: "#ff8a1f" },
   { id: "crit", name: "Puntería dorada", desc: "Muchos más golpes críticos", icon: "🎯", color: "#ffd23f" },
   { id: "reload", name: "Recarga rápida", desc: "Recargas mucho más deprisa", icon: "⚡", color: "#ff7ab0" },
-  { id: "speed", name: "Botas veloces", desc: "Corres un 15 % más rápido", icon: "👟", color: "#9be15d" },
+  { id: "speed", name: "Botas veloces", desc: "Corres un 20 % más rápido", icon: "👟", color: "#9be15d" },
 );
-const hasPower = id => (store.get(powersKey(), []) || []).includes(id);
+let powCache = null, powKey = "";
+const hasPower = id => { const k = powersKey(); if (!powCache || powKey !== k) { powCache = new Set(store.get(k, []) || []); powKey = k; } return powCache.has(id); };
 const PUZZLE_TIPS = {
   pairs: d => `Memoria: dispara a dos losas para ver sus símbolos y encuentra las ${d.n / 2} parejas`,
   gears: d => "Gira los engranajes hasta que todas las flechas apunten arriba. ¡Cada uno mueve también al siguiente!",
@@ -2516,6 +2532,7 @@ function enterSecret(si, portalIdx) {
   secretRet = { level: levelIdx, ck, heartBefore: hasPower("heart"), pStart: structuredClone({ hp: P.hp, maxHp: P.maxHp, weapons: P.weapons, cur: P.cur, ammo: P.ammo, res: P.res }) };
   secretIdx = si; SFX.secret(); SFX.uiGo(); flashes.push({ x: P.x, y: P.y, r: 200, life: 0.4 });
   loadLevel(levelIdx);
+  P.hp = P.maxHp;
   showToast("¡Has encontrado un nivel secreto! Aquí la dificultad es Fácil", 3);
 }
 function returnFromSecret() {
@@ -2526,7 +2543,7 @@ function returnFromSecret() {
   suppressSave = true; loadLevel(r.level); suppressSave = false; worldCard = 0;
   if (r.ck) restoreCheckpoint(r.ck, true);
   Object.assign(P, pNow); P.hp = P.maxHp; P.cur = Math.min(P.cur, P.weapons.length - 1);
-  if (hasPower("heart") && !r.heartBefore) { P.maxHp += 2; P.hp = P.maxHp; }
+  if (hasPower("heart") && !r.heartBefore) { P.maxHp += 4; P.hp = P.maxHp; }
   saved.hp = P.hp; saved.maxHp = P.maxHp; saved.weapons = P.weapons.slice(); saved.ammo = { ...P.ammo }; saved.res = { ...P.res };
   if (saved.full) Object.assign(saved.full.P, { hp: P.hp, maxHp: P.maxHp, weapons: P.weapons.slice(), ammo: { ...P.ammo }, res: { ...P.res } });
   store.set(saveKey(), saved); saveIcon = 1.8; gameDirty = false;
@@ -2551,13 +2568,13 @@ function setupPuzzle() {
     for (let tries = 0; tries < 30; tries++) {
       os.forEach(o => o.dir = 0);
       os.forEach((o, j) => { const c = 1 + Math.floor(Math.random() * 3); for (let k = 0; k < 4 - c; k++) gearTurn(j, true); });
-      if (gearMinTurns() >= os.length) break;
+      if (gearMinTurns() >= 3) break;
     }
     os.forEach(o => o.ang = o.dir * Math.PI / 2);
   } else if (d.puzzle === "lights") {
     os.forEach(o => o.on = true);
     // cuatro lámparas distintas: la solución necesita justo esos cuatro disparos (o los mismos en otro orden)
-    const pick = [0, 1, 2, 3, 4, 5, 6, 7, 8].sort(() => Math.random() - 0.5).slice(0, 3);
+    const pick = [0, 1, 2, 3, 4, 5, 6, 7, 8].sort(() => Math.random() - 0.5).slice(0, 2);
     for (const k of pick) lightPress(k, true);
   } else if (d.puzzle === "order") {
     puzzle.step = 0; puzzle.timer = 0;
@@ -2623,7 +2640,7 @@ function puzzleHit(p) {
   if (puzzle.showT > 0) return true;
   o.flash = 0.4;
   if (i === puzzle.seq[puzzle.step]) { puzzle.step++; beep(500 + puzzle.step * 120, 0.12, "triangle", 0.06); if (puzzle.step >= puzzle.seq.length) solvePuzzle(); }
-  else { SFX.hurt(); showToast("¡Orden equivocado! Fíjate otra vez", 2); puzzle.step = 0; puzzle.showT = 1.2; puzzleSpawn(2); }
+  else { SFX.hurt(); showToast("¡Orden equivocado! Fíjate otra vez", 2); puzzle.step = 0; puzzle.showT = 1.2; puzzleSpawn(1); }
   return true;
 }
 function orderFail(msg) {
@@ -2651,23 +2668,23 @@ function updatePuzzle(dt) {
   } else if (puzzle.type === "braziers") {
     for (const o of puzzle.objs) o.t = Math.max(0, o.t - dt);
     if (puzzle.objs.every(o => o.t > 0)) solvePuzzle();
-    puzzle.spawnT -= dt; if (puzzle.spawnT <= 0) { puzzle.spawnT = 7; if (monsters.length < 7) puzzleSpawn(1); }
+    puzzle.spawnT -= dt; if (puzzle.spawnT <= 0) { puzzle.spawnT = 11; if (monsters.length < 4) puzzleSpawn(1); }
   } else if (puzzle.type === "plates") {
-    for (const o of puzzle.objs) if (!o.on && Math.hypot(o.x - P.x, o.y - P.y) < 18) { o.on = true; SFX.key(); puzzleSpawn(2); showToast(`Placa ${puzzle.objs.filter(o => o.on).length}/4`, 1.5); }
+    for (const o of puzzle.objs) if (!o.on && Math.hypot(o.x - P.x, o.y - P.y) < 18) { o.on = true; SFX.key(); puzzleSpawn(1); showToast(`Placa ${puzzle.objs.filter(o => o.on).length}/4`, 1.5); }
     if (puzzle.objs.every(o => o.on)) solvePuzzle();
   } else if (puzzle.type === "pairs") {
     puzzle.wait = Math.max(0, (puzzle.wait || 0) - dt);
     for (const o of puzzle.objs) if (o.show < 50) o.show = Math.max(0, o.show - dt);
   } else if (puzzle.type === "gears") {
     for (const o of puzzle.objs) { const tgt = o.dir * Math.PI / 2; let dA = ((tgt - o.ang) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI; o.ang += dA * Math.min(1, dt * 10); }
-    puzzle.spawnT -= dt; if (puzzle.spawnT <= 0) { puzzle.spawnT = 9; if (monsters.length < 6) puzzleSpawn(1); }
+    puzzle.spawnT -= dt; if (puzzle.spawnT <= 0) { puzzle.spawnT = 14; if (monsters.length < 4) puzzleSpawn(1); }
   } else if (puzzle.type === "lights") {
-    puzzle.spawnT -= dt; if (puzzle.spawnT <= 0) { puzzle.spawnT = 10; if (monsters.length < 6) puzzleSpawn(1); }
+    puzzle.spawnT -= dt; if (puzzle.spawnT <= 0) { puzzle.spawnT = 14; if (monsters.length < 4) puzzleSpawn(1); }
   } else if (puzzle.type === "order") {
     if (puzzle.step > 0) { puzzle.timer -= dt; if (puzzle.timer <= 0) orderFail("¡Se acabó el tiempo! Empieza otra vez por la 1"); }
   } else if (puzzle.type === "survive") {
     puzzle.timer -= dt; puzzle.spawnT -= dt;
-    if (puzzle.spawnT <= 0) { puzzle.spawnT = 2.6; if (monsters.length < 10) puzzleSpawn(1 + (puzzle.timer < 15 ? 1 : 0)); }
+    if (puzzle.spawnT <= 0) { puzzle.spawnT = 3.6; if (monsters.length < 6) puzzleSpawn(1); }
     if (puzzle.timer <= 0) solvePuzzle();
   }
 }
@@ -2769,7 +2786,8 @@ let powerPop = null;
 function secretReward() {
   const si = secretIdx, pw = POWERS[si];
   const done = store.get(secretsKey(), []) || []; if (!done.includes(si)) done.push(si); store.set(secretsKey(), done);
-  const pws = store.get(powersKey(), []) || []; if (!pws.includes(pw.id)) { pws.push(pw.id); store.set(powersKey(), pws); if (pw.id === "heart") { P.maxHp += 2; } }
+  powCache = null;
+  const pws = store.get(powersKey(), []) || []; if (!pws.includes(pw.id)) { pws.push(pw.id); store.set(powersKey(), pws); if (pw.id === "heart") { P.maxHp += 4; } }
   P.hp = P.maxHp;
   powerPop = { pw, t: 0 }; JINGLES.ach(); SFX.secret();
   if (exitMark >= 0) { tiles[exitMark] = EXIT; exits.push({ x: (exitMark % W) * TS + 16, y: Math.floor(exitMark / W) * TS + 16 }); repaintAround(exitMark % W, Math.floor(exitMark / W)); }
@@ -3041,7 +3059,7 @@ function fire() {
   const a = P.aim;
   // los dardos salen de la boquilla del lanzador que llevas
   const mz = muzzle(3), mx = mz.x, my = mz.y;
-  const nd = w.darts + (hasPower("double") && w.darts === 1 && !w.water && !w.rocket && Math.random() < 0.35 ? 1 : 0);
+  const nd = w.darts + (hasPower("double") && w.darts === 1 && !w.water && !w.rocket && Math.random() < 0.5 ? 1 : 0);
   for (let i = 0; i < nd; i++) {
     const s = w.darts > 1 ? (i / (w.darts - 1) - 0.5) * w.spread + rand(-0.05, 0.05) : rand(-w.spread, w.spread);
     const ang = a + s, sp = w.speed * (w.darts > 1 ? rand(0.85, 1.1) : 1);
@@ -3093,12 +3111,12 @@ const canHit = m => !(m.def.ghost && m.vis < 0.35) && !(m.type === "p" && m.ph !
 function damageMon(m, d, ang, silent, quiet, critC = 0.08) {
   if (m.hp <= 0 || !canHit(m)) return;
   let crit = false;
-  if (!silent && Math.random() < critC + (critC > 0 && hasPower("crit") ? 0.15 : 0)) { d *= 2; crit = true; }
+  if (!silent && Math.random() < critC + (critC > 0 && hasPower("crit") ? 0.25 : 0)) { d *= 2; crit = true; }
   if (m.stun > 0) d *= 1.5;
   if (m.roll) { d *= 0.25; if (!silent && Math.random() < 0.5) floatText(m.x, m.y - m.r, "¡clink!", "#e8d8b0", 10); }
   if (m.tired > 0) { d *= 1.6; if (Math.random() < 0.3) floatText(m.x + rand(-10, 10), m.y - m.r, "¡x1.6!", "#ffe27a", 12); }
   m.hp -= d; m.flash = 0.1; m.sq = m.def.boss ? 0.18 : 0.4;
-  if (hasPower("ice") && !m.def.boss) { m.stun = Math.max(m.stun || 0, 0.35); if (Math.random() < 0.5) parts.push({ x: m.x + rand(-6, 6), y: m.y + rand(-6, 6), vx: rand(-20, 20), vy: rand(-30, 0), life: 0.4, max: 0.4, c: "#cfefff", s: 2, glow: true }); }
+  if (hasPower("ice")) { m.stun = Math.max(m.stun || 0, m.def.boss ? 0.15 : 0.7); if (Math.random() < 0.5) parts.push({ x: m.x + rand(-6, 6), y: m.y + rand(-6, 6), vx: rand(-20, 20), vy: rand(-30, 0), life: 0.4, max: 0.4, c: "#cfefff", s: 2, glow: true }); }
   const kb = m.def.rooted ? 0 : (m.def.heavy ? 35 : 170) * Math.min(1, d);
   m.kx += Math.cos(ang) * kb; m.ky += Math.sin(ang) * kb;
   if (m.alert <= 0) onAlert(m);
@@ -3201,7 +3219,7 @@ function hurtPlayer(d, sx, sy) {
   buzz(45);
   if (hasPower("autoshield") && (P.ashT || 0) <= 0) {
     // el escudo automático para el golpe
-    P.ashT = 20; P.inv = 0.8; SFX.bounce(); beep(1100, 0.1, "sine", 0.05, 400);
+    P.ashT = 12; P.inv = 0.8; SFX.bounce(); beep(1100, 0.1, "sine", 0.05, 400);
     rings.push({ x: P.x, y: P.y, r: 8, max: 34, life: 0.4, c: "#3fb7ff" }); floatText(P.x, P.y - 18, "¡Escudo!", "#8fd8ff", 12);
     return;
   }
@@ -3298,7 +3316,7 @@ function updatePlayer(dt) {
   P.inv -= dt; P.cd -= dt; P.dashCd -= dt; P.muzzle -= dt; P.recoil = Math.max(0, P.recoil - dt * 8);
   P.spinV = (P.spinV || 0) + ((P.recoil > 0.1 ? 34 : 1.5) - (P.spinV || 0)) * Math.min(1, dt * 4); P.spin = (P.spin || 0) + P.spinV * dt;
   if (P.reloading > 0) {
-    P.reloading -= dt * (hasPower("reload") ? 1.7 : 1);
+    P.reloading -= dt * (hasPower("reload") ? 2.2 : 1);
     if (P.reloading <= 0) { const id = curId(), take = Math.min(curW().clip - P.ammo[id], P.res[id] || 0); P.ammo[id] += take; P.res[id] -= take; SFX.reloaded(); }
   }
 
@@ -3330,7 +3348,7 @@ function updatePlayer(dt) {
     P.dash -= dt; vx = P.dvx; vy = P.dvy; if (P.dash <= 0) P.land = 1;
     ghosts.push({ x: P.x, y: P.y, life: 0.22 });
   } else {
-    const sp = P.speed * (onWeb ? 0.45 : 1) * (P.turbo > 0 ? 1.4 : 1) * (hasPower("speed") ? 1.15 : 1) * (1 + 0.06 * UPG.spd);
+    const sp = P.speed * (onWeb ? 0.45 : 1) * (P.turbo > 0 ? 1.4 : 1) * (hasPower("speed") ? 1.2 : 1) * (1 + 0.06 * UPG.spd);
     vx = mx * sp; vy = my * sp;
     if (T(ptx, pty) === ICE) {
       // en el hielo cuesta arrancar y frenar
@@ -3397,7 +3415,7 @@ function visPoly(px, py, R) {
   return pts;
 }
 
-const darkK = () => (curWorld() === 2 ? 0.55 : 1) * (hasPower("vision") ? 1.35 : 1);
+const darkK = () => (curWorld() === 2 ? 0.55 : 1) * (hasPower("vision") ? 1.6 : 1);
 const angDiffSigned = (a, b) => ((a - b + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
 function rayLen(x, y, a, max) {
   const c = Math.cos(a), s = Math.sin(a);
@@ -3940,7 +3958,7 @@ function updateItems(dt) {
     const d = Math.hypot(it.x - P.x, it.y - P.y);
     const wants = it.kind === "bullets" ? !!ammoTarget() : it.kind !== "heart" || P.hp < P.maxHp;
     // imán suave para recoger objetos
-    const mr = hasPower("magnet") ? 160 : 64;
+    const mr = hasPower("magnet") ? 240 : 64;
     if (wants && d < mr && d > 1) { const k = (1 - d / mr) * (mr > 64 ? 420 : 260) * dt; it.x += (P.x - it.x) / d * k; it.y += (P.y - it.y) / d * k; }
     if (Math.random() < dt * 1.5 && (it.kind === "gold" || it.kind === "key" || it.kind === "bullets")) glints.push({ x: it.x + rand(-6, 6), y: it.y + rand(-8, 4), life: 0.4 });
     if (d > P.r + 12 || !wants) continue;
@@ -4082,7 +4100,7 @@ function finishLevel() {
   if (secretIdx !== null) { returnFromSecret(); return; }
   const bonus = Math.max(0, Math.round((240 - lv.time) * 2));
   lv.bonus = bonus; run.score += bonus;
-  lv.stars = 1 + (lv.monTotal === 0 || lv.kills >= lv.monTotal * 0.8 ? 1 : 0) + (lv.goldTotal === 0 || lv.goldGot >= lv.goldTotal * 0.8 ? 1 : 0)
+  lv.stars = 1 + (lv.monTotal === 0 || lv.kills >= lv.monTotal * 0.8 ? 1 : 0) + (lv.goldTotal === 0 || lv.goldGot >= lv.goldTotal * 0.7 ? 1 : 0)
     + (lv.secretTotal === 0 || lv.secrets >= lv.secretTotal ? 0 : -0);
   lv.stars = Math.min(3, lv.stars);
   run.stars += lv.stars;
@@ -7583,7 +7601,7 @@ const TR_ROWS = [
 ["¡Esa no toca! Empieza otra vez por la 1", "Not that one! Start again from 1", "Esse não! Comece de novo pelo 1", "Pas celle-là ! Recommence par la 1", "Nicht die! Fang wieder bei 1 an", "Non quello! Ricomincia dall'1"],
 ["¡Se acabó el tiempo! Empieza otra vez por la 1", "Time's up! Start again from 1", "O tempo acabou! Comece de novo pelo 1", "Temps écoulé ! Recommence par la 1", "Zeit abgelaufen! Fang wieder bei 1 an", "Tempo scaduto! Ricomincia dall'1"],
 ["Escudo de burbuja", "Bubble shield", "Escudo de bolha", "Bouclier bulle", "Blasenschild", "Scudo a bolla"],
-["Una burbuja para un golpe y se recarga en 20 segundos", "A bubble blocks one hit and recharges in 20 seconds", "Uma bolha bloqueia um golpe e recarrega em 20 segundos", "Une bulle bloque un coup et se recharge en 20 secondes", "Eine Blase blockt einen Treffer und lädt in 20 Sekunden nach", "Una bolla para un colpo e si ricarica in 20 secondi"],
+["Una burbuja para un golpe y se recarga en 12 segundos", "A bubble blocks one hit and recharges in 12 seconds", "Uma bolha bloqueia um golpe e recarrega em 12 segundos", "Une bulle bloque un coup et se recharge en 12 secondes", "Eine Blase blockt einen Treffer und lädt in 12 Sekunden nach", "Una bolla para un colpo e si ricarica in 12 secondi"],
 ["Dardo extra", "Extra dart", "Dardo extra", "Fléchette bonus", "Extrapfeil", "Dardo extra"],
 ["A veces disparas un dardo de más sin gastar munición", "Sometimes you fire an extra dart for free", "Às vezes você atira um dardo a mais sem gastar munição", "Parfois tu tires une fléchette de plus sans munition", "Manchmal schießt du einen Extrapfeil ohne Munition", "A volte spari un dardo in più senza munizioni"],
 ["Puntería dorada", "Golden aim", "Mira dourada", "Visée dorée", "Goldenes Zielen", "Mira dorata"],
@@ -7591,7 +7609,7 @@ const TR_ROWS = [
 ["Recarga rápida", "Quick reload", "Recarga rápida", "Recharge rapide", "Schnelles Nachladen", "Ricarica rapida"],
 ["Recargas mucho más deprisa", "You reload much faster", "Você recarrega muito mais rápido", "Tu recharges bien plus vite", "Du lädst viel schneller nach", "Ricarichi molto più in fretta"],
 ["Botas veloces", "Swift boots", "Botas velozes", "Bottes rapides", "Flinke Stiefel", "Stivali veloci"],
-["Corres un 15 % más rápido", "You run 15% faster", "Você corre 15% mais rápido", "Tu cours 15 % plus vite", "Du läufst 15 % schneller", "Corri il 15% più veloce"],
+["Corres un 20 % más rápido", "You run 20% faster", "Você corre 20% mais rápido", "Tu cours 20 % plus vite", "Du läufst 20 % schneller", "Corri il 20% più veloce"],
 ["Botones táctiles: {0}", "Touch buttons: {0}", "Botões de toque: {0}", "Boutons tactiles : {0}", "Touch-Tasten: {0}", "Pulsanti touch: {0}"],
 ["Pequeños", "Small", "Pequenos", "Petits", "Klein", "Piccoli"], ["Normales", "Normal", "Normais", "Normaux", "Normal", "Normali"], ["Grandes", "Large", "Grandes", "Grands", "Groß", "Grandi"],
 ["El tamaño de DISPARA, ESQUIVA y los demás botones", "The size of FIRE, DODGE and the other buttons", "O tamanho de ATIRAR, DESVIAR e dos outros botões", "La taille de TIRER, ESQUIVER et des autres boutons", "Die Größe von FEUER, AUSWEICHEN und den anderen Tasten", "La dimensione di SPARA, SCHIVA e degli altri pulsanti"],
