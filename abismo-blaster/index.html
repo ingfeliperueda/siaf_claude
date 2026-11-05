@@ -7646,6 +7646,7 @@ const TR_ROWS = [
 ["¡{0} mejorada!", "{0} upgraded!", "{0} melhorada!", "{0} améliorée !", "{0} verbessert!", "{0} potenziata!"],
 ["Las mejoras son de este personaje y duran para siempre", "Upgrades belong to this character and last forever", "As melhorias são deste personagem e duram para sempre", "Les améliorations sont à ce personnage et durent pour toujours", "Die Verbesserungen gehören dieser Figur und bleiben für immer", "I potenziamenti sono di questo personaggio e durano per sempre"],
 ["Empieza una partida y recoge oro para comprar mejoras", "Start a game and collect gold to buy upgrades", "Comece uma partida e pegue ouro para comprar melhorias", "Commence une partie et ramasse de l'or pour acheter des améliorations", "Starte ein Spiel und sammle Gold für Verbesserungen", "Inizia una partita e raccogli oro per comprare potenziamenti"],
+["Nivel", "Level", "Nível", "Niveau", "Stufe", "Livello"],
 ["Daño", "Damage", "Dano", "Dégâts", "Schaden", "Danno"],
 ["Recargando...", "Reloading...", "Recarregando...", "Rechargement...", "Lade nach...", "Ricarica..."],
 ["Rata gigante", "Giant rat", "Rato gigante", "Rat géant", "Riesenratte", "Ratto gigante"],
@@ -8003,6 +8004,7 @@ function buyUpgrade(kind, def, wid) {
   saved.run.gold -= cost; run.gold = Math.max(0, (run.gold || 0) - cost);
   if (kind === "c") { UPG[def.id]++; if (def.id === "hp") { saved.maxHp = (saved.maxHp || 6) + 2; saved.hp = (saved.hp || 6) + 2; } }
   else wUpg(wid)[def.id]++;
+  shop.pop = { id: def.id, t: 0.5 };
   store.set(charK("upg"), UPG); store.set(saveKey(), saved); saveChars(); applyUpgrades();
   SFX.secret(); JINGLES.ach && JINGLES.ach(); showToast(`¡${def.name} mejorada!`, 1.8);
 }
@@ -8035,6 +8037,7 @@ function drawShopDemo(id, x, y, w, h) {
 }
 function drawShop() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (shop.pop) { shop.pop.t -= frameDt; if (shop.pop.t <= 0) shop.pop = null; }
   const g = ctx.createRadialGradient(VW / 2, VH * 0.4, 0, VW / 2, VH * 0.4, Math.max(VW, VH) * 0.7);
   g.addColorStop(0, "#2e1c10"); g.addColorStop(1, "#060406"); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
   ui = [];
@@ -8083,8 +8086,16 @@ function drawShop() {
     const rh = rowH - 8; panel(rightX, y, rightW, rh, 12);
     ctx.textAlign = "left"; ctx.font = `${s ? 20 : 24}px system-ui`; ctx.fillStyle = "#fff"; ctx.fillText(def.icon, rightX + 12, y + rh / 2 + 8);
     ctx.font = `bold ${s ? 14 : 16}px system-ui`; ctx.fillStyle = "#fff3dc"; ctx.fillText(def.name, rightX + 48, y + rh / 2 - 4);
-    const nx = rightX + 48 + ctx.measureText(tr(def.name)).width + 12;
-    for (let k = 0; k < def.max; k++) { ctx.fillStyle = k < lvl ? "#ffd23f" : "rgba(255,255,255,0.18)"; ctx.beginPath(); ctx.arc(nx + k * 12, y + rh / 2 - 9, 4, 0, 7); ctx.fill(); }
+    // un punto por nivel: se llena (y salta) al comprar
+    const nx = rightX + 48 + ctx.measureText(tr(def.name)).width + 14, dy = y + rh / 2 - 9, pop = shop.pop && shop.pop.id === def.id ? shop.pop.t : 0;
+    for (let k = 0; k < def.max; k++) {
+      const on = k < lvl, jump = on && k === lvl - 1 && pop > 0 ? 1 + Math.sin(Math.min(1, (0.5 - pop) / 0.5) * Math.PI) * 0.8 : 1, rr = 5.5 * jump, cx = nx + k * 15;
+      if (on) { ctx.save(); ctx.shadowColor = "#ffd23f"; ctx.shadowBlur = 8; const dg = ctx.createRadialGradient(cx - 1.5, dy - 1.5, 0.5, cx, dy, rr); dg.addColorStop(0, "#fff3b0"); dg.addColorStop(1, "#e8a32a"); ctx.fillStyle = dg; ctx.beginPath(); ctx.arc(cx, dy, rr, 0, 7); ctx.fill(); ctx.restore(); }
+      else { ctx.fillStyle = "rgba(255,255,255,0.08)"; ctx.beginPath(); ctx.arc(cx, dy, rr, 0, 7); ctx.fill(); }
+      ctx.strokeStyle = on ? "#a8741a" : "rgba(255,255,255,0.3)"; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(cx, dy, rr, 0, 7); ctx.stroke();
+    }
+    ctx.fillStyle = lvl >= def.max ? "#9be15d" : "rgba(255,226,122,0.9)"; ctx.font = `bold ${s ? 10 : 11}px system-ui`;
+    ctx.fillText(`${tr("Nivel")} ${lvl}/${def.max}`, nx + def.max * 15 + 4, dy + 4);
     const full = lvl >= def.max, cost = full ? 0 : def.cost[lvl], afford = !full && shopGold() >= cost, bw = s ? 112 : 140;
     // lo que tienes y lo que te da la siguiente mejora
     ctx.font = `${s ? 11 : 12}px system-ui`; ctx.fillStyle = "rgba(243,230,200,0.7)";
