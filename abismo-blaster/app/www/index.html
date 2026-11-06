@@ -8023,7 +8023,8 @@ function buyUpgrade(kind, def, wid) {
   if (lvl >= def.max) { SFX.ui(); return; }
   const cost = def.cost[lvl];
   if (!saved || shopGold() < cost) { SFX.empty(); showToast(`Te faltan ${cost - shopGold()} de oro. ¡Recoge monedas en los niveles!`, 2.5); return; }
-  saved.run.gold -= cost; run.gold = Math.max(0, (run.gold || 0) - cost);
+  // «run» no existe si aún no has jugado desde que abriste el juego: antes la compra se cortaba aquí a medias
+  saved.run.gold -= cost; if (run) run.gold = Math.max(0, (run.gold || 0) - cost);
   if (kind === "c") { UPG[def.id]++; if (def.id === "hp") { saved.maxHp = (saved.maxHp || 6) + 2; saved.hp = (saved.hp || 6) + 2; } }
   else wUpg(wid)[def.id]++;
   shop.pop = { id: def.id, t: 0.5 };
